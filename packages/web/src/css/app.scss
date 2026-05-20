@@ -1,0 +1,194 @@
+// ================================================================
+// openimago — Dark Creative Workshop
+// 对标 Midjourney / RunwayML 的视觉质量
+// ================================================================
+
+// --------------------------------------
+// 0. Animated gradient background
+// --------------------------------------
+body {
+  background: #08080f !important;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 30% 20%, rgba(0,240,255,0.04) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 80% at 70% 80%, rgba(168,85,247,0.04) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 40% at 50% 50%, rgba(255,45,149,0.02) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+// --------------------------------------
+// 1. Chrome autofill fix
+// --------------------------------------
+.q-field__native:-webkit-autofill,
+input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px #12121a inset !important;
+  -webkit-text-fill-color: #e8e8ec !important;
+  caret-color: #e8e8ec !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+// --------------------------------------
+// 2. QInput — all inputs get subtle border glow on focus
+// --------------------------------------
+.q-field--outlined .q-field__control {
+  border-radius: 10px;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.q-field--focused.q-field--outlined .q-field__control {
+  box-shadow: 0 0 0 1px rgba(0,240,255,0.2), 0 0 12px rgba(0,240,255,0.06);
+}
+
+// --------------------------------------
+// 3. Spotlight input — the hero element
+// --------------------------------------
+.spotlight-input {
+  .q-field__control {
+    background: rgba(16,16,28,0.95) !important;
+    border: 1px solid rgba(255,255,255,0.06) !important;
+    border-radius: 16px !important;
+    min-height: 48px;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+  &.q-field--focused .q-field__control {
+    border-color: rgba(0,240,255,0.4) !important;
+    box-shadow:
+      0 0 32px rgba(0,240,255,0.10),
+      0 0 64px rgba(168,85,247,0.05),
+      inset 0 0 32px rgba(0,240,255,0.02);
+  }
+  .q-field__native {
+    caret-color: #00f0ff;
+    &::placeholder { color: rgba(255,255,255,0.2); }
+  }
+}
+
+// --------------------------------------
+// 4. Neon text
+// --------------------------------------
+.neon-text-cyan {
+  color: #00f0ff;
+  text-shadow: 0 0 10px rgba(0,240,255,0.35), 0 0 30px rgba(0,240,255,0.1);
+}
+.neon-text-purple {
+  color: #a855f7;
+  text-shadow: 0 0 10px rgba(168,85,247,0.35), 0 0 30px rgba(168,85,247,0.1);
+}
+
+// --------------------------------------
+// 5. Glass card (auth, modals)
+// --------------------------------------
+.glass-card {
+  background: rgba(18,18,32,0.60) !important;
+  backdrop-filter: blur(24px) saturate(120%);
+  -webkit-backdrop-filter: blur(24px) saturate(120%);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 20px;
+  box-shadow:
+    0 0 60px rgba(0,240,255,0.04),
+    0 8px 40px rgba(0,0,0,0.5);
+}
+
+// --------------------------------------
+// 6. Card grid (projects, prompts)
+// --------------------------------------
+.grid-card {
+  background: rgba(20,20,36,0.50);
+  border: 1px solid rgba(255,255,255,0.04);
+  border-radius: 14px;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+  &:hover {
+    border-color: rgba(0,240,255,0.15);
+    box-shadow: 0 4px 24px rgba(0,240,255,0.06);
+    transform: translateY(-2px);
+  }
+}
+
+// --------------------------------------
+// 7. Nav active state
+// --------------------------------------
+.q-item.q-router-link--active {
+  background: rgba(0,240,255,0.04) !important;
+  border-left: 2px solid #00f0ff;
+}
+
+// --------------------------------------
+// 8. Chat bubbles
+// --------------------------------------
+.chat-bubble-user {
+  background: rgba(0,240,255,0.06);
+  border: 1px solid rgba(0,240,255,0.08);
+  border-radius: 18px 18px 4px 18px;
+  padding: 12px 18px;
+  color: #e8e8ec;
+}
+.chat-bubble-ai {
+  background: rgba(168,85,247,0.04);
+  border: 1px solid rgba(168,85,247,0.06);
+  border-radius: 18px 18px 18px 4px;
+  padding: 12px 18px;
+  color: #e8e8ec;
+}
+
+// --------------------------------------
+// 9. Page transition
+// --------------------------------------
+.page-enter-active {
+  animation: fade-up 0.2s ease;
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+// --------------------------------------
+// 10. Scrollbar
+// --------------------------------------
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(168,85,247,0.12);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(168,85,247,0.25); }
+
+// --------------------------------------
+// 11. Workspace layout
+// --------------------------------------
+.session-sidebar {
+  background: rgba(8,8,15,0.8) !important;
+  border-right: 1px solid rgba(255,255,255,0.03) !important;
+  backdrop-filter: blur(12px);
+}
+.input-area {
+  background: rgba(8,8,15,0.95) !important;
+  border-top: 1px solid rgba(255,255,255,0.04) !important;
+  backdrop-filter: blur(16px);
+}
+.bg-primary-opacity {
+  background: rgba(0,240,255,0.04) !important;
+  border-left: 2px solid #00f0ff;
+}
+
+// --------------------------------------
+// 12. Header
+// --------------------------------------
+.q-header {
+  background: rgba(8,8,15,0.85) !important;
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+
+// --------------------------------------
+// 13. Drawer
+// --------------------------------------
+.q-drawer {
+  background: rgba(8,8,15,0.90) !important;
+  backdrop-filter: blur(12px);
+  border-right: 1px solid rgba(255,255,255,0.03) !important;
+}

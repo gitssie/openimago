@@ -23,6 +23,10 @@ Default to using Bun instead of Node.js.
 
 Use `bun test` to run tests.
 
+```sh
+bun test --cwd packages/openimago
+```
+
 ```ts#index.test.ts
 import { test, expect } from "bun:test";
 
@@ -31,76 +35,71 @@ test("hello world", () => {
 });
 ```
 
-## Frontend
+## Project Structure
 
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
-
-Server:
-
-```ts#index.ts
-import index from "./index.html"
-
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
-})
+```
+openimago/
+├── packages/
+│   ├── openimago/       ← 后端 (Bun + Hono + Effect + Drizzle)
+│   │   ├── src/
+│   │   ├── tests/
+│   │   ├── index.ts
+│   │   └── package.json
+│   └── web/             ← 前端 (Vue 3 + Vite + Quasar CLI)
+│       └── package.json
+├── docs/
+├── CLAUDE.md
+├── CONTEXT.md
+└── package.json         ← workspace root
 ```
 
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
-
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
-```
-
-With the following `frontend.tsx`:
-
-```tsx#frontend.tsx
-import React from "react";
-import { createRoot } from "react-dom/client";
-
-// import .css files directly and it works
-import './index.css';
-
-const root = createRoot(document.body);
-
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
-root.render(<Frontend />);
-```
-
-Then, run index.ts
+## Running
 
 ```sh
-bun --hot ./index.ts
+# Install all workspace deps
+bun install
+
+# Dev: backend (from project root)
+bun --hot ./packages/openimago/index.ts
+
+# Dev: frontend (from packages/web/)
+cd packages/web && bun run dev
+
+# Test backend
+bun test --cwd packages/openimago
 ```
 
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+## Frontend
+
+Vue 3 + Vite + Quasar CLI SPA in `packages/web/`.
+
+- Dev: Vite dev server proxies `/api` → Hono backend at `http://localhost:8080`
+- Prod: `bun run build` in packages/web/ → Hono serves static files from dist/
+
+## Backend
+
+Bun + Hono + Effect + Drizzle ORM + PostgreSQL in `packages/openimago/`.
+
+## Agent skills
+
+### Issue tracker
+
+Beads (`bd` CLI), Dolt-backed graph issue tracker, data in `.beads/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Mapped to beads status: `○` open=needs-triage, `●` blocked=needs-info, `○` open=ready-for-agent/human, `❄` deferred=wontfix. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` at repo root + `docs/adr/`. See `docs/agents/domain.md`.
+
+## APIs
+
+- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
+- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
+- `Bun.redis` for Redis. Don't use `ioredis`.
+- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
+- `WebSocket` is built-in. Don't use `ws`.
+- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
+- Bun.$`ls` instead of execa.

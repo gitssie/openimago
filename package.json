@@ -1,20 +1,13 @@
 {
   "name": "openimago",
-  "module": "index.ts",
-  "type": "module",
   "private": true,
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
-  "dependencies": {
-    "drizzle-orm": "^0.45.2",
-    "effect": "^3.21.2",
-    "hono": "^4.12.19",
-    "jose": "^6.2.3",
-    "nanoid": "3",
-    "postgres": "^3.4.9"
+  "workspaces": [
+    "packages/openimago",
+    "packages/web"
+  ],
+  "scripts": {
+    "dev": "bun --hot ./packages/openimago/index.ts & cd packages/web && yarn dev",
+    "dev:backend": "bun --hot ./packages/openimago/index.ts",
+    "dev:frontend": "cd packages/web && yarn dev"
   }
 }

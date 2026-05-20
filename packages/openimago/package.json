@@ -1,0 +1,21 @@
+{
+  "name": "@openimago/backend",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@opencode-ai/sdk": "^1.15.5",
+    "drizzle-orm": "^0.45.2",
+    "effect": "^3.21.2",
+    "hono": "^4.12.19",
+    "jose": "^6.2.3",
+    "nanoid": "3",
+    "postgres": "^3.4.9"
+  }
+}
