@@ -24,7 +24,6 @@ import type {
  * Set VITE_OPENCODE_URL to '' (empty) so SDK calls go to the same origin /api/...
  */
 const OPENCODE_BASE_URL = (import.meta.env.VITE_OPENCODE_URL ?? '').replace(/\/+$/, '');
-export const AGENT_NAME = 'cognee-coder';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -157,7 +156,6 @@ export const AgentService = {
   async promptAsync(sessionId: string, parts: PromptPartInput[], options?: PromptOptions): Promise<void> {
     await opencodeClient.session.promptAsync({
       sessionID: sessionId,
-      agent: AGENT_NAME,
       ...(options?.messageID ? { messageID: options.messageID } : {}),
       parts,
       ...(options?.model ? { model: options.model } : {}),
@@ -173,7 +171,6 @@ export const AgentService = {
       sessionID: sessionId,
       command,
       arguments: args,
-      agent: AGENT_NAME,
       ...(options?.parts?.length ? { parts: options.parts } : {}),
       ...(options?.model ? { model: `${options.model.providerID}/${options.model.modelID}` } : {}),
       ...(options?.variant ? { variant: options.variant } : {}),
