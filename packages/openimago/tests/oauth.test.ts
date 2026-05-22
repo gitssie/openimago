@@ -89,7 +89,7 @@ test("callback with expired state returns 400 INVALID_STATE", async () => {
 
 function mockGitHubOAuth(overrides?: { id?: number; login?: string; email?: string }) {
   const origFetch = globalThis.fetch
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = (async (input: Request | string | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
     if (url.includes("github.com/login/oauth/access_token")) {
       return new Response(JSON.stringify({ access_token: "gh-mock-token" }), {
@@ -115,7 +115,7 @@ function mockGitHubOAuth(overrides?: { id?: number; login?: string; email?: stri
 
 function mockGoogleOAuth(overrides?: { id?: string; email?: string }) {
   const origFetch = globalThis.fetch
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = (async (input: Request | string | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
     if (url.includes("oauth2.googleapis.com/token")) {
       return new Response(JSON.stringify({ access_token: "goog-mock-token" }), {

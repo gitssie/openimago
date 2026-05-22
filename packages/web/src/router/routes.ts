@@ -7,6 +7,18 @@ const routes: RouteRecordRaw[] = [
     component: () => import('pages/AuthPage.vue'),
   },
   {
+    path: '/sessions',
+    name: 'sessions',
+    component: () => import('pages/SessionWorkspacePage.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/sessions/:id',
+    name: 'session',
+    component: () => import('pages/SessionWorkspacePage.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/',
     component: () => import('layouts/MainLayout.vue'),
     meta: { requiresAuth: true },
@@ -25,12 +37,6 @@ const routes: RouteRecordRaw[] = [
         path: 'projects/:id',
         name: 'project-detail',
         component: () => import('pages/ProjectDetailPage.vue'),
-        meta: { requiresAuth: true },
-      },
-      {
-        path: 'sessions/:id',
-        name: 'session',
-        component: () => import('pages/SessionWorkspacePage.vue'),
         meta: { requiresAuth: true },
       },
       {

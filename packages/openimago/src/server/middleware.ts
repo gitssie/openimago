@@ -20,24 +20,32 @@ export async function authMiddleware(c: Context, next: Next) {
     return c.json({ error: { code: "UNAUTHORIZED", message: "Missing token" } }, 401)
   }
 
+  let claims: { userId: string; role: string }
   try {
     const token = header.slice(7)
-    const { userId, role } = await verifyJwt(token)
-    c.set("userId", userId)
-    c.set("role", role)
-
-    // Look up workspace_id; may be null for users created before the migration
-    const [user] = await db
-      .select({ workspaceId: users.workspaceId })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1)
-    c.set("workspaceId", user?.workspaceId ?? null)
-
-    await next()
+    claims = await verifyJwt(token)
   } catch {
     return c.json({ error: { code: "UNAUTHORIZED", message: "Invalid token" } }, 401)
   }
+
+  // Look up workspace_id; may be null for users created before the migration.
+  // A valid JWT can outlive a truncated/deleted user row, so reject it before
+  // handlers try to insert rows that reference users(id).
+  const [user] = await db
+    .select({ workspaceId: users.workspaceId })
+    .from(users)
+    .where(eq(users.id, claims.userId))
+    .limit(1)
+
+  if (!user) {
+    return c.json({ error: { code: "UNAUTHORIZED", message: "User not found" } }, 401)
+  }
+
+  c.set("userId", claims.userId)
+  c.set("role", claims.role)
+  c.set("workspaceId", user.workspaceId ?? null)
+
+  await next()
 }
 
 interface RoutePattern {
@@ -49,22 +57,36 @@ interface RoutePattern {
 // Whitelist of OpenCode routes that openimago products need.
 // All other /api/* routes are rejected with 404.
 // See docs/OPENCODE-INTEGRATION.md §3.5 for the complete list.
-const ROUTE_PATTERNS: RoutePattern[] = [
+export const ROUTE_REGISTRY: RoutePattern[] = [
   // --- needsDirectory -------------------------------------------------
   { method: "POST", pattern: /^\/api\/session\/([^/]+)\/prompt$/, needsDirectory: true },
+  { method: "POST", pattern: /^\/api\/session\/([^/]+)\/prompt_async$/, needsDirectory: true },
+  { method: "POST", pattern: /^\/api\/session\/([^/]+)\/command$/, needsDirectory: true },
   { method: "POST", pattern: /^\/api\/session\/([^/]+)\/abort$/, needsDirectory: true },
   { method: "POST", pattern: /^\/api\/session\/([^/]+)\/fork$/, needsDirectory: true },
   { method: "POST", pattern: /^\/api\/session\/([^/]+)\/compact$/, needsDirectory: true },
+  { method: "POST", pattern: /^\/api\/session\/([^/]+)\/revert$/, needsDirectory: true },
+  { method: "POST", pattern: /^\/api\/session\/([^/]+)\/summarize$/, needsDirectory: true },
   { method: "GET", pattern: /^\/api\/session\/([^/]+)\/context$/, needsDirectory: true },
+  { method: "GET", pattern: /^\/api\/session\/([^/]+)\/todo$/, needsDirectory: true },
 
   // --- workspace only ------------------------------------------------
+  { method: "POST", pattern: /^\/api\/session$/, needsDirectory: false },
   { method: "GET", pattern: /^\/api\/session$/, needsDirectory: false },
   { method: "GET", pattern: /^\/api\/session\/([^/]+)$/, needsDirectory: false },
   { method: "GET", pattern: /^\/api\/session\/([^/]+)\/message$/, needsDirectory: false },
   { method: "PATCH", pattern: /^\/api\/session\/([^/]+)$/, needsDirectory: false },
   { method: "DELETE", pattern: /^\/api\/session\/([^/]+)$/, needsDirectory: false },
   { method: "POST", pattern: /^\/api\/session\/([^/]+)\/wait$/, needsDirectory: false },
+  { method: "POST", pattern: /^\/api\/session\/([^/]+)\/unrevert$/, needsDirectory: false },
   { method: "GET", pattern: /^\/api\/event$/, needsDirectory: false },
+  { method: "GET", pattern: /^\/api\/command$/, needsDirectory: false },
+  { method: "GET", pattern: /^\/api\/agent$/, needsDirectory: false },
+  { method: "GET", pattern: /^\/api\/question$/, needsDirectory: false },
+  { method: "POST", pattern: /^\/api\/question\/([^/]+)\/reply$/, needsDirectory: false },
+  { method: "POST", pattern: /^\/api\/question\/([^/]+)\/reject$/, needsDirectory: false },
+  { method: "GET", pattern: /^\/api\/permission$/, needsDirectory: false },
+  { method: "POST", pattern: /^\/api\/permission\/([^/]+)\/reply$/, needsDirectory: false },
 ]
 
 async function resolveDirectory(sessionId: string, workspaceId: string): Promise<{ directory: string } | { status: number; code: string; message: string }> {
@@ -108,7 +130,7 @@ export async function proxyMiddleware(c: Context, next: Next) {
     return next()
   }
 
-  const route = ROUTE_PATTERNS.find(
+  const route = ROUTE_REGISTRY.find(
     (r) => r.method === method && r.pattern.test(pathname),
   )
 

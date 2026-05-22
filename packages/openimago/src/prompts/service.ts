@@ -67,12 +67,11 @@ export class PromptsService {
 
     if (search) {
       const pattern = `%${search}%`
-      conditions.push(
-        or(
+      const searchCondition = or(
           like(promptTemplates.title, pattern),
           like(promptTemplates.content, pattern),
-        ),
-      )
+        )
+        if (searchCondition) conditions.push(searchCondition)
     }
 
     const where = and(...conditions)

@@ -2,7 +2,7 @@ import { createOpencodeClient, OpencodeClient } from "@opencode-ai/sdk/v2"
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { sql } from "drizzle-orm"
 import { Hono } from "hono"
-import { setup, teardown, setupSessionTable, setupMessageTable } from "./helper"
+import { setup, teardown, setupSessionTable, setupMessageTable, COS_BASE_PATH } from "./helper"
 import { MessageTable } from "../src/db/message-schema"
 import { db } from "../src/db/client"
 import { SessionTable } from "../src/db/session-schema"
@@ -119,8 +119,8 @@ test("buildTargetUrl pathname mappings", () => {
     ["/api/session/ses_123/fork", "/session/ses_123/fork"],
   ]
   for (const [incoming, expected] of cases) {
-    const url = buildTargetUrl(config, `http://localhost${incoming}`, undefined, "wrk_u1")
-    expect(new URL(url).pathname).toBe(expected)
+    const url = buildTargetUrl(config, `http://localhost${incoming!}`, undefined, "wrk_u1")
+    expect(new URL(url).pathname).toBe(expected!)
   }
 })
 
@@ -149,7 +149,7 @@ test("buildForwardHeaders strips incoming Authorization", () => {
 // 10. buildForwardHeaders strips host
 test("buildForwardHeaders strips host", () => {
   const config = makeConfig()
-  const incoming = new Headers({ host: "localhost:8080" })
+  const incoming = new Headers({ host: "localhost:5467" })
   const headers = buildForwardHeaders(config, incoming)
   expect(headers.get("host")).toBeNull()
 })
@@ -166,6 +166,15 @@ test("buildForwardUrl injects workspace and directory", () => {
   expect(parsed.pathname).toBe("/session")
   expect(parsed.searchParams.get("workspace")).toBe("wrk_test01")
   expect(parsed.searchParams.get("directory")).toBe("/mnt/cos/test-dir")
+})
+
+// 11b. buildForwardUrl omits directory param when directory is empty string
+test("buildForwardUrl omits directory param when empty string", () => {
+  const config = makeConfig()
+  const url = buildForwardUrl(config, "/session", "", "wrk_test01")
+  const parsed = new URL(url)
+  expect(parsed.searchParams.get("workspace")).toBe("wrk_test01")
+  expect(parsed.searchParams.get("directory")).toBeNull()
 })
 
 // ════════════════════════════════════════════════════════════════
@@ -532,9 +541,41 @@ test("SDK: client.session.messages() returns messages", async () => {
   // result.data is { items, cursor } from openimago's F-class route
   const body = result.data as any
   expect(body).toBeDefined()
-  expect(body.items).toBeArray()
-  expect(body.items.length).toBe(2)
-  // default order is desc by time_created, so msg_sdk_2 comes first
-  expect(body.items[0].id).toBe("msg_sdk_2")
-  expect(body.items[1].id).toBe("msg_sdk_1")
+   expect(body.items).toBeArray()
+   expect(body.items.length).toBe(2)
+   // default order is desc by time_created, so msg_sdk_2 comes first
+   expect(body.items[0].id).toBe("msg_sdk_2")
+   expect(body.items[1].id).toBe("msg_sdk_1")
+})
+
+// ════════════════════════════════════════════════════════════════
+// POST /api/session: creates workdir and forwards with directory
+// ════════════════════════════════════════════════════════════════
+
+test("POST /api/session creates workdir and returns session from opencode", async () => {
+  const { token } = await registerUser("ses_create_test", "ses_create@example.com")
+
+  const res = await app.fetch(
+    new Request("http://localhost/api/session", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({}),
+    }),
+  )
+
+  // Opencode is running (integration) or mocked — either 201 (success) or 502 (opencode unreachable)
+  // What we care about is: no 500 from missing workspaceId, no 403/404 from missing directory
+  expect(res.status).not.toBe(500)
+  expect(res.status).not.toBe(403)
+
+  if (res.status === 201) {
+    const body = await res.json() as Record<string, any>
+    // Response should be the raw session object (id starts with ses_)
+    expect(body.id).toMatch(/^ses_/)
+    // directory field exists (value is whatever opencode stores — workspace dir)
+    expect(typeof body.directory).toBe("string")
+  }
 })

@@ -476,7 +476,7 @@ OPENCODE_AUTH_PASSWORD=<set-me>
 # 可选
 OPENCODE_AUTH_USERNAME=opencode
 COS_BASE_PATH=/mnt/cos
-PORT=8080
+PORT=5467
 ```
 
 ## 9. 错误响应格式（所有端点统一）

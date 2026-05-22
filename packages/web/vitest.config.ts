@@ -23,4 +23,9 @@ export default defineConfig({
     setupFiles: ['./src/__tests__/setup.ts'],
     css: true,
   },
+  server: {
+    fs: {
+      allow: [resolve(__dirname, '..'), resolve(__dirname, '../..')],
+    },
+  },
 })

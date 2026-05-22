@@ -1,13 +1,43 @@
 import { useAuthStore } from 'src/stores/auth'
 
+function apiBaseUrl(): string {
+  const configured = import.meta.env.VITE_OPENIMAGO_API_URL
+  if (configured) return configured.replace(/\/+$/, '')
+
+  const loc = globalThis.location
+  const isLoopback = loc?.hostname === 'localhost' || loc?.hostname === '127.0.0.1'
+  if (isLoopback && loc.port !== '5467') {
+    return `${loc.protocol}//${loc.hostname}:5467`
+  }
+
+  return ''
+}
+
+function apiUrl(path: string): string {
+  return path.startsWith('http') ? path : `${apiBaseUrl()}${path}`
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const auth = useAuthStore()
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (auth.token) headers['Authorization'] = `Bearer ${auth.token}`
-  const res = await fetch(path, { ...options, headers })
+  const res = await fetch(apiUrl(path), { ...options, headers })
+  const contentType = res.headers.get('content-type') ?? ''
+  const isJson = contentType.includes('application/json')
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: res.statusText }))
+    const err = isJson
+      ? await res.json().catch(() => ({ message: res.statusText }))
+      : { message: await res.text().catch(() => res.statusText) || res.statusText }
+    if (res.status === 401) auth.clearAuth()
     throw new Error(err.message || err.error?.message || `HTTP ${res.status}`)
+  }
+  if (res.status === 204) return undefined as T
+  if (!isJson) {
+    const body = await res.text().catch(() => '')
+    const returnedHtml = /^\s*<!doctype html|<html[\s>]/i.test(body)
+    throw new Error(returnedHtml
+      ? 'API returned HTML. Check VITE_OPENIMAGO_API_URL or Quasar dev proxy: requests must hit the openimago backend, not the OpenCode UI.'
+      : `Expected JSON response from ${path}`)
   }
   return res.json()
 }
@@ -18,6 +48,64 @@ export interface SessionInfo {
   projectID?: string
   projectId?: string
   time?: { created?: number }
+  fullPath?: string
+  directory?: string
+  createdAt?: string
+  time_created?: number
+  time_updated?: number
+}
+
+interface WorkDirInfo {
+  id: string
+  projectId?: string | null
+  fullPath?: string
+  createdAt?: string
+}
+
+interface SessionListResponse {
+  workDirs?: WorkDirInfo[]
+  sessions?: SessionInfo[]
+  items?: SessionInfo[]
+}
+
+interface CreateSessionResponse {
+  session?: SessionInfo
+  workDir?: WorkDirInfo
+}
+
+interface MessageListResponse {
+  items?: Record<string, unknown>[]
+}
+
+function normalizeWorkDirSession(workDir: WorkDirInfo): SessionInfo {
+  const created = workDir.createdAt ? new Date(workDir.createdAt).getTime() : undefined
+  const session: SessionInfo = {
+    id: workDir.id,
+  }
+  if (workDir.projectId) session.projectId = workDir.projectId
+  if (workDir.fullPath) session.fullPath = workDir.fullPath
+  if (workDir.createdAt) session.createdAt = workDir.createdAt
+  if (created) session.time = { created }
+  return session
+}
+
+function normalizeSessionResponse(response: SessionListResponse | SessionInfo[]): SessionInfo[] {
+  if (Array.isArray(response)) return response
+  if (Array.isArray(response.items)) return response.items
+  if (Array.isArray(response.sessions)) return response.sessions
+  if (Array.isArray(response.workDirs)) return response.workDirs.map(normalizeWorkDirSession)
+  return []
+}
+
+function normalizeCreatedSession(response: CreateSessionResponse): SessionInfo {
+  if (response.session) return response.session
+  if (response.workDir) return normalizeWorkDirSession(response.workDir)
+  throw new Error('Invalid session response')
+}
+
+function normalizeMessageResponse(response: MessageListResponse | Record<string, unknown>[]): Record<string, unknown>[] {
+  if (Array.isArray(response)) return response
+  return response.items ?? []
 }
 
 export interface OpenimagoUser {
@@ -80,15 +168,17 @@ export const api = {
 
   // Sessions — { session, workDir }
   listSessions: () =>
-    request<SessionInfo[]>('/api/platform/sessions'),
+    request<SessionListResponse | SessionInfo[]>('/api/session').then(normalizeSessionResponse),
   createSession: (data: { projectId?: string }) =>
-    request<{ session: SessionInfo }>('/api/platform/sessions', { method: 'POST', body: JSON.stringify(data) }).then((r) => r.session),
+    request<CreateSessionResponse>('/api/platform/sessions', { method: 'POST', body: JSON.stringify(data) }).then(normalizeCreatedSession),
   sessionMessages: (id: string) =>
-    request<Record<string, unknown>[]>(`/api/session/${id}/message`),
+    request<MessageListResponse | Record<string, unknown>[]>(`/api/session/${id}/message`).then(normalizeMessageResponse),
   sendPrompt: (id: string, prompt: string) =>
     request<{ content?: string; message?: string }>(`/api/session/${id}/prompt`, { method: 'POST', body: JSON.stringify({ prompt }) }),
   abortSession: (id: string) =>
     request<void>(`/api/session/${id}/abort`, { method: 'POST' }),
+  deleteSession: (id: string) =>
+    request<void>(`/api/session/${id}`, { method: 'DELETE' }),
 
   // Assets — { items: [...], cursor } / { asset: {...} }
   listAssets: () =>

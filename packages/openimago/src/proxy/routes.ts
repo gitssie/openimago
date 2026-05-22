@@ -1,10 +1,15 @@
 import { Hono } from "hono"
 import { and, or, eq, like, isNull, gte, gt, lt, asc, desc } from "drizzle-orm"
 import { authMiddleware, proxyMiddleware } from "../server/middleware"
-import { proxyRequest, createProxyConfig } from "./service"
+import { proxyRequest, createProxyConfig, forward } from "./service"
 import { db } from "../db/client"
 import { SessionTable } from "../db/session-schema"
 import { MessageTable } from "../db/message-schema"
+import { workDirService } from "../workdir/service"
+
+// Hono's req.raw.body is ReadableStream<any>; cast to the stricter type expected by proxyRequest
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const rawBody = (c: any) => c.req.raw.body as ReadableStream<Uint8Array> | null
 
 export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }) {
   const config = createProxyConfig(configOverrides)
@@ -12,6 +17,46 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }) {
 
   routes.use("/*", authMiddleware)
   routes.use("/api/*", proxyMiddleware)
+
+  // ── Session: create (must be before /:id routes) ──────────────
+  routes.post("/api/session", async (c) => {
+    const userId = c.get("userId") as string
+    const workspaceId = c.get("workspaceId") as string | null
+
+    if (!workspaceId) {
+      return c.json({ error: { code: "CONFIGURATION_REQUIRED", message: "Workspace not configured" } }, 500)
+    }
+
+    // Parse optional projectId from request body
+    let body: Record<string, unknown> = {}
+    try { body = await c.req.json() } catch { /* empty body is fine */ }
+
+    // Create a working directory so opencode has a real filesystem location
+    const dirResult = await workDirService.createSessionDir({ userId, projectId: body.projectId as string | undefined })
+    if ("error" in dirResult) {
+      return c.json({ error: dirResult.error }, dirResult.status as any)
+    }
+
+    const directory = dirResult.workDir.fullPath
+
+    // Forward to opencode with real directory
+    const sessionRes = await forward(config, {
+      method: "POST",
+      path: "/session",
+      directory,
+      workspaceId,
+      body,
+    })
+
+    if (!sessionRes.ok) {
+      const err = await sessionRes.json().catch(() => ({}))
+      return c.json(err, sessionRes.status as any)
+    }
+
+    // Return raw session so the SDK can parse it directly
+    const session = await sessionRes.json()
+    return c.json(session, 201 as any)
+  })
 
   // ── F class: Session list (direct PG) ─────────────────────────
   routes.get("/api/session", async (c) => {
@@ -190,10 +235,45 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }) {
   })
 
   // ── C class: needs directory ───────────────────────────────────
-  routes.post("/api/session/:id/prompt", (c) => {
+  // /api/session/:id/prompt → opencode POST /session/:id/message
+  // Converts {prompt: string} → {parts: [{type:"text", text}]}
+  routes.post("/api/session/:id/prompt", async (c) => {
     const workspaceId = c.get("workspaceId") as string
     const directory = c.get("directory") as string
-    return proxyRequest(config, c.req.url, "POST", c.req.raw.headers, c.req.raw.body, directory, workspaceId)
+    const id = c.req.param("id")
+
+    let body: Record<string, unknown>
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ error: { code: "BAD_REQUEST", message: "Invalid JSON body" } }, 400)
+    }
+
+    const prompt = typeof body.prompt === "string" ? body.prompt : ""
+    const messageBody = JSON.stringify({ parts: [{ type: "text", text: prompt }] })
+
+    // Build target URL: /session/:id/message with workspace/directory params
+    const targetUrl = new URL(`/session/${id}/message`, config.opencodeUrl)
+    targetUrl.searchParams.set("workspace", workspaceId)
+    if (directory) targetUrl.searchParams.set("directory", directory)
+
+    const headers = new Headers()
+    headers.set("content-type", "application/json")
+    headers.set("authorization", `Basic ${config.basicAuth}`)
+
+    try {
+      const response = await fetch(targetUrl.toString(), {
+        method: "POST",
+        headers,
+        body: messageBody,
+      })
+      return new Response(response.body, {
+        status: response.status,
+        headers: response.headers,
+      })
+    } catch {
+      return c.json({ error: { code: "OPENCODE_UNREACHABLE", message: "OpenCode service unavailable" } }, 502)
+    }
   })
 
   routes.post("/api/session/:id/abort", (c) => {
@@ -205,13 +285,13 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }) {
   routes.post("/api/session/:id/fork", (c) => {
     const workspaceId = c.get("workspaceId") as string
     const directory = c.get("directory") as string
-    return proxyRequest(config, c.req.url, "POST", c.req.raw.headers, c.req.raw.body, directory, workspaceId)
+    return proxyRequest(config, c.req.url, "POST", c.req.raw.headers, rawBody(c), directory, workspaceId)
   })
 
   routes.post("/api/session/:id/compact", (c) => {
     const workspaceId = c.get("workspaceId") as string
     const directory = c.get("directory") as string
-    return proxyRequest(config, c.req.url, "POST", c.req.raw.headers, c.req.raw.body, directory, workspaceId)
+    return proxyRequest(config, c.req.url, "POST", c.req.raw.headers, rawBody(c), directory, workspaceId)
   })
 
   routes.get("/api/session/:id/context", (c) => {
@@ -228,7 +308,7 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }) {
 
   routes.patch("/api/session/:id", (c) => {
     const workspaceId = c.get("workspaceId") as string
-    return proxyRequest(config, c.req.url, "PATCH", c.req.raw.headers, c.req.raw.body, undefined, workspaceId)
+    return proxyRequest(config, c.req.url, "PATCH", c.req.raw.headers, rawBody(c), undefined, workspaceId)
   })
 
   routes.delete("/api/session/:id", (c) => {
@@ -236,10 +316,88 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }) {
     return proxyRequest(config, c.req.url, "DELETE", c.req.raw.headers, null, undefined, workspaceId)
   })
 
+  // ── Session: prompt_async (SDK primary send path) ─────────────
+  routes.post("/api/session/:id/prompt_async", (c) => {
+    const workspaceId = c.get("workspaceId") as string
+    const directory = c.get("directory") as string
+    return proxyRequest(config, c.req.url, "POST", c.req.raw.headers, rawBody(c), directory, workspaceId)
+  })
+
+  // ── Session: slash command ─────────────────────────────────────
+  routes.post("/api/session/:id/command", (c) => {
+    const workspaceId = c.get("workspaceId") as string
+    const directory = c.get("directory") as string
+    return proxyRequest(config, c.req.url, "POST", c.req.raw.headers, rawBody(c), directory, workspaceId)
+  })
+
+  // ── Session: revert / unrevert ────────────────────────────────
+  routes.post("/api/session/:id/revert", (c) => {
+    const workspaceId = c.get("workspaceId") as string
+    const directory = c.get("directory") as string
+    return proxyRequest(config, c.req.url, "POST", c.req.raw.headers, rawBody(c), directory, workspaceId)
+  })
+
+  routes.post("/api/session/:id/unrevert", (c) => {
+    const workspaceId = c.get("workspaceId") as string
+    return proxyRequest(config, c.req.url, "POST", c.req.raw.headers, null, undefined, workspaceId)
+  })
+
+  // ── Session: summarize (compact) ──────────────────────────────
+  routes.post("/api/session/:id/summarize", (c) => {
+    const workspaceId = c.get("workspaceId") as string
+    const directory = c.get("directory") as string
+    return proxyRequest(config, c.req.url, "POST", c.req.raw.headers, rawBody(c), directory, workspaceId)
+  })
+
+  // ── Session: todo list ────────────────────────────────────────
+  routes.get("/api/session/:id/todo", (c) => {
+    const workspaceId = c.get("workspaceId") as string
+    const directory = c.get("directory") as string
+    return proxyRequest(config, c.req.url, "GET", c.req.raw.headers, null, directory, workspaceId)
+  })
+
   // ── E class: SSE ──────────────────────────────────────────────
   routes.get("/api/event", (c) => {
     const workspaceId = c.get("workspaceId") as string
     return proxyRequest(config, c.req.url, "GET", c.req.raw.headers, null, undefined, workspaceId)
+  })
+
+  // ── Command / Agent / Question / Permission ───────────────────
+  routes.get("/api/command", (c) => {
+    const workspaceId = c.get("workspaceId") as string
+    const directory = c.get("directory") as string
+    return proxyRequest(config, c.req.url, "GET", c.req.raw.headers, null, directory, workspaceId)
+  })
+
+  routes.get("/api/agent", (c) => {
+    const workspaceId = c.get("workspaceId") as string
+    const directory = c.get("directory") as string
+    return proxyRequest(config, c.req.url, "GET", c.req.raw.headers, null, directory, workspaceId)
+  })
+
+  routes.get("/api/question", (c) => {
+    const workspaceId = c.get("workspaceId") as string
+    return proxyRequest(config, c.req.url, "GET", c.req.raw.headers, null, undefined, workspaceId)
+  })
+
+  routes.post("/api/question/:requestId/reply", (c) => {
+    const workspaceId = c.get("workspaceId") as string
+    return proxyRequest(config, c.req.url, "POST", c.req.raw.headers, rawBody(c), undefined, workspaceId)
+  })
+
+  routes.post("/api/question/:requestId/reject", (c) => {
+    const workspaceId = c.get("workspaceId") as string
+    return proxyRequest(config, c.req.url, "POST", c.req.raw.headers, null, undefined, workspaceId)
+  })
+
+  routes.get("/api/permission", (c) => {
+    const workspaceId = c.get("workspaceId") as string
+    return proxyRequest(config, c.req.url, "GET", c.req.raw.headers, null, undefined, workspaceId)
+  })
+
+  routes.post("/api/permission/:requestId/reply", (c) => {
+    const workspaceId = c.get("workspaceId") as string
+    return proxyRequest(config, c.req.url, "POST", c.req.raw.headers, rawBody(c), undefined, workspaceId)
   })
 
   return routes

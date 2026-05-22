@@ -6,6 +6,7 @@ import { authRoutes } from "../src/auth/routes"
 import { projectRoutes } from "../src/project/routes"
 import { workDirRoutes } from "../src/workdir/routes"
 import { stat } from "node:fs/promises"
+import { signJwt } from "../src/auth/jwt"
 
 let app: Hono
 
@@ -152,4 +153,23 @@ test("invalid projectId returns 404", async () => {
     }),
   )
   expect(res.status).toBe(404)
+})
+
+test("stale token with missing user returns 401 before creating work dir", async () => {
+  const token = await signJwt({ userId: "usr_missing", role: "user" })
+
+  const res = await app.fetch(
+    new Request("http://localhost/api/platform/sessions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({}),
+    }),
+  )
+
+  expect(res.status).toBe(401)
+  const body = await res.json() as Record<string, any>
+  expect(body.error.code).toBe("UNAUTHORIZED")
 })

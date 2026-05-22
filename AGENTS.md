@@ -99,6 +99,32 @@ For more details, see README.md and docs/QUICKSTART.md.
 
 <!-- END BEADS INTEGRATION -->
 
+## CodeGraph — Semantic Code Search
+
+This project has **CodeGraph** indexing enabled (115 files indexed). The LLM (yourself) **MUST** use these tools for ALL code exploration instead of falling back to grep/read/glob:
+
+| Tool | Purpose | When to Use |
+|------|---------|-------------|
+| `codegraph_context(task)` | **Primary entry point** — describes task in natural language, returns relevant symbols + code + call graph | FIRST call for any "how does X work", architecture, feature, or bug |
+| `codegraph_search(query, kind)` | Quick symbol lookup by name | Find a function/class/component by name |
+| `codegraph_node(symbol)` | Detailed info on one symbol (signature, doc, source) | Deep-dive into a specific symbol |
+| `codegraph_explore(query)` | Source of multiple related symbols in one call | After context(), when you need actual code of several symbols |
+| `codegraph_callers(symbol)` | Find who calls this symbol | Impact analysis, understanding usage |
+| `codegraph_callees(symbol)` | Find what this symbol calls | Dependency analysis |
+| `codegraph_impact(symbol, depth)` | Analyze change impact radius | Before modifying code |
+| `codegraph_files(path)` | Get project file tree (faster than Glob) | Project structure exploration |
+| `codegraph_status()` | Index statistics | Check what's indexed |
+
+### Workflow
+
+```
+codegraph_context("描述任务/问题")   // 1 次调用获取全景
+  → 如需深挖: codegraph_node() / codegraph_explore()
+  → 如需改代码: codegraph_impact() 看影响范围
+```
+
+**FORBIDDEN:** Starting code exploration with grep/read/glob when codegraph tools can answer the question faster.
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.

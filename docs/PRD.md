@@ -316,7 +316,7 @@ docker-compose.yml:
         - cos_data:/mnt/cos
     platform:
       build: ./platform
-      ports: ["8080:8080"]
+      ports: ["5467:5467"]
       environment:
         DATABASE_URL: postgres://...
         OPENCODE_URL: http://opencode:3000
@@ -723,7 +723,7 @@ Every Platform endpoint defined as request/response schema. A coder agent can us
 
 ### Conventions
 
-- Base URL: `http://platform:8080`
+- Base URL: `http://platform:5467`
 - Auth header: `Authorization: Bearer <jwt>`
 - Error response shape (all endpoints):
   ```json
@@ -1135,7 +1135,7 @@ OPENCODE_AUTH_USERNAME=opencode      # default
 OPENCODE_AUTH_PASSWORD=<set-me>
 
 # Optional
-PORT=8080                            # default
+PORT=5467                            # default
 HOST=0.0.0.0                         # default
 COS_BASE_PATH=/mnt/cos               # default
 LOG_LEVEL=info                       # debug | info | warn | error

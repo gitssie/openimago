@@ -55,6 +55,9 @@ export function buildForwardHeaders(config: ProxyConfig, incomingHeaders: Header
   const headers = new Headers(incomingHeaders)
   headers.delete("host")
   headers.delete("authorization")
+  // Prevent opencode from returning compressed bodies — the proxy decompresses
+  // internally and re-streams plain bytes, so Content-Encoding would mismatch.
+  headers.delete("accept-encoding")
   headers.set("Authorization", `Basic ${config.basicAuth}`)
   return headers
 }
@@ -68,7 +71,7 @@ export function buildForwardUrl(config: ProxyConfig, path: string, directory: st
   const targetUrl = new URL(path, config.opencodeUrl)
   const params = new URLSearchParams()
   params.set("workspace", workspaceId)
-  params.set("directory", directory)
+  if (directory) params.set("directory", directory)
   targetUrl.search = params.toString()
   return targetUrl.toString()
 }
@@ -115,9 +118,15 @@ export async function proxyRequest(
       body: method !== "GET" && method !== "HEAD" ? body : undefined,
     })
 
+    const responseHeaders = new Headers(response.headers)
+    // Remove content-encoding: the Bun/Node fetch already decompresses the body,
+    // forwarding the header would cause a double-decompress in the browser.
+    responseHeaders.delete("content-encoding")
+    responseHeaders.delete("transfer-encoding")
+
     return new Response(response.body, {
       status: response.status,
-      headers: response.headers,
+      headers: responseHeaders,
     })
   } catch {
     return new Response(

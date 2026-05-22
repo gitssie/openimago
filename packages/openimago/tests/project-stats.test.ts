@@ -147,7 +147,7 @@ test("GET /projects/:id/stats excludes archived sessions", async () => {
   const directory = project.fullPath
 
   await insertSession(directory, { tokens_input: 1000, cost: 0.05 })
-  await insertSession(directory, { tokens_input: 2000, cost: 0.1, time_archived: BigInt(Date.now()) })
+  await insertSession(directory, { tokens_input: 2000, cost: 0.1, time_archived: Date.now() })
 
   const res = await app.fetch(
     new Request(`http://localhost/api/platform/projects/${projId}/stats`, {

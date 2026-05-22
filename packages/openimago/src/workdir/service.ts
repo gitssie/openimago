@@ -6,12 +6,28 @@ import { dirId } from "../utils/ids"
 
 const COS_BASE_PATH = process.env.COS_BASE_PATH ?? "/mnt/cos"
 
+export interface FileSystem {
+  mkdir(path: string): Promise<void>
+}
+
+const realFs: FileSystem = {
+  mkdir: async (path) => { await mkdir(path, { recursive: true }) },
+}
+
 export interface CreateSessionDirInput {
   userId: string
   projectId?: string
 }
 
 export class WorkDirService {
+  private readonly basePath: string
+  private readonly fs: FileSystem
+
+  constructor(basePath = COS_BASE_PATH, fs: FileSystem = realFs) {
+    this.basePath = basePath
+    this.fs = fs
+  }
+
   async createSessionDir(input: CreateSessionDirInput) {
     const now = new Date()
 
@@ -56,9 +72,9 @@ export class WorkDirService {
     }
 
     const id = dirId()
-    const fullPath = `${COS_BASE_PATH}/${id}`
+    const fullPath = `${this.basePath}/${id}`
 
-    await mkdir(fullPath, { recursive: true })
+    await this.fs.mkdir(fullPath)
 
     const workDir = {
       id,

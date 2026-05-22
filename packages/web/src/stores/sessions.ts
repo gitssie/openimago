@@ -17,5 +17,10 @@ export const useSessionsStore = defineStore('sessions', () => {
     return s
   }
 
-  return { sessions, loading, fetchAll, create }
+  async function remove(id: string) {
+    await api.deleteSession(id)
+    sessions.value = sessions.value.filter((session) => session.id !== id)
+  }
+
+  return { sessions, loading, fetchAll, create, remove }
 })

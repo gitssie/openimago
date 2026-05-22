@@ -23,8 +23,8 @@ describe('AuthPage', () => {
 
   it('renders login form with email and password inputs', () => {
     const wrapper = mountAuth()
-    expect(wrapper.text()).toContain('邮箱')
-    expect(wrapper.text()).toContain('密码')
+    expect(wrapper.text()).toContain('Email address')
+    expect(wrapper.text()).toContain('Password')
   })
 
   it('renders OAuth section', () => {
@@ -43,6 +43,6 @@ describe('AuthPage', () => {
     const tabs = wrapper.findAll('.q-tab')
     expect(tabs.length).toBe(2)
     if (tabs[1]) await tabs[1].trigger('click')
-    expect(wrapper.text()).toContain('用户名')
+    expect(wrapper.text()).toContain('Username')
   })
 })

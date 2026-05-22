@@ -73,7 +73,7 @@ bun test --cwd packages/openimago
 
 Vue 3 + Vite + Quasar CLI SPA in `packages/web/`.
 
-- Dev: Vite dev server proxies `/api` → Hono backend at `http://localhost:8080`
+- Dev: Vite dev server proxies `/api` → Hono backend at `http://localhost:5467`
 - Prod: `bun run build` in packages/web/ → Hono serves static files from dist/
 
 ## Backend
