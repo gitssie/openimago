@@ -9,9 +9,6 @@ import { Hono } from "hono"
 import { setup, teardown } from "./helper"
 import { WorkDirService } from "../src/workdir/service"
 import { authRoutes } from "../src/auth/routes"
-import { db } from "../src/db/client"
-import { workDirs } from "../src/db/schema"
-import { eq } from "drizzle-orm"
 
 const FAKE_FS_BASE = "/fake/cos"
 
@@ -38,7 +35,6 @@ beforeAll(async () => {
 }, 20000)
 
 afterAll(async () => {
-  if (userId) await db.delete(workDirs).where(eq(workDirs.userId, userId))
   await teardown()
 })
 
@@ -53,17 +49,12 @@ describe("WorkDirService with injected FileSystem", () => {
     expect("error" in result).toBe(false)
     if ("error" in result) return
 
-    const { workDir } = result
-    expect(workDir.id).toMatch(/^dir_/)
-    expect(workDir.userId).toBe(userId)
-    expect(workDir.projectId).toBeNull()
-    expect(workDir.type).toBe("session")
-    expect(workDir.fullPath).toBe(`${FAKE_FS_BASE}/${workDir.id}`)
-    expect(workDir.status).toBe("active")
+    expect(result.directory).toMatch(new RegExp(`^${FAKE_FS_BASE}/[a-z0-9]+$`))
+    expect(result.status).toBe(201)
 
     // mkdir was called exactly once with the correct path
     expect(mkdirCalls).toHaveLength(1)
-    expect(mkdirCalls[0]).toBe(`${FAKE_FS_BASE}/${workDir.id}`)
+    expect(mkdirCalls[0]).toBe(result.directory)
   })
 
   test("createSessionDir with missing projectId returns 404 — no mkdir called", async () => {

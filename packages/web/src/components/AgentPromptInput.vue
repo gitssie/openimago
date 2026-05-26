@@ -39,80 +39,6 @@
       />
 
       <div class="input-actions row items-center no-wrap q-gutter-xs">
-        <template v-if="selectedDatasets.length > 0">
-          <q-chip
-            v-for="id in selectedDatasets"
-            :key="id"
-            dense
-            removable
-            color="primary"
-            text-color="white"
-            icon="folder_open"
-            size="sm"
-            class="dataset-chip"
-            @remove="emit('toggle-dataset', id)"
-          >
-            {{ datasetLabelMap.get(id) ?? id }}
-          </q-chip>
-          <q-btn round flat dense icon="add" size="xs" color="grey-5" class="dataset-add-btn">
-            <q-menu anchor="top left" self="bottom left" :offset="[0, 4]">
-              <q-list style="min-width: 200px">
-                <q-item-label header class="text-caption text-grey-6 q-pt-sm q-pb-xs">{{ t('agent.addDataset') }}</q-item-label>
-                <q-item
-                  v-for="opt in unselectedDatasetOptions"
-                  :key="opt.value"
-                  clickable
-                  v-close-popup
-                  @click="emit('toggle-dataset', opt.value)"
-                >
-                  <q-item-section avatar>
-                    <q-icon name="folder_open" size="14px" color="grey-6" />
-                  </q-item-section>
-                  <q-item-section>
-                    <q-item-label class="text-caption">{{ opt.label }}</q-item-label>
-                  </q-item-section>
-                </q-item>
-                <q-item v-if="unselectedDatasetOptions.length === 0">
-                  <q-item-section class="text-grey text-caption">{{ t('agent.allAdded') }}</q-item-section>
-                </q-item>
-                <q-separator />
-                <q-item clickable v-close-popup @click="emit('clear-datasets')">
-                  <q-item-section class="text-caption text-negative">{{ t('agent.clearAll') }}</q-item-section>
-                </q-item>
-              </q-list>
-            </q-menu>
-          </q-btn>
-        </template>
-
-        <template v-else>
-          <q-btn flat dense no-caps size="sm" class="dataset-empty-btn q-px-xs">
-            <q-icon name="folder_open" size="14px" color="grey-6" class="q-mr-xs" />
-            <span class="text-grey-6 dataset-empty-label">{{ t('common.allDatasets') }}</span>
-            <q-menu anchor="top left" self="bottom left" :offset="[0, 4]">
-              <q-list style="min-width: 200px">
-                <q-item-label header class="text-caption text-grey-6 q-pt-sm q-pb-xs">{{ t('agent.filterByDataset') }}</q-item-label>
-                <q-item
-                  v-for="opt in datasetOptions"
-                  :key="opt.value"
-                  clickable
-                  v-close-popup
-                  @click="emit('toggle-dataset', opt.value)"
-                >
-                  <q-item-section avatar>
-                    <q-icon name="folder_open" size="14px" color="grey-6" />
-                  </q-item-section>
-                  <q-item-section>
-                    <q-item-label class="text-caption">{{ opt.label }}</q-item-label>
-                  </q-item-section>
-                </q-item>
-                <q-item v-if="datasetOptions.length === 0">
-                  <q-item-section class="text-grey text-caption">{{ t('common.noDatasets') }}</q-item-section>
-                </q-item>
-              </q-list>
-            </q-menu>
-          </q-btn>
-        </template>
-
         <q-btn
           flat
           dense
@@ -160,15 +86,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 import { QInput } from 'quasar';
 import { useI18n } from 'vue-i18n';
 import type { PendingAttachment } from 'src/composables/useAgentSession';
-
-type DatasetOption = {
-  value: string;
-  label: string;
-};
 
 const props = defineProps<{
   draft: string;
@@ -176,16 +97,12 @@ const props = defineProps<{
   connected: boolean;
   disabled: boolean;
   attachments: PendingAttachment[];
-  selectedDatasets: string[];
-  datasetOptions: DatasetOption[];
 }>();
 
 const emit = defineEmits<{
   (e: 'update:draft', value: string): void;
   (e: 'submit', value: string): void;
   (e: 'abort'): void;
-  (e: 'toggle-dataset', value: string): void;
-  (e: 'clear-datasets'): void;
   (e: 'remove-attachment', value: string): void;
   (e: 'attach-files', files: File[]): void;
 }>();
@@ -194,9 +111,6 @@ const { t } = useI18n();
 const inputRef = ref<QInput | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const localDraft = ref(props.draft);
-
-const datasetLabelMap = computed(() => new Map(props.datasetOptions.map((option) => [option.value, option.label])));
-const unselectedDatasetOptions = computed(() => props.datasetOptions.filter((option) => !props.selectedDatasets.includes(option.value)));
 
 watch(() => props.draft, (value) => {
   if (value !== localDraft.value) {
@@ -286,35 +200,5 @@ defineExpose({
 
 .input-actions {
   min-height: 36px;
-}
-
-.dataset-chip {
-  max-width: 160px;
-
-  :deep(.q-chip__content) {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 11px;
-  }
-}
-
-.dataset-add-btn {
-  width: 20px;
-  height: 20px;
-  min-width: unset;
-}
-
-.dataset-empty-btn {
-  border-radius: 8px;
-  padding: 2px 6px;
-
-  &:hover {
-    background: rgba(0, 0, 0, 0.04);
-  }
-}
-
-.dataset-empty-label {
-  font-size: 12px;
 }
 </style>

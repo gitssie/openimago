@@ -9,14 +9,14 @@ import { SessionState } from 'src/composables/session-state'
 import type { Event } from '@opencode-ai/sdk/v2'
 
 function makeConnectedEvent(): Event {
-  return { type: 'server.connected', properties: {} } as any
+  return { type: 'server.connected', properties: {} } as unknown as Event
 }
 
 function makeSessionStatusEvent(sessionID: string, statusType: 'idle' | 'busy' | 'retry'): Event {
   return {
     type: 'session.status',
     properties: { sessionID, status: { type: statusType } },
-  } as any
+  } as unknown as Event
 }
 
 function makeMessageUpdatedEvent(sessionID: string, messageId: string): Event {
@@ -31,7 +31,7 @@ function makeMessageUpdatedEvent(sessionID: string, messageId: string): Event {
         time: { created: Date.now(), updated: Date.now() },
       },
     },
-  } as any
+  } as unknown as Event
 }
 
 describe('SessionState', () => {

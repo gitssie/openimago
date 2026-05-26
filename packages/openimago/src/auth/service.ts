@@ -3,8 +3,8 @@ import { signJwt, verifyJwt } from "./jwt"
 import { userId, authId } from "../utils/ids"
 import { db } from "../db/client"
 import { users, userAuths } from "../db/schema"
-import { WorkspaceTable } from "../db/workspace-schema"
 import { generateWorkspaceId } from "./workspace-id"
+import { logger } from "../server/logger"
 
 export interface RegisterInput {
   username: string
@@ -42,6 +42,7 @@ export class AuthService {
   async register(input: RegisterInput) {
     const validationError = validateRegister(input)
     if (validationError) {
+      logger.warn({ username: input.username, email: input.email }, `auth.register: validation failed — ${validationError}`)
       return { error: { code: "VALIDATION_ERROR", message: validationError }, status: 400 } as const
     }
 
@@ -51,6 +52,7 @@ export class AuthService {
       .where(eq(users.email, input.email.toLowerCase()))
 
     if (existing.length > 0) {
+      logger.warn({ email: input.email }, "auth.register: email already registered")
       return { error: { code: "CONFLICT", message: "Email already registered" }, status: 409 } as const
     }
 
@@ -80,18 +82,8 @@ export class AuthService {
       createdAt: now,
     })
 
-    // Create workspace record in OpenCode's workspace table.
-    // Use empty directory — actual session directories are passed via ?directory= query param.
-    await db.insert(WorkspaceTable).values({
-      id: workspaceId,
-      type: "worktree",
-      name: "",
-      directory: "",
-      project_id: "global",
-      time_used: Date.now(),
-    })
-
     const token = await signJwt({ userId: id, role: "user" })
+    logger.info({ userId: id, username: input.username, email: input.email }, "auth.register: user created")
     return { user, token, status: 201 } as const
   }
 
@@ -104,6 +96,7 @@ export class AuthService {
       .where(eq(users.email, email))
 
     if (userRows.length === 0) {
+      logger.warn({ email }, "auth.login: invalid credentials (user not found)")
       return { error: { code: "INVALID_CREDENTIALS", message: "Invalid email or password" }, status: 401 } as const
     }
 
@@ -120,16 +113,19 @@ export class AuthService {
       )
 
     if (authRows.length === 0 || !authRows[0]!.passwordHash) {
+      logger.warn({ userId: user.id, email }, "auth.login: no password auth found")
       return { error: { code: "INVALID_CREDENTIALS", message: "Invalid email or password" }, status: 401 } as const
     }
 
     const valid = await Bun.password.verify(input.password, authRows[0]!.passwordHash)
 
     if (!valid) {
+      logger.warn({ userId: user.id, email }, "auth.login: wrong password")
       return { error: { code: "INVALID_CREDENTIALS", message: "Invalid email or password" }, status: 401 } as const
     }
 
     const token = await signJwt({ userId: user.id, role: user.role })
+    logger.info({ userId: user.id, email }, "auth.login: success")
     return { user, token, status: 200 } as const
   }
 

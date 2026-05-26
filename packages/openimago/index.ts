@@ -1,6 +1,7 @@
 import { createApp } from "./src/server/app"
 import { migrate } from "./src/db/migrate"
 import { existsSync } from "fs"
+import { logger } from "./src/server/logger"
 
 const FRONTEND_DIST = "../web/dist"
 
@@ -57,4 +58,4 @@ export default {
   fetch: app.fetch,
 }
 
-console.log(`openimago listening on http://${host}:${port}`)
+logger.info({ host, port, frontendServed: distExists }, "openimago server started")

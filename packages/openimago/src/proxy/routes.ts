@@ -1,17 +1,44 @@
 import { Hono } from "hono"
 import { and, or, eq, like, isNull, gte, gt, lt, asc, desc } from "drizzle-orm"
+import { mkdir } from "node:fs/promises"
 import { authMiddleware, proxyMiddleware } from "../server/middleware"
 import { proxyRequest, createProxyConfig, forward } from "./service"
 import { db } from "../db/client"
 import { SessionTable } from "../db/session-schema"
 import { MessageTable } from "../db/message-schema"
-import { workDirService } from "../workdir/service"
+import { workspaceRefs, projects } from "../db/schema"
+import { WorkspaceTable } from "../db/workspace-schema"
+import { logger } from "../server/logger"
+import { Effect, Stream } from "effect"
+import type { BusEvent } from "../event/types"
+
+/**
+ * Legacy callback (kept for compatibility).
+ * The new handler uses EventSubscription instead.
+ */
+export type GetEventStream = (userId: string) => Promise<Stream.Stream<BusEvent>>
+
+/** Returned by subscribe — stream + cleanup function */
+export interface EventSubscription {
+  stream: Stream.Stream<BusEvent>
+  unsubscribe: () => void
+}
+
+/** Subscribe to events for a user. Returns a stream + promise-returning cleanup. */
+export type SubscribeFn = (userId: string) => Promise<EventSubscription>
+
+/** Encode a single value as an SSE data line */
+function sseEncode(data: unknown): string {
+  return `data: ${JSON.stringify(data)}\n\n`
+}
+
+const COS_BASE_PATH = process.env.COS_BASE_PATH ?? "/mnt/cos"
 
 // Hono's req.raw.body is ReadableStream<any>; cast to the stricter type expected by proxyRequest
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const rawBody = (c: any) => c.req.raw.body as ReadableStream<Uint8Array> | null
 
-export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }) {
+export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, subscribe?: SubscribeFn) {
   const config = createProxyConfig(configOverrides)
   const routes = new Hono()
 
@@ -31,13 +58,61 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }) {
     let body: Record<string, unknown> = {}
     try { body = await c.req.json() } catch { /* empty body is fine */ }
 
-    // Create a working directory so opencode has a real filesystem location
-    const dirResult = await workDirService.createSessionDir({ userId, projectId: body.projectId as string | undefined })
-    if ("error" in dirResult) {
-      return c.json({ error: dirResult.error }, dirResult.status as any)
+    // Resolve working directory:
+    // - Project-based sessions reuse the project's persistent directory.
+    // - Standalone sessions get /{COS_BASE_PATH}/{workspaceId} (one directory per workspace).
+    const projectId = body.projectId as string | undefined
+    let directory: string
+
+    if (projectId) {
+      const [project] = await db
+        .select({ directory: projects.directory })
+        .from(projects)
+        .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
+        .limit(1)
+      if (!project) {
+        return c.json({ error: { code: "NOT_FOUND", message: "Project not found" } }, 404)
+      }
+      directory = project.directory
+    } else {
+      directory = `${COS_BASE_PATH}/${workspaceId}`
+      await mkdir(directory, { recursive: true })
     }
 
-    const directory = dirResult.workDir.fullPath
+    logger.info({ userId, directory, projectId }, "proxy: creating opencode session")
+
+    // Ensure the opencode workspace has the correct directory.
+    // Opencode's planRequest() uses workspace.directory for local workspace routing;
+    // ?directory= query param and x-opencode-directory header are ignored when a
+    // workspace exists. We must set workspace.directory before session creation
+    // so that SessionTable.directory is stored with the correct path.
+    await db
+      .insert(WorkspaceTable)
+      .values({
+        id: workspaceId,
+        type: "worktree",
+        name: "default",
+        directory,
+        project_id: "global",
+        time_used: Date.now(),
+      })
+      .onConflictDoUpdate({
+        target: WorkspaceTable.id,
+        set: { directory, type: "worktree" },
+      })
+
+    // Record the workspace → user/project mapping.
+    await db
+      .insert(workspaceRefs)
+      .values({
+        workspaceId,
+        userId,
+        projectId: (body.projectId as string) ?? null,
+      })
+      .onConflictDoUpdate({
+        target: workspaceRefs.workspaceId,
+        set: { projectId: (body.projectId as string) ?? null },
+      })
 
     // Forward to opencode with real directory
     const sessionRes = await forward(config, {
@@ -84,7 +159,9 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }) {
       return c.json({ items: [], cursor: { previous: undefined, next: undefined } })
     }
 
-    const conditions: any[] = [eq(SessionTable.workspace_id, workspaceId)]
+    const conditions: any[] = [
+      eq(SessionTable.workspace_id, workspaceId),
+    ]
 
     if (filters.directory) conditions.push(eq(SessionTable.directory, filters.directory))
     if (filters.path) conditions.push(or(eq(SessionTable.path, filters.path), like(SessionTable.path, `${filters.path}/%`))!)
@@ -357,8 +434,73 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }) {
   })
 
   // ── E class: SSE ──────────────────────────────────────────────
-  routes.get("/api/event", (c) => {
+  routes.get("/api/event", async (c) => {
+    const userId = c.get("userId") as string | undefined
     const workspaceId = c.get("workspaceId") as string
+
+    // If the GlobalEventManager is running, use it for fan-out
+    if (subscribe && userId) {
+      logger.info({ userId }, "/api/event: connecting via GlobalEventManager")
+
+      const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>()
+      const writer = writable.getWriter()
+      const encoder = new TextEncoder()
+
+      // Subscribe: creates a per-user PubSub, returns stream + cleanup
+      const subscription = await subscribe(userId)
+      const { stream: busStream, unsubscribe } = subscription
+
+      // Build SSE stream: connected event + bus events + heartbeat
+      const heartbeat = Stream.repeatEffect(
+        Effect.gen(function* () {
+          yield* Effect.sleep("10 seconds")
+          return { id: crypto.randomUUID(), type: "server.heartbeat", properties: {} }
+        }),
+      )
+
+      const sseStream = Stream.make({
+        id: crypto.randomUUID(),
+        type: "server.connected",
+        properties: {},
+      }).pipe(
+        Stream.concat(Stream.merge(busStream, heartbeat, { haltStrategy: "left" })),
+        Stream.map((data) => encoder.encode(sseEncode(data))),
+      )
+
+      // Run the stream, piping chunks to the writer
+      Effect.runFork(
+        sseStream.pipe(
+          Stream.runForEach((chunk) =>
+            Effect.tryPromise({
+              try: () => writer.write(chunk),
+              catch: () => new Error("write failed"),
+            }),
+          ),
+          Effect.ensuring(
+            Effect.sync(() => {
+              writer.close().catch(() => {})
+              unsubscribe()
+            }),
+          ),
+        ),
+      )
+
+      // Clean up on client disconnect
+      c.req.raw.signal.addEventListener("abort", () => {
+        unsubscribe()
+        writer.close().catch(() => {})
+      })
+
+      return c.body(readable, 200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache, no-transform",
+        "x-accel-buffering": "no",
+        "x-content-type-options": "nosniff",
+      })
+    }
+
+    // Legacy fallback: proxy directly to opencode /event (old behavior)
+    logger.warn({ workspaceId }, "/api/event: GlobalEventManager not available, falling back to proxy")
     return proxyRequest(config, c.req.url, "GET", c.req.raw.headers, null, undefined, workspaceId)
   })
 

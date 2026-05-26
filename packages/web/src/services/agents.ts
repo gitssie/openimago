@@ -156,9 +156,10 @@ export const AgentService = {
   async promptAsync(sessionId: string, parts: PromptPartInput[], options?: PromptOptions): Promise<void> {
     await opencodeClient.session.promptAsync({
       sessionID: sessionId,
+      // Hardcoded default model
+      model: options?.model ?? { providerID: "opencode", modelID: "deepseek-v4-flash-free" },
       ...(options?.messageID ? { messageID: options.messageID } : {}),
       parts,
-      ...(options?.model ? { model: options.model } : {}),
       ...(options?.variant ? { variant: options.variant } : {}),
       ...(options?.system ? { system: options.system } : {}),
       ...(options?.tools ? { tools: options.tools } : {}),
@@ -171,8 +172,9 @@ export const AgentService = {
       sessionID: sessionId,
       command,
       arguments: args,
+      // Hardcoded default model
+      model: options?.model ? `${options.model.providerID}/${options.model.modelID}` : "opencode/deepseek-v4-flash-free",
       ...(options?.parts?.length ? { parts: options.parts } : {}),
-      ...(options?.model ? { model: `${options.model.providerID}/${options.model.modelID}` } : {}),
       ...(options?.variant ? { variant: options.variant } : {}),
     });
   },

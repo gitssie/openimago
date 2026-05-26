@@ -27,21 +27,19 @@ export const projects = pgTable("projects", {
   userId: text("user_id").notNull().references(() => users.id),
   name: text("name").notNull(),
   description: text("description"),
-  fullPath: text("full_path").notNull().unique(),
+  directory: text("directory").notNull().unique(),
   status: text("status").notNull().default("active"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 })
 
-export const workDirs = pgTable("work_dirs", {
-  id: text("id").primaryKey(),
+// Links opencode's workspace to openimago's user/project.
+// The workspace itself lives in the shared `workspace` table (opencode-managed).
+export const workspaceRefs = pgTable("workspace_refs", {
+  workspaceId: text("workspace_id").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id),
   projectId: text("project_id").references(() => projects.id),
-  type: text("type").notNull(),
-  fullPath: text("full_path").notNull(),
-  status: text("status").notNull().default("active"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 })
 
 export const promptTemplates = pgTable("prompt_templates", {

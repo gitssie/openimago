@@ -3,6 +3,8 @@ export interface ProxyConfig {
   basicAuth: string
 }
 
+import { logger } from "../server/logger"
+
 export function createProxyConfig(opts?: { opencodeUrl?: string; authUsername?: string; authPassword?: string }): ProxyConfig {
   const opencodeUrl = opts?.opencodeUrl ?? process.env.OPENCODE_URL ?? "http://localhost:3000"
   const authUser = opts?.authUsername ?? process.env.OPENCODE_AUTH_USERNAME ?? "opencode"
@@ -49,16 +51,24 @@ export function buildTargetUrl(
 
 /**
  * Build the forward headers for a proxy request.
- * Strips host/authorization from incoming headers, injects Basic Auth.
+ * Strips host/authorization from incoming headers, injects Basic Auth and directory header.
+ * The x-opencode-directory header is the SDK-compatible way to pass directory to opencode
+ * for all request methods (query param alone is only reliable for GET/HEAD via SDK rewrite).
  */
-export function buildForwardHeaders(config: ProxyConfig, incomingHeaders: Headers): Headers {
+export function buildForwardHeaders(config: ProxyConfig, incomingHeaders: Headers, directory?: string): Headers {
   const headers = new Headers(incomingHeaders)
   headers.delete("host")
   headers.delete("authorization")
   // Prevent opencode from returning compressed bodies — the proxy decompresses
   // internally and re-streams plain bytes, so Content-Encoding would mismatch.
   headers.delete("accept-encoding")
+  // Strip any client-supplied directory header — only openimago may set this.
+  headers.delete("x-opencode-directory")
   headers.set("Authorization", `Basic ${config.basicAuth}`)
+  // Inject directory as x-opencode-directory header (SDK convention, encodeURIComponent-encoded).
+  // This ensures POST/PUT/PATCH requests also carry the directory, unlike ?directory= query param
+  // which the SDK only injects for GET/HEAD via its rewrite interceptor.
+  if (directory) headers.set("x-opencode-directory", directory)
   return headers
 }
 
@@ -81,17 +91,25 @@ export async function forward(config: ProxyConfig, input: ForwardInput): Promise
 
   const headers = new Headers()
   headers.set("Authorization", `Basic ${config.basicAuth}`)
+  // Tell opencode which directory to use for this session.
+  // The SDK uses x-opencode-directory header (encodeURIComponent-encoded) as the
+  // primary mechanism — query param alone is insufficient for POST requests.
+  headers.set("x-opencode-directory", input.directory)
   if (input.body !== undefined) {
     headers.set("content-type", "application/json")
   }
 
+  logger.info({ method: input.method, url, directory: input.directory, workspaceId: input.workspaceId }, "proxy.forward: sending request")
   try {
-    return await fetch(url, {
+    const res = await fetch(url, {
       method: input.method,
       headers,
       body: input.body !== undefined ? JSON.stringify(input.body) : undefined,
     })
+    logger.debug({ method: input.method, path: input.path, status: res.status }, "proxy.forward: received response")
+    return res
   } catch {
+    logger.error({ method: input.method, path: input.path }, "proxy.forward: opencode unreachable")
     return new Response(
       JSON.stringify({ error: { code: "OPENCODE_UNREACHABLE", message: "OpenCode service unavailable" } }),
       { status: 502, headers: { "content-type": "application/json" } },
@@ -109,8 +127,9 @@ export async function proxyRequest(
   workspaceId: string,
 ) {
   const targetUrl = buildTargetUrl(config, incomingUrl, directory, workspaceId)
-  const headers = buildForwardHeaders(config, incomingHeaders)
+  const headers = buildForwardHeaders(config, incomingHeaders, directory)
 
+  logger.info({ method, targetUrl, workspaceId, directory }, "proxy.proxyRequest: forwarding")
   try {
     const response = await fetch(targetUrl, {
       method,
@@ -124,11 +143,13 @@ export async function proxyRequest(
     responseHeaders.delete("content-encoding")
     responseHeaders.delete("transfer-encoding")
 
+    logger.debug({ method, targetUrl, status: response.status }, "proxy.proxyRequest: response received")
     return new Response(response.body, {
       status: response.status,
       headers: responseHeaders,
     })
   } catch {
+    logger.error({ method, targetUrl }, "proxy.proxyRequest: opencode unreachable")
     return new Response(
       JSON.stringify({ error: { code: "OPENCODE_UNREACHABLE", message: "OpenCode service unavailable" } }),
       { status: 502, headers: { "content-type": "application/json" } },

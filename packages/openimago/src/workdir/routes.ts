@@ -1,15 +1,17 @@
 import { Hono } from "hono"
+import { eq } from "drizzle-orm"
 import { authMiddleware } from "../server/middleware"
 import { workDirService } from "./service"
-import { createProxyConfig, forward } from "../proxy/service"
+import { db } from "../db/client"
+import { workspaceRefs, projects } from "../db/schema"
 
 export const workDirRoutes = new Hono()
 
 workDirRoutes.use("/*", authMiddleware)
 
+// POST /api/workdir — create a working directory (standalone, no session)
 workDirRoutes.post("/", async (c) => {
   const userId = c.get("userId") as string
-  const workspaceId = c.get("workspaceId") as string | null
   const body = await c.req.json()
   const result = await workDirService.createSessionDir({ userId, ...body })
 
@@ -17,37 +19,25 @@ workDirRoutes.post("/", async (c) => {
     return c.json({ error: result.error }, result.status as any)
   }
 
-  if (!workspaceId) {
-    return c.json({ error: { code: "CONFIGURATION_REQUIRED", message: "Workspace not configured" } }, 500)
-  }
-
-  const config = createProxyConfig()
-  const sessionRes = await forward(config, {
-    method: "POST",
-    path: "/session",
-    directory: result.workDir.fullPath,
-    workspaceId,
-    body,
-  })
-
-  if (!sessionRes.ok) {
-    const err = await sessionRes.json().catch(() => ({}))
-    return c.json(err, sessionRes.status as any)
-  }
-
-  const session = await sessionRes.json()
-  return c.json({ session, workDir: result.workDir }, 201 as any)
+  return c.json({ directory: result.directory }, result.status as any)
 })
 
+// GET /api/workdir — list workspace_refs for this user
 workDirRoutes.get("/", async (c) => {
   const userId = c.get("userId") as string
   const projectId = c.req.query("projectId")
-  const type = c.req.query("type")
-  const result = await workDirService.list({ userId, projectId, type })
 
-  if ("error" in result) {
-    return c.json({ error: result.error }, result.status as any)
-  }
+  const conditions = [eq(workspaceRefs.userId, userId)]
+  if (projectId) conditions.push(eq(workspaceRefs.projectId, projectId))
 
-  return c.json({ workDirs: result.workDirs })
+  const rows = await db
+    .select({
+      workspaceId: workspaceRefs.workspaceId,
+      projectId: workspaceRefs.projectId,
+      createdAt: workspaceRefs.createdAt,
+    })
+    .from(workspaceRefs)
+    .where(eq(workspaceRefs.userId, userId))
+
+  return c.json({ refs: rows })
 })

@@ -13,7 +13,6 @@ import type {
   Todo,
   QuestionRequest,
   PermissionRequest,
-  Part,
 } from '@opencode-ai/sdk/v2'
 import type { DisplayPart, SessionItem } from 'src/services/agents'
 
@@ -29,7 +28,7 @@ export class SessionState {
 
   // ── Active session ────────────────────────────────────────────────────────
   sessionId: string | null = null
-  sessionStatus: 'idle' | 'busy' | 'retry' = 'idle'
+  sessionStatus = 'idle' as 'idle' | 'busy' | 'retry'
   isLoading = false
 
   // ── Session list ──────────────────────────────────────────────────────────
@@ -59,7 +58,7 @@ export class SessionState {
       case 'session.status': {
         const props = event.properties
         if (props.sessionID !== this.sessionId) break
-        this.sessionStatus = props.status.type as 'idle' | 'busy' | 'retry'
+        this.sessionStatus = props.status.type
         this.isLoading = props.status.type === 'busy' || props.status.type === 'retry'
         break
       }
@@ -103,19 +102,20 @@ export class SessionState {
 
       case 'todo.updated': {
         if (event.properties.sessionID !== this.sessionId) break
-        this.sessionTodos = event.properties.todos as Todo[]
+        this.sessionTodos = event.properties.todos
         break
       }
 
+      // Runtime events not yet in the SDK type union — narrow via structural cast
       case 'permission.asked': {
-        const p = (event.properties as any).request as PermissionRequest
+        const p = (event as unknown as { properties: { request: PermissionRequest } }).properties.request
         if (p.sessionID !== this.sessionId) break
         this.pendingPermission = p
         break
       }
 
       case 'permission.replied': {
-        if (this.pendingPermission?.id === (event.properties as any).requestID) {
+        if (this.pendingPermission?.id === (event as { properties: { permissionID?: string } }).properties.permissionID) {
           this.pendingPermission = null
         }
         break
@@ -129,15 +129,17 @@ export class SessionState {
   // ── Internal cache helpers ────────────────────────────────────────────────
 
   _upsertCachedMessage(sessionID: string, info: UserMessage | AssistantMessage): void {
-    if (!this.sessionMessages[sessionID]) {
-      this.sessionMessages[sessionID] = []
+    let cache = this.sessionMessages[sessionID]
+    if (!cache) {
+      cache = []
+      this.sessionMessages[sessionID] = cache
     }
-    const cache = this.sessionMessages[sessionID]!
     const idx = cache.findIndex((m) => m.id === info.id)
     if (idx === -1) {
       cache.push({ id: info.id, info, parts: [] })
     } else {
-      cache[idx] = { id: info.id, info, parts: cache[idx]!.parts }
+      const existing = cache[idx]
+      if (existing) cache[idx] = { id: info.id, info, parts: existing.parts }
     }
   }
 
@@ -157,10 +159,11 @@ export class SessionState {
   }
 
   _upsertChildSession(parentId: string, item: SessionItem): void {
-    if (!this.childSessions[parentId]) {
-      this.childSessions[parentId] = []
+    let children = this.childSessions[parentId]
+    if (!children) {
+      children = []
+      this.childSessions[parentId] = children
     }
-    const children = this.childSessions[parentId]!
     const idx = children.findIndex((s) => s.id === item.id)
     if (idx === -1) {
       children.unshift(item)

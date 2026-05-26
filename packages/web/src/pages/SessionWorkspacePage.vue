@@ -37,7 +37,7 @@
                   v-for="s in sessionList"
                   :key="s.id"
                   clickable
-                  :active="s.id === sessionId"
+                  :active="isSessionActive(s)"
                   active-class="session-item--active"
                   class="session-item"
                   @click="handleSwitchSession(s.id)"
@@ -60,10 +60,25 @@
 
       <main class="chat-area">
         <header class="session-topbar">
-          <button class="session-heading" type="button">
-            {{ currentSessionLabel }}
-            <q-icon name="expand_more" size="18px" />
-          </button>
+          <div class="col min-width-0">
+            <div v-if="currentParentSession" class="text-caption text-grey-5 row items-center no-wrap breadcrumb-row">
+              <q-btn
+                flat
+                dense
+                no-caps
+                size="sm"
+                class="breadcrumb-parent-btn q-px-none"
+                color="cyan-4"
+                :label="getSessionLabel(currentParentSession)"
+                @click="handleSwitchSession(currentParentSession.id)"
+              />
+              <q-icon name="chevron_right" size="16px" color="grey-5" />
+            </div>
+            <button class="session-heading" type="button">
+              {{ currentSessionLabel }}
+              <q-icon name="expand_more" size="18px" />
+            </button>
+          </div>
 
           <div class="topbar-actions">
             <div v-if="isSessionSwitching || isLoading" class="topbar-status">
@@ -117,12 +132,59 @@
                 </template>
                 <template #default>
                   <div class="user-message-content">
+                    <div v-if="getUserComments(turn.user).length > 0" class="user-comments q-mb-sm">
+                      <div v-for="comment in getUserComments(turn.user)" :key="comment.id" class="user-comment-card">
+                        <div class="row items-center q-gutter-xs text-caption text-blue-grey-2">
+                          <q-icon name="comment" size="14px" />
+                          <span class="text-weight-medium">{{ t('agent.context') }}</span>
+                          <span v-if="comment.path" class="ellipsis user-comment-path">{{ comment.path }}</span>
+                        </div>
+                        <div v-if="comment.preview" class="user-comment-preview text-caption q-mt-xs">{{ comment.preview }}</div>
+                        <div class="q-mt-xs">{{ comment.comment }}</div>
+                      </div>
+                    </div>
+                    <div v-if="getUserContextFiles(turn.user).length > 0" class="user-context-files q-mb-sm">
+                      <div class="text-caption text-blue-grey-2 q-mb-xs">上下文</div>
+                      <div class="row q-col-gutter-xs q-row-gutter-xs">
+                        <div v-for="attachment in getUserContextFiles(turn.user)" :key="attachment.id" class="col-auto">
+                          <div class="user-context-chip">
+                            <q-icon :name="attachment.mime.includes('image') ? 'image' : 'description'" size="14px" />
+                            <span class="ellipsis">{{ attachment.filename || '附件' }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div v-if="getUserAttachments(turn.user).length > 0" class="user-attachments q-mb-sm">
+                      <div v-for="attachment in getUserAttachments(turn.user)" :key="attachment.id" class="user-attachment-chip">
+                        <img
+                          v-if="attachment.mime.includes('image')"
+                          :src="attachment.url"
+                          :alt="attachment.filename || '附件'"
+                          class="user-attachment-image"
+                        >
+                        <template v-else>
+                          <q-icon name="attach_file" size="14px" />
+                          <span class="ellipsis">{{ attachment.filename || '附件' }}</span>
+                        </template>
+                      </div>
+                    </div>
                     <AgentUserMessageBody
                       v-if="getUserMessageText(turn.user)"
                       :text="getUserMessageText(turn.user)"
                       :references="getUserContextFiles(turn.user)"
                       :agents="getUserAgentMentions(turn.user)"
                     />
+                    <div v-if="getUserMetaLabel(turn.user) || canRevertTurn(turn.user)" class="user-message-footer q-mt-sm row items-center justify-between q-gutter-sm">
+                      <div v-if="getUserMetaLabel(turn.user)" class="user-message-meta">{{ getUserMetaLabel(turn.user) }}</div>
+                      <div class="row items-center q-gutter-xs">
+                        <q-btn flat dense round size="sm" icon="content_copy" color="white" class="user-turn-action" @click="copyTurn(turn.user)">
+                          <q-tooltip>{{ t('shared.copy') }}</q-tooltip>
+                        </q-btn>
+                        <q-btn v-if="canRevertTurn(turn.user)" flat dense round size="sm" icon="history" color="white" class="user-turn-action" @click="revertTurn(turn.user)">
+                          <q-tooltip>{{ t('agent.restore') }}</q-tooltip>
+                        </q-btn>
+                      </div>
+                    </div>
                   </div>
                 </template>
               </q-chat-message>
@@ -141,7 +203,7 @@
                     <div v-if="shouldShowAssistantPlaceholder(turn)" class="row items-center q-gutter-xs thinking-indicator">
                       <q-spinner-dots size="16px" color="cyan-4" />
                       <span class="text-caption text-grey-5">
-                        {{ sessionStatus === 'retry' ? '重试中...' : '正在思考...' }}
+                        {{ sessionStatus === 'retry' ? '重试中...' : getAssistantThinkingLabel(turn) }}
                       </span>
                     </div>
                     <template v-for="part in turn.assistant.parts" :key="part.id">
@@ -153,6 +215,9 @@
                       <AgentToolCall
                         v-else-if="part.type === 'tool' && !shouldHideToolPart(part)"
                         :part="part"
+                        :attention-call-id="activeAttentionCallId"
+                        :child-session-label="getToolChildSessionLabel(part)"
+                        @open-child-session="handleSwitchSession"
                       />
                       <AgentFilePart v-else-if="part.type === 'file'" :part="part" />
                       <AgentSubtaskPart v-else-if="part.type === 'subtask'" :part="part" />
@@ -160,10 +225,37 @@
                       <AgentSimplePart v-else-if="part.type === 'snapshot'" icon="history" title="Snapshot" :description="part.snapshot ?? ''" />
                       <AgentSimplePart v-else-if="part.type === 'retry'" icon="refresh" title="Retry" :description="`Attempt ${part.attempt}: ${formatRetryError(part.error)}`" />
                       <AgentSimplePart v-else-if="part.type === 'compaction'" icon="compress" title="Compaction" :description="part.auto ? 'Automatic compaction' : 'Manual compaction'" />
-                      <div v-else-if="part.type === 'text'" class="message-text">
-                        {{ partText.get(part.id) ?? part.text ?? '' }}
+                      <div v-else-if="part.type === 'text'" class="text-part">
+                        <MarkdownRender
+                          :content="partText.get(part.id) ?? part.text ?? ''"
+                          :final="!(isLoading && isActiveAssistantTurn(turn))"
+                        />
+                        <q-spinner-dots
+                          v-if="isLoading && isActiveAssistantTurn(turn) && part.id === getLastTextPartId(turn.assistant)"
+                          size="1em"
+                          color="cyan-4"
+                        />
                       </div>
                     </template>
+
+                    <div v-if="getTurnMetaLabel(turn) || getAssistantCopyText(turn.assistant)" class="assistant-turn-footer row items-center justify-between q-gutter-sm q-mt-sm">
+                      <div v-if="getTurnMetaLabel(turn)" class="turn-meta-label text-caption text-grey-5">
+                        {{ getTurnMetaLabel(turn) }}
+                      </div>
+                      <q-btn
+                        v-if="getAssistantCopyText(turn.assistant)"
+                        flat
+                        dense
+                        round
+                        size="sm"
+                        icon="content_copy"
+                        color="grey-5"
+                        class="assistant-turn-action"
+                        @click="copyAssistantTurn(turn.assistant)"
+                      >
+                        <q-tooltip>{{ t('shared.copy') }}</q-tooltip>
+                      </q-btn>
+                    </div>
                   </div>
                   <div v-else class="row items-center q-gutter-xs thinking-indicator">
                     <q-spinner-dots size="16px" color="cyan-4" />
@@ -186,6 +278,78 @@
               :on-reject="rejectQuestion"
             />
 
+            <div v-if="sessionTodos.length > 0" class="todo-dock q-mb-sm">
+              <div class="row items-center justify-between q-mb-xs">
+                <div class="text-caption text-weight-medium" style="color: #9fefff">
+                  {{ t('agent.todoProgress', { done: completedTodoCount, total: sessionTodos.length }) }}
+                </div>
+                <div v-if="activeTodoLabel" class="text-caption text-grey-5 ellipsis todo-dock__preview">
+                  {{ activeTodoLabel }}
+                </div>
+              </div>
+              <div class="todo-dock__list">
+                <div v-for="todo in sessionTodos" :key="todo.content" class="todo-dock__item row no-wrap items-start q-gutter-sm">
+                  <q-icon
+                    :name="todo.status === 'completed' ? 'check_circle' : todo.status === 'in_progress' ? 'more_horiz' : todo.status === 'cancelled' ? 'cancel' : 'radio_button_unchecked'"
+                    :color="todo.status === 'completed' ? 'positive' : todo.status === 'in_progress' ? 'cyan-4' : todo.status === 'cancelled' ? 'grey-5' : 'grey-4'"
+                    size="16px"
+                    class="q-mt-xs"
+                  />
+                  <div class="col text-body2" :class="{ 'text-grey-5': todo.status === 'completed' || todo.status === 'cancelled' }">
+                    {{ todo.content }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="revertMessagePreview" class="revert-dock q-mb-sm row items-center justify-between q-gutter-sm">
+              <div class="col min-width-0">
+                <div class="text-caption text-grey-5">{{ t('agent.revertActive') }}</div>
+                <div class="text-body2 text-weight-medium ellipsis">{{ revertMessagePreview }}</div>
+              </div>
+              <div class="row items-center q-gutter-sm">
+                <q-btn flat dense no-caps size="sm" color="warning" :label="t('agent.restore')" @click="restoreRevert" />
+                <q-icon name="history" size="18px" color="warning" />
+              </div>
+            </div>
+
+            <div v-if="currentQueuedFollowups.length > 0" class="followup-dock q-mb-sm">
+              <button type="button" class="followup-dock__header row items-center justify-between q-gutter-sm" @click="followupCollapsed = !followupCollapsed">
+                <div class="text-caption text-weight-medium" style="color: #9fefff">
+                  {{ currentQueuedFollowups.length === 1 ? t('agent.followupOne') : t('agent.followupMany', { count: currentQueuedFollowups.length }) }}
+                </div>
+                <div v-if="followupCollapsed" class="text-caption text-grey-6 ellipsis followup-dock__preview">
+                  {{ currentQueuedFollowups[0] ? getFollowupPreview(currentQueuedFollowups[0]) : '' }}
+                </div>
+                <q-btn
+                  flat
+                  dense
+                  round
+                  size="sm"
+                  icon="expand_more"
+                  color="grey-5"
+                  class="followup-dock__toggle"
+                  :class="{ 'followup-dock__toggle--collapsed': followupCollapsed }"
+                  @click.stop="followupCollapsed = !followupCollapsed"
+                />
+              </button>
+              <div v-if="followupsPaused" class="text-caption text-warning q-mb-sm q-mt-xs">
+                {{ t('agent.followupPaused') }}
+              </div>
+              <div v-if="!followupCollapsed" class="followup-dock__list">
+                <div v-for="item in currentQueuedFollowups" :key="item.id" class="followup-dock__item row items-center q-gutter-sm">
+                  <div class="col min-width-0">
+                    <div class="text-body2 ellipsis">{{ getFollowupPreview(item) }}</div>
+                    <div v-if="failedFollowupId[sessionId || ''] === item.id" class="text-caption text-negative q-mt-xs">
+                      {{ t('agent.followupFailed') }}
+                    </div>
+                  </div>
+                  <q-btn dense no-caps size="sm" color="cyan-4" :loading="sendingFollowupId === item.id" :label="t('agent.sendNow')" @click="sendQueuedFollowup(item.id, true)" />
+                  <q-btn flat dense no-caps size="sm" color="grey-6" :disable="sendingFollowupId === item.id" :label="'编辑'" @click="editQueuedFollowup(item.id)" />
+                </div>
+              </div>
+            </div>
+
             <AgentPermission
               v-if="pendingPermission"
               :request="pendingPermission"
@@ -193,21 +357,30 @@
             />
 
             <AgentPromptInput
+              v-if="!currentParentSession"
               ref="inputRef"
               :draft="draftInputMessage"
               :loading="isLoading"
               :connected="isConnected"
               :disabled="isLoading"
               :attachments="pendingAttachments"
-              :selected-datasets="selectedDatasets"
-              :dataset-options="datasetOptions"
               @submit="submitDraftMessage"
               @abort="abortSession"
-              @toggle-dataset="toggleDataset"
-              @clear-datasets="selectedDatasets = []"
               @remove-attachment="removeAttachment"
               @attach-files="onFilesSelected"
             />
+            <div v-else class="child-session-input-disabled text-body2" style="color: #9fa8bb">
+              <span>{{ t('agent.childInputDisabled') }}</span>
+              <q-btn
+                flat
+                dense
+                no-caps
+                color="cyan-4"
+                class="q-ml-sm"
+                :label="t('agent.backToParent')"
+                @click="handleSwitchSession(currentParentSession.id)"
+              />
+            </div>
           </div>
         </div>
       </main>
@@ -260,7 +433,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useQuasar, QInfiniteScroll } from 'quasar'
+import { useI18n } from 'vue-i18n'
 import type { AgentPart, FilePart, TextPart, ToolPart } from '@opencode-ai/sdk/v2'
+import { MarkdownRender } from 'markstream-vue'
+import 'markstream-vue/index.css'
 import AgentReasoning from 'src/components/AgentReasoning.vue'
 import AgentToolCall from 'src/components/AgentToolCall.vue'
 import AgentFilePart from 'src/components/AgentFilePart.vue'
@@ -278,9 +454,18 @@ type DisplayTurn = {
   assistant: DisplayMessage | null
 }
 
+type UserComment = {
+  id: string
+  path?: string
+  comment: string
+  preview?: string
+}
+
 // ── UI refs ───────────────────────────────────────────────────────────────────
 
 const $q = useQuasar()
+const { t } = useI18n()
+const followupCollapsed = ref(false)
 const isSessionSwitching = ref(false)
 const messagesAreaRef = ref<HTMLElement | null>(null)
 const infiniteScrollRef = ref<QInfiniteScroll | null>(null)
@@ -298,7 +483,11 @@ const railItems = [
 ] as const
 
 const resultVariants = ['rain', 'skyline', 'drone'] as const
-const suggestions = ['生成一张未来城市海报', '优化这段图像提示词', '列出三种视觉方案'] as const
+const suggestions = [
+  t('agent.askDocs'),
+  t('agent.summarizeBase'),
+  t('agent.mainTopics'),
+] as const
 
 const generationParams = [
   { label: '模型', value: 'Midjourney v6' },
@@ -342,28 +531,36 @@ const {
   sessionId,
   sessionStatus,
   sessionList,
-  selectedDatasets,
+  childSessions,
+  sessionMessages,
   pendingAttachments,
+  currentQueuedFollowups,
+  failedFollowupId,
+  followupsPaused,
+  sendingFollowupId,
   partText,
   pendingQuestion,
   pendingPermission,
-  datasetOptions,
+  sessionTodos,
   loadAgents,
   loadCommands,
-  loadDatasets,
   loadSessionList,
   loadOlderMessages,
   switchSession,
   createNewSession,
   deleteSession,
-  toggleDataset,
   addAttachment,
   removeAttachment,
   sendMessage,
+  sendQueuedFollowup,
+  editQueuedFollowup,
+  getFollowupPreview,
   abortSession,
   replyToQuestion,
   rejectQuestion,
   replyToPermission,
+  restoreRevert,
+  revertMessage,
   startEventSubscription,
   stopEventSubscription,
 } = useAgentSession(
@@ -377,15 +574,61 @@ const {
 
 // ── Computed ──────────────────────────────────────────────────────────────────
 
+const currentParentSession = computed<SessionItem | null>(() => {
+  if (!sessionId.value) return null
+
+  const sessions = getAllSessions()
+  const session = sessions.find((item) => item.id === sessionId.value)
+  return session?.parentID
+    ? sessions.find((item) => item.id === session.parentID) ?? null
+    : null
+})
+
 const currentSessionLabel = computed(() => {
-  const active = sessionList.value.find((s) => s.id === sessionId.value)
-  return active ? getSessionLabel(active) : '工作台'
+  if (!sessionId.value) return '工作台'
+
+  const activeSession = getAllSessions().find((session) => session.id === sessionId.value)
+  return activeSession ? getSessionLabel(activeSession) : '工作台'
+})
+
+const currentSessionItem = computed<SessionItem | null>(() => {
+  if (!sessionId.value) return null
+  return getAllSessions().find((session) => session.id === sessionId.value) ?? null
+})
+
+const activeAttentionCallId = computed(() => {
+  return pendingPermission.value?.tool?.callID ?? pendingQuestion.value?.tool?.callID ?? null
+})
+
+const completedTodoCount = computed(() => sessionTodos.value.filter((todo) => todo.status === 'completed').length)
+
+const activeTodoLabel = computed(() => {
+  return sessionTodos.value.find((todo) => todo.status === 'in_progress')?.content
+    ?? sessionTodos.value.find((todo) => todo.status === 'pending')?.content
+    ?? sessionTodos.value.at(-1)?.content
+    ?? ''
+})
+
+const revertMessagePreview = computed(() => {
+  const revertMessageId = currentSessionItem.value?.revert?.messageID
+  if (!revertMessageId) return ''
+
+  const revertedMessage = displayMessages.value.find((message) => message.id === revertMessageId && message.role === 'user')
+  if (!revertedMessage) return revertMessageId
+
+  const text = getUserMessageText(revertedMessage).trim()
+  return text || revertMessageId
 })
 
 const displayTurns = computed<DisplayTurn[]>(() => {
   const turns: DisplayTurn[] = []
+  const revertMessageId = currentSessionItem.value?.revert?.messageID
+
   for (const message of displayMessages.value) {
     if (message.role === 'user') {
+      if (revertMessageId && message.id >= revertMessageId) {
+        continue
+      }
       turns.push({ user: message, assistant: null })
       continue
     }
@@ -398,24 +641,68 @@ const displayTurns = computed<DisplayTurn[]>(() => {
   return turns
 })
 
-// ── UI helpers ────────────────────────────────────────────────────────────────
+// ── Session helpers ───────────────────────────────────────────────────────────
+
+function getAllSessions(): SessionItem[] {
+  const nested = Object.values(childSessions.value).flatMap((items) => items)
+  return [...sessionList.value, ...nested]
+}
+
+function getChildTaskDescription(session: SessionItem): string {
+  const parentId = session.parentID
+  if (!parentId) return ''
+
+  const parentEntries = sessionMessages.value[parentId] ?? []
+  for (let entryIndex = parentEntries.length - 1; entryIndex >= 0; entryIndex -= 1) {
+    const parts = parentEntries[entryIndex]?.parts ?? []
+    for (let partIndex = parts.length - 1; partIndex >= 0; partIndex -= 1) {
+      const part = parts[partIndex]
+      if (part?.type !== 'tool' || (part as ToolPart).tool !== 'task') continue
+
+      const state = (part as ToolPart).state as {
+        metadata?: Record<string, unknown>
+        input?: Record<string, unknown>
+      }
+      const metadataSessionId = typeof state.metadata?.sessionId === 'string' ? state.metadata.sessionId : undefined
+      if (metadataSessionId !== session.id) continue
+
+      const description = state.input?.description
+      if (typeof description === 'string' && description.trim()) {
+        return description.trim()
+      }
+    }
+  }
+
+  return ''
+}
 
 function getSessionLabel(session: SessionItem): string {
-  return session.title?.trim() || '未命名'
+  const childDescription = getChildTaskDescription(session)
+  if (childDescription) return childDescription
+
+  const title = session.title?.trim()
+  if (!title) return t('agent.untitled')
+  return title.replace(/\s+\(@[^)]+ subagent\)$/, '')
 }
 
-function formatSessionTime(date: Date): string {
-  const now = new Date()
-  const diff = now.getTime() - date.getTime()
-  if (diff < 60_000) return '刚刚'
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`
-  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+function isSessionActive(session: SessionItem): boolean {
+  if (!sessionId.value) return false
+  if (session.id === sessionId.value) return true
+  return currentParentSession.value?.id === session.id
 }
 
-function formatClock(date: Date): string {
-  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+function getToolChildSessionLabel(part: ToolPart): string | null {
+  if (part.tool !== 'task') return null
+
+  const metadata = (part.state as { metadata?: Record<string, unknown> }).metadata
+  const childSessionId = typeof metadata?.sessionId === 'string' ? metadata.sessionId : undefined
+  if (!childSessionId) return null
+
+  const childSession = getAllSessions().find((session) => session.id === childSessionId)
+  return childSession ? getSessionLabel(childSession) : null
 }
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
 
 function getUserMessageText(msg: DisplayMessage): string {
   return msg.parts
@@ -424,17 +711,248 @@ function getUserMessageText(msg: DisplayMessage): string {
     .join('')
 }
 
+function getUserAttachments(msg: DisplayMessage): FilePart[] {
+  return msg.parts.filter((part): part is FilePart => part.type === 'file' && part.url.startsWith('data:'))
+}
+
 function getUserContextFiles(msg: DisplayMessage): FilePart[] {
   return msg.parts.filter((part): part is FilePart => part.type === 'file' && !part.url.startsWith('data:'))
+}
+
+function getUserComments(msg: DisplayMessage): UserComment[] {
+  return msg.parts.flatMap((part) => {
+    if (part.type !== 'text' || !part.synthetic) return []
+
+    const metadata = (part as TextPart & { metadata?: Record<string, unknown> }).metadata
+    const raw = metadata && typeof metadata === 'object'
+      ? (metadata as { opencodeComment?: unknown }).opencodeComment
+      : undefined
+
+    if (!raw || typeof raw !== 'object') return []
+
+    const path = typeof (raw as { path?: unknown }).path === 'string'
+      ? (raw as { path: string }).path
+      : undefined
+    const comment = typeof (raw as { comment?: unknown }).comment === 'string'
+      ? (raw as { comment: string }).comment.trim()
+      : ''
+    const preview = typeof (raw as { preview?: unknown }).preview === 'string'
+      ? (raw as { preview: string }).preview
+      : undefined
+
+    if (!comment) return []
+
+    return [{
+      id: part.id,
+      ...(path ? { path } : {}),
+      comment,
+      ...(preview ? { preview } : {}),
+    }]
+  })
 }
 
 function getUserAgentMentions(msg: DisplayMessage): AgentPart[] {
   return msg.parts.filter((part): part is AgentPart => part.type === 'agent')
 }
 
+function getUserMetaLabel(msg: DisplayMessage): string {
+  const items = [
+    ...getUserAgentMentions(msg).map((part) => `@${part.name}`),
+    formatSessionTime(msg.time),
+  ].filter(Boolean)
+
+  return items.join(' · ')
+}
+
+function canRevertTurn(msg: DisplayMessage): boolean {
+  if (!currentSessionItem.value) return false
+  return currentSessionItem.value.revert?.messageID !== msg.id
+}
+
+function revertTurn(msg: DisplayMessage) {
+  void revertMessage(msg.id)
+}
+
+function copyTurn(msg: DisplayMessage) {
+  const parts = [
+    ...getUserComments(msg).map((comment) => comment.comment),
+    getUserMessageText(msg),
+  ].filter((value) => value.trim())
+
+  if (parts.length === 0) return
+
+  void navigator.clipboard.writeText(parts.join('\n\n'))
+}
+
+function formatSessionTime(date: Date): string {
+  const now = new Date()
+  const diff = now.getTime() - date.getTime()
+  if (diff < 60_000) return t('agent.justNow')
+  if (diff < 3_600_000) return t('agent.minutesAgo', { count: Math.floor(diff / 60_000) })
+  if (diff < 86_400_000) return t('agent.hoursAgo', { count: Math.floor(diff / 3_600_000) })
+  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+}
+
+function formatClock(date: Date): string {
+  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
+
+function formatRetryError(error: unknown): string {
+  if (typeof error === 'string') return error
+  if (error && typeof error === 'object') {
+    if ('message' in error && typeof error.message === 'string') return error.message
+    if ('name' in error && typeof error.name === 'string') return error.name
+    try {
+      return JSON.stringify(error)
+    } catch {
+      return '无法序列化'
+    }
+  }
+  if (error == null) return 'Unknown error'
+  if (typeof error === 'number' || typeof error === 'boolean' || typeof error === 'bigint') return String(error)
+  return 'Unknown error'
+}
+
+// ── Heading extraction ────────────────────────────────────────────────────────
+
+function cleanHeadingText(value: string): string {
+  return value
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[*_~]+/g, '')
+    .trim()
+}
+
+function extractHeading(text: string): string {
+  const markdown = text.replace(/\r\n?/g, '\n')
+
+  const html = markdown.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i)
+  if (html?.[1]) {
+    const value = cleanHeadingText(html[1].replace(/<[^>]+>/g, ' '))
+    if (value) return value
+  }
+
+  const atx = markdown.match(/^\s{0,3}#{1,6}[ \t]+(.+?)(?:[ \t]+#+[ \t]*)?$/m)
+  if (atx?.[1]) {
+    const value = cleanHeadingText(atx[1])
+    if (value) return value
+  }
+
+  const setext = markdown.match(/^([^\n]+)\n(?:=+|-+)\s*$/m)
+  if (setext?.[1]) {
+    const value = cleanHeadingText(setext[1])
+    if (value) return value
+  }
+
+  const strong = markdown.match(/^\s*(?:\*\*|__)(.+?)(?:\*\*|__)\s*$/m)
+  if (strong?.[1]) {
+    const value = cleanHeadingText(strong[1])
+    if (value) return value
+  }
+
+  return ''
+}
+
+function getAssistantTurnHeading(message: DisplayMessage): string {
+  if (message.role !== 'assistant') return ''
+
+  const reasoningPart = message.parts.find((part) => (
+    part.type === 'reasoning' && (partText.value.get(part.id) ?? (part as { text?: string }).text ?? '').trim()
+  ))
+  if (reasoningPart?.type === 'reasoning') {
+    const heading = extractHeading(partText.value.get(reasoningPart.id) ?? (reasoningPart as { text: string }).text ?? '')
+    if (heading) return heading
+  }
+
+  return ''
+}
+
+function getAssistantThinkingLabel(turn: DisplayTurn): string {
+  const heading = turn.assistant ? getAssistantTurnHeading(turn.assistant) : ''
+  if (heading) return heading
+  return '正在思考...'
+}
+
+function getLastTextPartId(message: DisplayMessage): string | undefined {
+  for (let index = message.parts.length - 1; index >= 0; index -= 1) {
+    const part = message.parts[index]
+    if (part?.type === 'text') {
+      return part.id
+    }
+  }
+  return undefined
+}
+
+// ── Turn meta ─────────────────────────────────────────────────────────────────
+
+function formatTurnDuration(ms?: number): string {
+  if (typeof ms !== 'number' || ms < 0) return ''
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
+function getTurnMetaLabel(turn: DisplayTurn): string {
+  const created = formatSessionTime(turn.user.time)
+  const assistantTime = turn.assistant?.info?.time
+  const completed = assistantTime && 'completed' in assistantTime ? (assistantTime as { completed?: number }).completed : undefined
+  const started = turn.user.info?.time?.created
+  const assistantInfo = turn.assistant?.info?.role === 'assistant' ? turn.assistant.info : undefined
+  const provider = assistantInfo?.providerID
+  const model = assistantInfo?.modelID
+  const agent = assistantInfo?.agent
+  const head = [agent, provider && model ? `${provider}/${model}` : model].filter(Boolean).join(' · ')
+
+  if (typeof completed === 'number' && typeof started === 'number' && completed >= started) {
+    const duration = formatTurnDuration(completed - started)
+    const items = [head, created, duration].filter(Boolean)
+    if (items.length > 0) return items.join(' · ')
+  }
+
+  return [head, created].filter(Boolean).join(' · ')
+}
+
+function getAssistantCopyText(message: DisplayMessage | null): string {
+  if (!message || message.role !== 'assistant') return ''
+
+  return message.parts
+    .flatMap((part) => {
+      if (part.type === 'text') {
+        return [partText.value.get(part.id) ?? (part as { text: string }).text ?? '']
+      }
+      if (part.type === 'reasoning' && (part as { text?: string }).text?.trim()) {
+        return [(part as { text: string }).text]
+      }
+      return []
+    })
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function copyAssistantTurn(message: DisplayMessage | null) {
+  const text = getAssistantCopyText(message)
+  if (!text) return
+  void navigator.clipboard.writeText(text)
+}
+
+// ── Part visibility ───────────────────────────────────────────────────────────
+
 function shouldHideToolPart(part: ToolPart): boolean {
   if (part.tool === 'todowrite') return true
   return part.tool === 'question' && (part.state.status === 'pending' || part.state.status === 'running')
+}
+
+function isVisibleAssistantPart(part: DisplayMessage['parts'][number]): boolean {
+  if (part.type === 'tool') return !shouldHideToolPart(part as ToolPart)
+  if (part.type === 'text' || part.type === 'reasoning') {
+    return !!(partText.value.get(part.id) ?? (part as { text?: string }).text ?? '').trim()
+  }
+  return true
+}
+
+function getVisibleAssistantPartCount(message: DisplayMessage | null): number {
+  if (!message || message.role !== 'assistant') return 0
+  return message.parts.filter((part) => isVisibleAssistantPart(part)).length
 }
 
 function shouldShowAssistantPlaceholder(turn: DisplayTurn): boolean {
@@ -448,30 +966,15 @@ function isActiveAssistantTurn(turn: DisplayTurn): boolean {
   return displayTurns.value.at(-1)?.user.id === turn.user.id
 }
 
-function getVisibleAssistantPartCount(message: DisplayMessage | null): number {
-  if (!message || message.role !== 'assistant') return 0
-  return message.parts.filter((part) => {
-    if (part.type === 'tool') return !shouldHideToolPart(part)
-    if (part.type === 'text' || part.type === 'reasoning') {
-      return !!(partText.value.get(part.id) ?? (part as { text?: string }).text ?? '').trim()
-    }
-    return true
-  }).length
-}
-
-function formatRetryError(error: unknown): string {
-  if (typeof error === 'string') return error
-  if (error && typeof error === 'object') {
-    if ('message' in error && typeof error.message === 'string') return error.message
-  }
-  return 'Unknown error'
-}
+// ── Infinite scroll ───────────────────────────────────────────────────────────
 
 function onLoadHistory(_index: number, done: (stop?: boolean) => void) {
   void loadOlderMessages()
     .then((hasMore) => done(!hasMore))
     .catch(() => done(true))
 }
+
+// ── Input helpers ─────────────────────────────────────────────────────────────
 
 function useSuggestion(s: string) {
   inputRef.value?.setDraft(s)
@@ -508,7 +1011,6 @@ function onFilesSelected(files: File[]) {
 onMounted(() => {
   void loadAgents()
   void loadCommands()
-  void loadDatasets()
   void loadSessionList()
   startEventSubscription()
   void nextTick(() => inputRef.value?.focus())
@@ -781,6 +1283,26 @@ onUnmounted(() => {
   font-weight: 700;
 }
 
+.col.min-width-0 {
+  min-width: 0;
+}
+
+.breadcrumb-row {
+  min-width: 0;
+}
+
+.breadcrumb-parent-btn {
+  min-width: 0;
+}
+
+.breadcrumb-parent-btn :deep(.q-btn__content) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  max-width: 240px;
+}
+
 .topbar-actions {
   display: flex;
   align-items: center;
@@ -876,6 +1398,16 @@ onUnmounted(() => {
   margin-top: 8px;
 }
 
+.message-row {
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.message-row :deep(.q-message-container.reverse > div:not(.q-message-avatar)) {
+  max-width: 75%;
+}
+
 .ai-avatar {
   width: 48px;
   height: 48px;
@@ -890,15 +1422,6 @@ onUnmounted(() => {
   box-shadow: 0 0 20px rgb(154 76 255 / 26%);
 }
 
-.message-text {
-  white-space: pre-wrap;
-  line-height: 1.6;
-}
-
-.thinking-indicator {
-  padding: 2px 0 6px;
-}
-
 .assistant-content {
   max-width: 100%;
   word-break: break-word;
@@ -911,6 +1434,197 @@ onUnmounted(() => {
   overflow-wrap: break-word;
 }
 
+.user-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.user-comments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.user-comment-card {
+  max-width: min(100%, 520px);
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.user-comment-path {
+  max-width: 260px;
+}
+
+.user-comment-preview {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.12);
+  color: rgba(255, 255, 255, 0.82);
+  white-space: pre-wrap;
+}
+
+.user-context-files {
+  max-width: 100%;
+}
+
+.user-context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 280px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.user-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(100%, 320px);
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.user-attachment-image {
+  display: block;
+  width: 120px;
+  max-width: min(100%, 220px);
+  max-height: 120px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+}
+
+.user-message-footer {
+  min-height: 24px;
+}
+
+.user-message-meta {
+  font-size: 12px;
+  line-height: 1.2;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.user-turn-action {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.assistant-turn-footer {
+  min-height: 24px;
+}
+
+.assistant-turn-action {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.thinking-indicator {
+  padding: 2px 0 6px;
+}
+
+.text-part {
+  white-space: pre-wrap;
+  line-height: 1.65;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.text-part :deep(p) {
+  margin: 0 0 10px;
+}
+
+.text-part :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.text-part :deep(h1),
+.text-part :deep(h2),
+.text-part :deep(h3),
+.text-part :deep(h4) {
+  margin: 12px 0 6px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.text-part :deep(code) {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.875em;
+  word-break: break-all;
+}
+
+.text-part :deep(pre) {
+  background: #0d1117;
+  padding: 12px 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 10px 0;
+  font-size: 0.875em;
+  max-height: 400px;
+}
+
+.text-part :deep(pre code) {
+  background: none;
+  border: none;
+  padding: 0;
+  word-break: normal;
+}
+
+.text-part :deep(ul),
+.text-part :deep(ol) {
+  padding-left: 22px;
+  margin: 4px 0 10px;
+}
+
+.text-part :deep(li) {
+  margin-bottom: 3px;
+}
+
+.text-part :deep(blockquote) {
+  border-left: 3px solid #16f3ff;
+  margin: 8px 0;
+  padding: 6px 12px;
+  color: #9fa8bb;
+  background: rgba(22, 243, 255, 0.04);
+  border-radius: 0 6px 6px 0;
+}
+
+.text-part :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+.text-part :deep(th),
+.text-part :deep(td) {
+  border: 1px solid rgba(139, 164, 209, 0.2);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.text-part :deep(th) {
+  background: rgba(139, 164, 209, 0.1);
+  font-weight: 600;
+}
+
+.text-part :deep(tr:nth-child(even)) {
+  background: rgba(139, 164, 209, 0.04);
+}
+
 .input-area {
   padding: 16px 24px 24px;
   background: rgb(3 7 18 / 80%);
@@ -920,6 +1634,83 @@ onUnmounted(() => {
 .input-container {
   max-width: 680px;
   margin: 0 auto;
+}
+
+.todo-dock {
+  border: 1px solid rgba(22, 243, 255, 0.2);
+  background: rgba(22, 243, 255, 0.05);
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+
+.todo-dock__preview {
+  max-width: 55%;
+}
+
+.todo-dock__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.todo-dock__item {
+  align-items: flex-start;
+}
+
+.revert-dock {
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+
+.followup-dock {
+  border: 1px solid rgba(22, 243, 255, 0.18);
+  background: rgba(22, 243, 255, 0.04);
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+
+.followup-dock__header {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.followup-dock__preview {
+  max-width: 55%;
+}
+
+.followup-dock__toggle {
+  transition: transform 0.15s ease;
+}
+
+.followup-dock__toggle--collapsed {
+  transform: rotate(180deg);
+}
+
+.followup-dock__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.followup-dock__item {
+  min-width: 0;
+}
+
+.child-session-input-disabled {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(139, 164, 209, 0.2);
+  background: rgba(10, 16, 34, 0.6);
+  padding: 14px 16px;
 }
 
 .result-panel {

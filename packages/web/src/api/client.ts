@@ -48,62 +48,18 @@ export interface SessionInfo {
   projectID?: string
   projectId?: string
   time?: { created?: number }
-  fullPath?: string
   directory?: string
   createdAt?: string
   time_created?: number
   time_updated?: number
 }
 
-interface WorkDirInfo {
-  id: string
-  projectId?: string | null
-  fullPath?: string
-  createdAt?: string
-}
-
-interface SessionListResponse {
-  workDirs?: WorkDirInfo[]
-  sessions?: SessionInfo[]
-  items?: SessionInfo[]
-}
-
-interface CreateSessionResponse {
-  session?: SessionInfo
-  workDir?: WorkDirInfo
-}
-
-interface MessageListResponse {
-  items?: Record<string, unknown>[]
-}
-
-function normalizeWorkDirSession(workDir: WorkDirInfo): SessionInfo {
-  const created = workDir.createdAt ? new Date(workDir.createdAt).getTime() : undefined
-  const session: SessionInfo = {
-    id: workDir.id,
-  }
-  if (workDir.projectId) session.projectId = workDir.projectId
-  if (workDir.fullPath) session.fullPath = workDir.fullPath
-  if (workDir.createdAt) session.createdAt = workDir.createdAt
-  if (created) session.time = { created }
-  return session
-}
-
-function normalizeSessionResponse(response: SessionListResponse | SessionInfo[]): SessionInfo[] {
+function normalizeSessionResponse(response: { items?: SessionInfo[] } | SessionInfo[]): SessionInfo[] {
   if (Array.isArray(response)) return response
-  if (Array.isArray(response.items)) return response.items
-  if (Array.isArray(response.sessions)) return response.sessions
-  if (Array.isArray(response.workDirs)) return response.workDirs.map(normalizeWorkDirSession)
-  return []
+  return response.items ?? []
 }
 
-function normalizeCreatedSession(response: CreateSessionResponse): SessionInfo {
-  if (response.session) return response.session
-  if (response.workDir) return normalizeWorkDirSession(response.workDir)
-  throw new Error('Invalid session response')
-}
-
-function normalizeMessageResponse(response: MessageListResponse | Record<string, unknown>[]): Record<string, unknown>[] {
+function normalizeMessageResponse(response: { items?: Record<string, unknown>[] } | Record<string, unknown>[]): Record<string, unknown>[] {
   if (Array.isArray(response)) return response
   return response.items ?? []
 }
@@ -123,7 +79,7 @@ export interface OpenimagoProject {
   id: string
   name: string
   description?: string
-  fullPath: string
+  directory: string
   status: 'active' | 'archived'
   createdAt: string
   updatedAt: string
@@ -166,13 +122,13 @@ export const api = {
   updateProject: (id: string, data: Partial<OpenimagoProject>) =>
     request<{ project: OpenimagoProject }>(`/api/platform/projects/${id}`, { method: 'PATCH', body: JSON.stringify(data) }).then((r) => r.project),
 
-  // Sessions — { session, workDir }
+  // Sessions
   listSessions: () =>
-    request<SessionListResponse | SessionInfo[]>('/api/session').then(normalizeSessionResponse),
+    request<{ items?: SessionInfo[] } | SessionInfo[]>('/api/session').then(normalizeSessionResponse),
   createSession: (data: { projectId?: string }) =>
-    request<CreateSessionResponse>('/api/platform/sessions', { method: 'POST', body: JSON.stringify(data) }).then(normalizeCreatedSession),
+    request<SessionInfo>('/api/session', { method: 'POST', body: JSON.stringify(data) }),
   sessionMessages: (id: string) =>
-    request<MessageListResponse | Record<string, unknown>[]>(`/api/session/${id}/message`).then(normalizeMessageResponse),
+    request<{ items?: Record<string, unknown>[] } | Record<string, unknown>[]>(`/api/session/${id}/message`).then(normalizeMessageResponse),
   sendPrompt: (id: string, prompt: string) =>
     request<{ content?: string; message?: string }>(`/api/session/${id}/prompt`, { method: 'POST', body: JSON.stringify({ prompt }) }),
   abortSession: (id: string) =>

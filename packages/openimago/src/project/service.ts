@@ -1,9 +1,11 @@
 import { mkdir } from "node:fs/promises"
 import { eq, and, sql, isNull } from "drizzle-orm"
 import { db } from "../db/client"
-import { projects, workDirs } from "../db/schema"
+import { projects, workspaceRefs, users } from "../db/schema"
+import { WorkspaceTable } from "../db/workspace-schema"
 import { SessionTable } from "../db/session-schema"
-import { projectId, dirId } from "../utils/ids"
+import { projectId } from "../utils/ids"
+import { logger } from "../server/logger"
 
 const COS_BASE_PATH = process.env.COS_BASE_PATH ?? "/mnt/cos"
 
@@ -24,43 +26,69 @@ export interface UpdateProjectInput {
 export class ProjectService {
   async create(input: CreateProjectInput) {
     if (!input.name || input.name.trim().length === 0 || input.name.length > 64) {
+      logger.warn({ userId: input.userId, name: input.name }, "project.create: validation error")
       return { error: { code: "VALIDATION_ERROR", message: "Name must be 1-64 characters" }, status: 400 } as const
     }
 
     const id = projectId()
-    const fullPath = `${COS_BASE_PATH}/${id}`
+    const directory = `${COS_BASE_PATH}/${id}`
     const now = new Date()
 
-    await mkdir(fullPath, { recursive: true })
+    await mkdir(directory, { recursive: true })
 
     await db.insert(projects).values({
       id,
       userId: input.userId,
       name: input.name.trim(),
       description: input.description ?? null,
-      fullPath,
+      directory,
       status: "active",
       createdAt: now,
       updatedAt: now,
     })
 
-    await db.insert(workDirs).values({
-      id: dirId(),
-      userId: input.userId,
-      projectId: id,
-      type: "project",
-      fullPath,
-      status: "active",
-      createdAt: now,
-      updatedAt: now,
-    })
+    // Link the user's workspace to this project via workspace_refs.
+    // Also ensure the opencode workspace.directory points to the project directory.
+    const [user] = await db
+      .select({ workspaceId: users.workspaceId })
+      .from(users)
+      .where(eq(users.id, input.userId))
+      .limit(1)
 
+    if (user?.workspaceId) {
+      // Ensure workspace_ref record exists (insert/ignore — may already exist from session creation)
+      await db
+        .insert(workspaceRefs)
+        .values({ workspaceId: user.workspaceId, userId: input.userId, projectId: id })
+        .onConflictDoUpdate({
+          target: workspaceRefs.workspaceId,
+          set: { projectId: id },
+        })
+
+      // Point the workspace at this project directory
+      await db
+        .insert(WorkspaceTable)
+        .values({
+          id: user.workspaceId,
+          type: "local",
+          name: input.name.trim(),
+          directory,
+          project_id: "global",
+          time_used: Date.now(),
+        })
+        .onConflictDoUpdate({
+          target: WorkspaceTable.id,
+          set: { directory, name: input.name.trim() },
+        })
+    }
+
+    logger.info({ userId: input.userId, projectId: id, name: input.name.trim(), directory }, "project.create: project created")
     return {
       project: {
         id,
         name: input.name.trim(),
         description: input.description ?? null,
-        fullPath,
+        directory,
         status: "active" as const,
         createdAt: now.toISOString(),
       },
@@ -82,12 +110,12 @@ export class ProjectService {
 
     const result = await Promise.all(
       rows.map(async (p) => {
-        const stats = await this.queryProjectStats(p.fullPath)
+        const stats = await this.queryProjectStats(p.directory)
         return {
           id: p.id,
           name: p.name,
           description: p.description,
-          fullPath: p.fullPath,
+          directory: p.directory,
           status: p.status,
           sessionCount: stats.sessionCount,
           totalCost: stats.totalCost,
@@ -117,7 +145,7 @@ export class ProjectService {
       return { error: { code: "FORBIDDEN", message: "Not project owner" }, status: 403 } as const
     }
 
-    const stats = await this.queryProjectStats(project.fullPath)
+    const stats = await this.queryProjectStats(project.directory)
     return { stats, status: 200 } as const
   }
 
@@ -167,6 +195,7 @@ export class ProjectService {
     const project = rows[0]!
 
     if (project.userId !== input.userId) {
+      logger.warn({ userId: input.userId, projectId: input.projectId }, "project.update: forbidden — not owner")
       return { error: { code: "FORBIDDEN", message: "Not project owner" }, status: 403 } as const
     }
 
@@ -186,12 +215,13 @@ export class ProjectService {
       .where(eq(projects.id, input.projectId))
 
     const p = updated[0]!
+    logger.info({ userId: input.userId, projectId: input.projectId }, "project.update: project updated")
     return {
       project: {
         id: p.id,
         name: p.name,
         description: p.description,
-        fullPath: p.fullPath,
+        directory: p.directory,
         status: p.status,
         createdAt: p.createdAt.toISOString(),
         updatedAt: p.updatedAt.toISOString(),

@@ -36,32 +36,37 @@ export async function migrate() {
       user_id TEXT NOT NULL REFERENCES users(id),
       name TEXT NOT NULL,
       description TEXT,
-      full_path TEXT NOT NULL UNIQUE,
+      directory TEXT NOT NULL UNIQUE,
       status TEXT NOT NULL DEFAULT 'active',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `)
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS work_dirs (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES users(id),
-      project_id TEXT REFERENCES projects(id),
-      type TEXT NOT NULL,
-      full_path TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'active',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `)
-
-  await db.execute(sql`
-    ALTER TABLE work_dirs DROP CONSTRAINT IF EXISTS work_dirs_full_path_key
   `)
 
   await db.execute(sql`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS workspace_id TEXT
+  `)
+
+  // Rename full_path → directory on projects table (same concept, unified naming)
+  await db.execute(sql`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'projects' AND column_name = 'full_path'
+      ) THEN
+        ALTER TABLE projects RENAME COLUMN full_path TO directory;
+      END IF;
+    END$$
+  `)
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS workspace_refs (
+      workspace_id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      project_id TEXT REFERENCES projects(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
   `)
 
   await db.execute(sql`
@@ -98,7 +103,7 @@ export async function migrate() {
 export async function truncate() {
   await db.execute(sql`DELETE FROM assets`)
   await db.execute(sql`DELETE FROM prompt_templates`)
-  await db.execute(sql`DELETE FROM work_dirs`)
+  await db.execute(sql`DELETE FROM workspace_refs`)
   await db.execute(sql`DELETE FROM projects`)
   await db.execute(sql`DELETE FROM user_auths`)
   await db.execute(sql`DELETE FROM users`)

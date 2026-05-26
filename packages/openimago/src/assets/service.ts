@@ -2,8 +2,8 @@ import { eq, and, or, sql, lt, gt } from "drizzle-orm"
 import { mkdirSync, writeFileSync, existsSync } from "fs"
 import { join } from "path"
 import { db } from "../db/client"
-import { assets, workDirs } from "../db/schema"
-import { userId as genUserId, dirId } from "../utils/ids"
+import { assets } from "../db/schema"
+import { userId as genUserId } from "../utils/ids"
 
 const COS_BASE_PATH = process.env.COS_BASE_PATH ?? "/mnt/cos"
 
@@ -77,24 +77,6 @@ export class AssetsService {
       status: "active",
       createdAt: now,
     })
-
-    // Create work_dirs record for first asset
-    const existingDirs = await db
-      .select()
-      .from(workDirs)
-      .where(and(eq(workDirs.userId, userId), eq(workDirs.type, "assets")))
-    if (existingDirs.length === 0) {
-      await db.insert(workDirs).values({
-        id: dirId(),
-        userId,
-        projectId: null,
-        type: "assets",
-        fullPath: assetDir,
-        status: "active",
-        createdAt: now,
-        updatedAt: now,
-      })
-    }
 
     return {
       asset: {

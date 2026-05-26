@@ -1,9 +1,10 @@
 import { eq, and } from "drizzle-orm"
 import { existsSync, mkdirSync } from "fs"
+import crypto from "crypto"
 import { dirname } from "path"
 import { db } from "../db/client"
-import { projects, workDirs } from "../db/schema"
-import { dirId } from "../utils/ids"
+import { projects } from "../db/schema"
+import { logger } from "../server/logger"
 
 const COS_BASE_PATH = process.env.COS_BASE_PATH ?? "/mnt/cos"
 
@@ -34,12 +35,14 @@ export class FileService {
 
     // Security: reject path traversal in filename
     if (!filename || filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+      logger.warn({ userId: input.userId, filename }, "files.upload: invalid filename")
       return { error: { code: "VALIDATION_ERROR", message: "Invalid filename" }, status: 400 }
     }
 
     // Size check
     const maxSize = getMaxUploadSize()
     if (input.file.size > maxSize) {
+      logger.warn({ userId: input.userId, filename, size: input.file.size, maxSize }, "files.upload: file too large")
       return { error: { code: "VALIDATION_ERROR", message: `File exceeds maximum size of ${maxSize} bytes` }, status: 400 }
     }
 
@@ -59,28 +62,17 @@ export class FileService {
 
       const project = projectRows[0]!
       if (project.userId !== input.userId) {
+        logger.warn({ userId: input.userId, projectId: input.projectId }, "files.upload: forbidden — not project owner")
         return { error: { code: "FORBIDDEN", message: "You do not own this project" }, status: 403 }
       }
 
-      targetDir = project.fullPath
+      targetDir = project.directory
       relativePath = filename
     } else {
-      // Standalone upload: create a work_dirs entry
-      const id = dirId()
+      // Standalone upload: create a unique directory
+      const id = crypto.randomUUID().replace(/-/g, "").slice(0, 25)
       targetDir = `${COS_BASE_PATH}/${id}`
       mkdirSync(targetDir, { recursive: true })
-
-      await db.insert(workDirs).values({
-        id,
-        userId: input.userId,
-        projectId: null,
-        type: "upload",
-        fullPath: targetDir,
-        status: "active",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
-
       relativePath = filename
     }
 
@@ -96,12 +88,14 @@ export class FileService {
 
     // Conflict check
     if (existsSync(fullPath)) {
+      logger.warn({ userId: input.userId, fullPath }, "files.upload: file already exists")
       return { error: { code: "CONFLICT", message: "File already exists" }, status: 409 }
     }
 
     // Write file
     await Bun.write(fullPath, input.file)
 
+    logger.info({ userId: input.userId, filename, size: input.file.size, fullPath }, "files.upload: success")
     return {
       file: {
         name: filename,

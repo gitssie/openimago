@@ -61,7 +61,7 @@ async function createProject(userId: string, name: string): Promise<string> {
     userId,
     name,
     description: null,
-    fullPath,
+    directory: fullPath,
     status: "active",
     createdAt: now,
     updatedAt: now,
@@ -113,9 +113,9 @@ test("upload file to project directory returns 201", async () => {
 })
 
 // ---------------------------------------------------------------------------
-// 2. Upload file to standalone directory → 201, work_dirs record
+// 2. Upload file to standalone directory → 201
 // ---------------------------------------------------------------------------
-test("upload file to standalone directory creates work_dirs record", async () => {
+test("upload file to standalone directory returns 201", async () => {
   const { token } = await createUser("standalone-upload@example.com", "standaloneup")
 
   const app = await buildApp()
@@ -131,17 +131,7 @@ test("upload file to standalone directory creates work_dirs record", async () =>
   expect(res.status).toBe(201)
   const body = await res.json() as Record<string, any>
   expect(body.file.name).toBe("standalone.txt")
-  expect(body.file.path).toContain("dir_")
-
-  // Verify work_dirs record
-  const { workDirs } = await import("../src/db/schema")
-  const { eq } = await import("drizzle-orm")
-  const rows = await db
-    .select()
-    .from(workDirs)
-    .where(eq(workDirs.type, "upload"))
-  expect(rows.length).toBeGreaterThanOrEqual(1)
-  expect(rows.some((r) => body.file.path.includes(r.id))).toBe(true)
+  expect(body.file.path).toContain(COS_BASE_PATH)
 
   // Cleanup
   try { unlinkSync(body.file.path) } catch {}

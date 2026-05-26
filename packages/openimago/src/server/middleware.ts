@@ -4,6 +4,7 @@ import { verifyJwt } from "../auth/jwt"
 import { db } from "../db/client"
 import { users } from "../db/schema"
 import { SessionTable } from "../db/session-schema"
+import { logger } from "./logger"
 
 declare module "hono" {
   interface ContextVariableMap {
@@ -17,6 +18,7 @@ declare module "hono" {
 export async function authMiddleware(c: Context, next: Next) {
   const header = c.req.header("authorization")
   if (!header || !header.startsWith("Bearer ")) {
+    logger.warn({ path: new URL(c.req.url).pathname }, "auth: missing token")
     return c.json({ error: { code: "UNAUTHORIZED", message: "Missing token" } }, 401)
   }
 
@@ -25,6 +27,7 @@ export async function authMiddleware(c: Context, next: Next) {
     const token = header.slice(7)
     claims = await verifyJwt(token)
   } catch {
+    logger.warn({ path: new URL(c.req.url).pathname }, "auth: invalid token")
     return c.json({ error: { code: "UNAUTHORIZED", message: "Invalid token" } }, 401)
   }
 
@@ -38,9 +41,11 @@ export async function authMiddleware(c: Context, next: Next) {
     .limit(1)
 
   if (!user) {
+    logger.warn({ userId: claims.userId, path: new URL(c.req.url).pathname }, "auth: user not found")
     return c.json({ error: { code: "UNAUTHORIZED", message: "User not found" } }, 401)
   }
 
+  logger.debug({ userId: claims.userId, role: claims.role, path: new URL(c.req.url).pathname }, "auth: ok")
   c.set("userId", claims.userId)
   c.set("role", claims.role)
   c.set("workspaceId", user.workspaceId ?? null)
@@ -115,6 +120,7 @@ async function resolveDirectory(sessionId: string, workspaceId: string): Promise
 export async function adminMiddleware(c: Context, next: Next) {
   const role = c.get("role") as string | undefined
   if (role !== "admin") {
+    logger.warn({ userId: c.get("userId"), path: new URL(c.req.url).pathname }, "admin: forbidden")
     return c.json({ error: { code: "FORBIDDEN", message: "Admin access required" } }, 403)
   }
   await next()
@@ -135,11 +141,13 @@ export async function proxyMiddleware(c: Context, next: Next) {
   )
 
   if (!route) {
+    logger.warn({ userId, method, pathname }, "proxy: route not supported")
     return c.json({ error: { code: "NOT_FOUND", message: "Route not supported" } }, 404)
   }
 
   if (route.needsDirectory) {
     if (!workspaceId) {
+      logger.warn({ userId, method, pathname }, "proxy: workspace not configured")
       return c.json({ error: { code: "CONFIGURATION_REQUIRED", message: "Workspace not configured for this user" } }, 500)
     }
     const match = pathname.match(route.pattern)!
@@ -148,9 +156,11 @@ export async function proxyMiddleware(c: Context, next: Next) {
     const result = await resolveDirectory(sessionId, workspaceId)
 
     if ("status" in result) {
+      logger.warn({ userId, sessionId, code: result.code, pathname }, "proxy: directory resolve failed")
       return c.json({ error: { code: result.code, message: result.message } }, result.status as any)
     }
 
+    logger.debug({ userId, sessionId, directory: result.directory, pathname }, "proxy: resolved directory")
     c.set("directory", result.directory)
   }
 

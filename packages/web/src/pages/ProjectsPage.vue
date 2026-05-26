@@ -100,7 +100,7 @@ async function handleCreate() {
 }
 
 function projectName(project: OpenimagoProject) {
-  return project.name || project.fullPath?.split('/').filter(Boolean).pop() || '未命名项目'
+  return project.name || project.directory?.split('/').filter(Boolean).pop() || '未命名项目'
 }
 
 function resourceCount(project: OpenimagoProject, index: number) {

@@ -91,7 +91,7 @@ test("GET /projects/:id/stats returns session count and token totals", async () 
   )
   const listBody = await listRes.json() as Record<string, any>
   const project = listBody.projects.find((p: any) => p.id === projId)
-  const directory = project.fullPath
+  const directory = project.directory
 
   await insertSession(directory, { tokens_input: 2000, tokens_output: 800, cost: 0.1 })
   await insertSession(directory, { tokens_input: 3000, tokens_output: 1200, cost: 0.15 })
@@ -144,7 +144,7 @@ test("GET /projects/:id/stats excludes archived sessions", async () => {
   )
   const listBody = await listRes.json() as Record<string, any>
   const project = listBody.projects.find((p: any) => p.id === projId)
-  const directory = project.fullPath
+  const directory = project.directory
 
   await insertSession(directory, { tokens_input: 1000, cost: 0.05 })
   await insertSession(directory, { tokens_input: 2000, cost: 0.1, time_archived: Date.now() })
@@ -206,7 +206,7 @@ test("project list includes sessionCount and lastActivityAt", async () => {
   )
   const listBody = await listRes.json() as Record<string, any>
   const project = listBody.projects.find((p: any) => p.id === projId)
-  const directory = project.fullPath
+  const directory = project.directory
 
   await insertSession(directory, { tokens_input: 500, cost: 0.02 })
 
@@ -239,7 +239,7 @@ test("GET /projects/:id/stats totalCost sums correctly across sessions", async (
   )
   const listBody = await listRes.json() as Record<string, any>
   const project = listBody.projects.find((p: any) => p.id === projId)
-  const directory = project.fullPath
+  const directory = project.directory
 
   await insertSession(directory, { cost: 0.05 })
   await insertSession(directory, { cost: 0.15 })

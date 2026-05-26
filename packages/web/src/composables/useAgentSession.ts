@@ -959,9 +959,14 @@ export function useAgentSession(
     void (async () => {
       try {
         const stream = await AgentService.subscribeToEvents();
-        for await (const event of stream) {
+        for await (const raw of stream) {
           if (sseAbort?.signal.aborted) break;
-          handleEvent(event);
+
+          // Unwrap sync envelope: raw SSE uses {type:"sync", syncEvent:{...}}
+          // then strip version suffix: e.g. "message.part.updated.1" → "message.part.updated"
+          const inner = (raw as Record<string, unknown>).syncEvent ?? raw;
+          const normalizedType = String((inner as { type?: string }).type ?? '').replace(/\.\d+$/, '');
+          handleEvent({ ...(inner as Event), type: normalizedType as Event['type'] });
         }
       } catch {
         // AbortError or connection closed — not fatal

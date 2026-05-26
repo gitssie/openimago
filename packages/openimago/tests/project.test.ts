@@ -49,7 +49,7 @@ test("user can create a project", async () => {
   expect(body.project.name).toBe("My Project")
   expect(body.project.description).toBe("A test project")
   expect(body.project.id).toMatch(/^proj_/)
-  expect(body.project.fullPath).toBe(`${COS_BASE_PATH}/${body.project.id}`)
+  expect(body.project.directory).toBe(`${COS_BASE_PATH}/${body.project.id}`)
   expect(body.project.status).toBe("active")
 })
 
@@ -68,12 +68,12 @@ test("creating a project creates the directory on disk", async () => {
     }),
   )
   const body = await res.json() as Record<string, any>
-  const dirStat = await stat(body.project.fullPath)
+  const dirStat = await stat(body.project.directory)
   expect(dirStat.isDirectory()).toBe(true)
 })
 
-// 3. Creating a project inserts a work_dirs record
-test("creating a project inserts a work_dirs record", async () => {
+// 3. Creating a project is listed
+test("creating a project is listed", async () => {
   const token = await registerUser("dev3", "dev3@example.com")
 
   const res = await app.fetch(

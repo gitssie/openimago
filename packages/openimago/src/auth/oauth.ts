@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm"
 import { signJwt } from "./jwt"
 import { userId, authId } from "../utils/ids"
 import { db } from "../db/client"
+import { logger } from "../server/logger"
 import { users, userAuths } from "../db/schema"
 import { WorkspaceTable } from "../db/workspace-schema"
 import { generateWorkspaceId } from "./workspace-id"
@@ -84,6 +85,7 @@ export class OAuthService {
   ): { redirectUrl: string } | { error: { code: string; message: string }; status: 400 } {
     const cfg = PROVIDERS[provider]
     if (!cfg) {
+      logger.warn({ provider }, "oauth.getRedirectUrl: unknown provider")
       return { error: { code: "INVALID_PROVIDER", message: `Unknown provider: ${provider}` }, status: 400 }
     }
 
@@ -113,6 +115,7 @@ export class OAuthService {
       url = `${cfg.authorizeUrl}?${params.toString()}`
     }
 
+    logger.debug({ provider, redirect }, "oauth.getRedirectUrl: generated redirect")
     return { redirectUrl: url }
   }
 
@@ -127,10 +130,12 @@ export class OAuthService {
   > {
     const cfg = PROVIDERS[provider]
     if (!cfg) {
+      logger.warn({ provider }, "oauth.handleCallback: unknown provider")
       return { error: { code: "INVALID_PROVIDER", message: `Unknown provider: ${provider}` }, status: 400 }
     }
 
     if (!state || !validateAndConsumeState(state)) {
+      logger.warn({ provider }, "oauth.handleCallback: invalid or expired state")
       return { error: { code: "INVALID_STATE", message: "Invalid or expired state" }, status: 400 }
     }
 
@@ -139,6 +144,7 @@ export class OAuthService {
     try {
       accessToken = await exchangeCodeForToken(cfg, code, provider)
     } catch {
+      logger.warn({ provider }, "oauth.handleCallback: token exchange failed")
       return { error: { code: "OAUTH_FAILED", message: "Failed to exchange code for token" }, status: 400 }
     }
 
@@ -147,9 +153,11 @@ export class OAuthService {
     try {
       profile = await fetchOAuthProfile(accessToken, cfg, provider)
     } catch {
+      logger.warn({ provider }, "oauth.handleCallback: failed to fetch user profile")
       return { error: { code: "OAUTH_FAILED", message: "Failed to fetch user profile" }, status: 400 }
     }
 
+    logger.debug({ provider, email: profile.email }, "oauth.handleCallback: profile fetched, finding/creating user")
     // find-or-create user
     return findOrCreateUser(provider, profile)
   }
@@ -264,6 +272,7 @@ async function findOrCreateUser(
       .from(users)
       .where(eq(users.id, auth.userId))
     if (userRows.length > 0) {
+      logger.info({ userId: userRows[0]!.id, provider, email: profile.email }, "oauth.findOrCreateUser: existing user login")
       const token = await signJwt({ userId: userRows[0]!.id, role: userRows[0]!.role })
       return { user: userRows[0]!, token, status: 200 }
     }
@@ -306,6 +315,7 @@ async function findOrCreateUser(
   })
 
   const token = await signJwt({ userId: id, role: "user" })
+  logger.info({ userId: id, provider, email: profile.email, username }, "oauth.findOrCreateUser: new user created")
   return { user, token, status: 201 }
 }
 
