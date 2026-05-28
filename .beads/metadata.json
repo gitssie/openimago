@@ -1,7 +1,7 @@
 {
   "database": "dolt",
-  "jsonl_export": "issues.jsonl",
   "backend": "dolt",
-  "dolt_mode": "server",
-  "dolt_database": "beads_openimago"
+  "dolt_mode": "embedded",
+  "dolt_database": "beads_openimago",
+  "project_id": "e9b56bbc-cca6-474e-a874-8299972b8e64"
 }
