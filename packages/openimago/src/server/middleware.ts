@@ -79,7 +79,7 @@ export const ROUTE_REGISTRY: RoutePattern[] = [
   { method: "POST", pattern: /^\/api\/session$/, needsDirectory: false },
   { method: "GET", pattern: /^\/api\/session$/, needsDirectory: false },
   { method: "GET", pattern: /^\/api\/session\/([^/]+)$/, needsDirectory: false },
-  { method: "GET", pattern: /^\/api\/session\/([^/]+)\/message$/, needsDirectory: false },
+  { method: "GET", pattern: /^\/api\/session\/([^/]+)\/message$/, needsDirectory: true },
   { method: "PATCH", pattern: /^\/api\/session\/([^/]+)$/, needsDirectory: false },
   { method: "DELETE", pattern: /^\/api\/session\/([^/]+)$/, needsDirectory: false },
   { method: "POST", pattern: /^\/api\/session\/([^/]+)\/wait$/, needsDirectory: false },

@@ -8,48 +8,48 @@
 
     <q-page-container>
       <q-page class="auth-page flex flex-center">
-        <div class="auth-card">
+        <div class="auth-card imago-panel--auth">
           <!-- Logo -->
           <div class="auth-brand text-center">
-            <div class="auth-logo">openimago</div>
+            <div class="auth-logo imago-brand">openimago</div>
             <p class="auth-tagline">AI 图片 / 视频创作平台</p>
           </div>
 
           <!-- Tabs -->
-          <q-tabs v-model="tab" dense class="auth-tabs" active-class="auth-tab--active" indicator-color="transparent" align="justify" no-caps>
-            <q-tab name="login" label="Login" class="auth-tab" />
-            <q-tab name="register" label="Register" class="auth-tab" />
+          <q-tabs v-model="tab" dense class="imago-auth-tabs" active-class="imago-auth-tab--active" indicator-color="transparent" align="justify" no-caps>
+            <q-tab name="login" label="Login" class="imago-auth-tab" />
+            <q-tab name="register" label="Register" class="imago-auth-tab" />
           </q-tabs>
 
           <!-- Login -->
           <q-form v-if="tab === 'login'" @submit.prevent="handleLogin" class="auth-form">
-            <q-input v-model="loginForm.email" label="Email address" outlined dark hide-bottom-space class="auth-input" color="cyan-4" :rules="[(v: string) => !!v || '请输入邮箱']" lazy-rules>
-              <template #prepend><q-icon name="mail_outline" class="auth-input__icon" /></template>
+            <q-input v-model="loginForm.email" label="Email address" outlined dark hide-bottom-space class="imago-input-panel" color="cyan-4" :rules="[(v: string) => !!v || '请输入邮箱']" lazy-rules>
+              <template #prepend><q-icon name="mail_outline" class="imago-input-panel__icon" /></template>
             </q-input>
-            <q-input v-model="loginForm.password" label="Password" :type="showLoginPassword ? 'text' : 'password'" outlined dark hide-bottom-space class="auth-input" color="cyan-4" :rules="[(v: string) => !!v || '请输入密码']" lazy-rules>
-              <template #prepend><q-icon name="lock_outline" class="auth-input__icon" /></template>
+            <q-input v-model="loginForm.password" label="Password" :type="showLoginPassword ? 'text' : 'password'" outlined dark hide-bottom-space class="imago-input-panel" color="cyan-4" :rules="[(v: string) => !!v || '请输入密码']" lazy-rules>
+              <template #prepend><q-icon name="lock_outline" class="imago-input-panel__icon" /></template>
               <template #append>
-                <q-icon :name="showLoginPassword ? 'visibility_off' : 'visibility'" class="auth-input__action" @click="showLoginPassword = !showLoginPassword" />
+                <q-icon :name="showLoginPassword ? 'visibility_off' : 'visibility'" class="imago-input-panel__action" @click="showLoginPassword = !showLoginPassword" />
               </template>
             </q-input>
-            <q-btn type="submit" label="Login" class="auth-submit" :loading="loading" unelevated no-caps />
+            <q-btn type="submit" label="Login" class="imago-submit imago-submit--cyan" :loading="loading" unelevated no-caps />
           </q-form>
 
           <!-- Register -->
           <q-form v-else @submit.prevent="handleRegister" class="auth-form">
-            <q-input v-model="registerForm.username" label="Username" outlined dark hide-bottom-space class="auth-input" color="purple-4" :rules="[(v: string) => !!v || '请输入用户名']" lazy-rules>
-              <template #prepend><q-icon name="person_outline" class="auth-input__icon" /></template>
+            <q-input v-model="registerForm.username" label="Username" outlined dark hide-bottom-space class="imago-input-panel" color="purple-4" :rules="[(v: string) => !!v || '请输入用户名']" lazy-rules>
+              <template #prepend><q-icon name="person_outline" class="imago-input-panel__icon" /></template>
             </q-input>
-            <q-input v-model="registerForm.email" label="Email address" type="email" outlined dark hide-bottom-space class="auth-input" color="purple-4" :rules="[(v: string) => !!v || '请输入邮箱']" lazy-rules>
-              <template #prepend><q-icon name="mail_outline" class="auth-input__icon" /></template>
+            <q-input v-model="registerForm.email" label="Email address" type="email" outlined dark hide-bottom-space class="imago-input-panel" color="purple-4" :rules="[(v: string) => !!v || '请输入邮箱']" lazy-rules>
+              <template #prepend><q-icon name="mail_outline" class="imago-input-panel__icon" /></template>
             </q-input>
-            <q-input v-model="registerForm.password" label="Password" :type="showRegisterPassword ? 'text' : 'password'" outlined dark hide-bottom-space class="auth-input" color="purple-4" :rules="[(v: string) => v.length >= 6 || '密码至少 6 位']" lazy-rules>
-              <template #prepend><q-icon name="lock_outline" class="auth-input__icon" /></template>
+            <q-input v-model="registerForm.password" label="Password" :type="showRegisterPassword ? 'text' : 'password'" outlined dark hide-bottom-space class="imago-input-panel" color="purple-4" :rules="[(v: string) => v.length >= 6 || '密码至少 6 位']" lazy-rules>
+              <template #prepend><q-icon name="lock_outline" class="imago-input-panel__icon" /></template>
               <template #append>
-                <q-icon :name="showRegisterPassword ? 'visibility_off' : 'visibility'" class="auth-input__action" @click="showRegisterPassword = !showRegisterPassword" />
+                <q-icon :name="showRegisterPassword ? 'visibility_off' : 'visibility'" class="imago-input-panel__action" @click="showRegisterPassword = !showRegisterPassword" />
               </template>
             </q-input>
-            <q-btn type="submit" label="Register" class="auth-submit auth-submit--violet" :loading="loading" unelevated no-caps />
+            <q-btn type="submit" label="Register" class="imago-submit imago-submit--violet" :loading="loading" unelevated no-caps />
           </q-form>
 
           <!-- Error -->
@@ -59,14 +59,14 @@
 
           <!-- OAuth -->
           <div class="auth-oauth">
-            <div class="auth-divider row items-center">
+            <div class="imago-auth-divider row items-center">
               <div class="col"><q-separator dark /></div>
-              <div class="col-auto auth-divider__text">or<span class="sr-only">第三方登录</span></div>
+              <div class="col-auto imago-auth-divider__text">or<span class="imago-sr-only">第三方登录</span></div>
               <div class="col"><q-separator dark /></div>
             </div>
             <div class="auth-socials">
-              <q-btn outline rounded icon="fa-brands fa-github" label="Continue with GitHub" class="auth-social" no-caps @click="oauthLogin('github')" />
-              <q-btn outline rounded icon="fa-brands fa-google" label="Continue with Google" class="auth-social" no-caps @click="oauthLogin('google')" />
+              <q-btn outline rounded icon="fa-brands fa-github" label="Continue with GitHub" class="imago-btn-auth-social" no-caps @click="oauthLogin('github')" />
+              <q-btn outline rounded icon="fa-brands fa-google" label="Continue with Google" class="imago-btn-auth-social" no-caps @click="oauthLogin('google')" />
             </div>
           </div>
         </div>
@@ -168,24 +168,8 @@ function oauthLogin(provider: string) {
 }
 
 .auth-card {
-  position: relative;
   width: min(464px, 100%);
   padding: 32px 34px 30px;
-  overflow: hidden;
-  background: linear-gradient(145deg, rgb(0 18 34 / 60%), rgb(10 7 24 / 70%));
-  border: 1px solid rgb(34 232 255 / 82%);
-  border-right-color: rgb(202 76 255 / 76%);
-  border-radius: 24px;
-  box-shadow: 0 0 34px rgb(0 232 255 / 14%), inset 0 0 48px rgb(4 187 255 / 5%);
-  backdrop-filter: blur(18px);
-}
-
-.auth-card::before {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  content: '';
-  background: radial-gradient(circle at 50% 0%, rgb(31 231 255 / 14%), transparent 34%);
 }
 
 .auth-brand {
@@ -194,13 +178,10 @@ function oauthLogin(provider: string) {
 }
 
 .auth-logo {
-  font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
   font-size: clamp(40px, 4.6vw, 52px);
-  font-weight: 700;
   line-height: 0.95;
-  letter-spacing: -0.08em;
-  color: #2ff7ff;
-  text-shadow: 0 0 7px #2ff7ff, 0 0 20px rgb(47 247 255 / 82%), 0 0 40px rgb(47 247 255 / 42%);
+  color: var(--imago-cyan-bright);
+  text-shadow: 0 0 7px var(--imago-cyan-bright), 0 0 20px rgb(47 247 255 / 82%), 0 0 40px rgb(47 247 255 / 42%);
 }
 
 .auth-tagline {
@@ -210,116 +191,18 @@ function oauthLogin(provider: string) {
   opacity: 0;
 }
 
-.auth-tabs {
-  max-width: 348px;
-  margin: 0 auto 24px;
-  overflow: hidden;
-  border: 1px solid rgb(123 174 234 / 58%);
-  border-radius: 14px;
-  background: rgb(4 12 29 / 45%);
-}
-
-.auth-tab {
-  min-height: 40px;
-  color: #aeb9c8;
-  font-size: 15px;
-  font-weight: 500;
-}
-
-.auth-tab--active {
-  color: #22f7ff !important;
-  background: linear-gradient(180deg, rgb(25 233 255 / 28%), rgb(9 68 91 / 40%));
-  box-shadow: inset 0 0 18px rgb(39 236 255 / 54%), 0 0 22px rgb(39 236 255 / 22%);
-}
-
 .auth-form {
   display: grid;
   gap: 16px;
-}
-
-.auth-input :deep(.q-field__control) {
-  height: 56px;
-  padding: 0 16px;
-  background: rgb(3 13 30 / 42%);
-  border-radius: 13px;
-}
-
-.auth-input :deep(.q-field__native),
-.auth-input :deep(.q-field__label) {
-  color: #b5c4d8;
-  font-size: 16px;
-}
-
-.auth-input :deep(.q-field__control::before) {
-  border-color: rgb(114 174 231 / 62%);
-}
-
-.auth-input :deep(.q-field__control:hover::before),
-.auth-input :deep(.q-field--focused .q-field__control::after) {
-  border-color: #2ff7ff;
-}
-
-.auth-input__icon {
-  color: #26efff;
-  font-size: 23px;
-}
-
-.auth-input__action {
-  color: #c8d8ef;
-  cursor: pointer;
-  font-size: 22px;
-}
-
-.auth-submit {
-  height: 50px;
-  margin-top: 0;
-  color: #020910;
-  background: linear-gradient(90deg, #21efff, #16dce9);
-  border-radius: 13px;
-  box-shadow: 0 0 20px rgb(26 236 255 / 58%);
-  font-size: 17px;
-  font-weight: 700;
-}
-
-.auth-submit--violet {
-  background: linear-gradient(90deg, #24edff, #bc42ff);
 }
 
 .auth-oauth {
   margin-top: 24px;
 }
 
-.auth-divider {
-  margin-bottom: 18px;
-}
-
-.auth-divider__text {
-  padding: 0 16px;
-  color: #c5d0de;
-  font-size: 14px;
-}
-
-.auth-divider :deep(.q-separator) {
-  background: rgb(156 184 214 / 58%);
-}
-
 .auth-socials {
   display: grid;
   gap: 9px;
-}
-
-.auth-social {
-  height: 46px;
-  color: #d6e3f4;
-  border: 1px solid rgb(117 169 224 / 62%);
-  border-radius: 12px;
-  font-size: 16px;
-}
-
-.auth-social :deep(.q-icon) {
-  left: 46px;
-  position: absolute;
-  font-size: 24px;
 }
 
 .auth-aurora,
@@ -339,13 +222,13 @@ function oauthLogin(provider: string) {
 .auth-aurora--cyan {
   top: -14vw;
   left: -12vw;
-  background: #00dfff;
+  background: var(--imago-neon-cyan);
 }
 
 .auth-aurora--violet {
   top: -10vw;
   right: -10vw;
-  background: #a51cff;
+  background: var(--imago-neon-purple);
 }
 
 .auth-prism {
@@ -384,28 +267,17 @@ function oauthLogin(provider: string) {
   filter: blur(18px);
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
 @media (max-width: 600px) {
   .auth-card {
     padding: 28px 18px 24px;
     border-radius: 22px;
   }
 
-  .auth-input :deep(.q-field__control) {
+  :deep(.imago-input-panel .q-field__control) {
     height: 54px;
   }
 
-  .auth-social :deep(.q-icon) {
+  :deep(.imago-btn-auth-social .q-icon) {
     left: 26px;
   }
 

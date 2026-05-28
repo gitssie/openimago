@@ -21,9 +21,24 @@ import type {
 /**
  * openimago wraps the opencode API behind its own auth+proxy layer.
  * The backend exposes all opencode routes under /api/* (e.g. /api/session, /api/event).
- * Set VITE_OPENCODE_URL to '' (empty) so SDK calls go to the same origin /api/...
+ * Browser requests stay same-origin so Quasar devServer.proxy forwards them.
  */
-const OPENCODE_BASE_URL = (import.meta.env.VITE_OPENCODE_URL ?? '').replace(/\/+$/, '');
+const OPENCODE_BASE_URL = '/api';
+
+async function retryRequest<T>(task: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await task();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100 * 2 ** attempt));
+      }
+    }
+  }
+  throw lastError;
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -59,6 +74,11 @@ export type RawMessageEntry = {
   parts: DisplayPart[];
 };
 
+export interface MessagePage {
+  entries: RawMessageEntry[];
+  nextCursor?: string;
+}
+
 // ── SDK Client (single shared v2 instance) ────────────────────────────────────
 //
 // The openimago backend exposes all opencode routes under /api/* with auth gating.
@@ -83,7 +103,7 @@ function makeAuthFetch(): typeof fetch {
 }
 
 export const opencodeClient = createOpencodeClient({
-  baseUrl: (OPENCODE_BASE_URL || location.origin) + '/api',
+  baseUrl: OPENCODE_BASE_URL,
   throwOnError: true,
   fetch: makeAuthFetch(),
 });
@@ -94,7 +114,7 @@ export const AgentService = {
   mapSession(session: { id: string; title?: string; parentID?: string; time?: { created?: number }; revert?: Session['revert'] }): SessionItem {
     return {
       id: session.id,
-      title: session.title ?? 'Untitled',
+      title: session.title ?? '',
       time: new Date(session.time?.created ?? Date.now()),
       ...(session.parentID ? { parentID: session.parentID } : {}),
       ...(session.revert ? { revert: session.revert } : {}),
@@ -130,12 +150,21 @@ export const AgentService = {
   // ── Message operations ────────────────────────────────────────────────────
 
   async loadMessages(sessionId: string, options?: { limit?: number; before?: string }): Promise<RawMessageEntry[]> {
-    const res = await opencodeClient.session.messages({
-      sessionID: sessionId,
-      ...(options?.limit ? { limit: options.limit } : {}),
-      ...(options?.before ? { before: options.before } : {}),
-    });
-    return (res.data ?? []);
+    const page = await this.loadMessagePage(sessionId, options);
+    return page.entries;
+  },
+
+  async loadMessagePage(sessionId: string, options?: { limit?: number; before?: string }): Promise<MessagePage> {
+    const res = await retryRequest(() => opencodeClient.session.messages({
+        sessionID: sessionId,
+        ...(options?.limit ? { limit: options.limit } : {}),
+        ...(options?.before ? { before: options.before } : {}),
+      }));
+    const entries = res.data ?? [];
+    const cursor = res.response.headers.get('x-next-cursor');
+    const result: MessagePage = { entries };
+    if (cursor) result.nextCursor = cursor;
+    return result;
   },
 
   async loadTodos(sessionId: string): Promise<Todo[]> {

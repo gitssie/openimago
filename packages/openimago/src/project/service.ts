@@ -1,13 +1,17 @@
 import { mkdir } from "node:fs/promises"
 import { eq, and, sql, isNull } from "drizzle-orm"
 import { db } from "../db/client"
-import { projects, workspaceRefs, users } from "../db/schema"
+import { projects, users } from "../db/schema"
 import { WorkspaceTable } from "../db/workspace-schema"
 import { SessionTable } from "../db/session-schema"
 import { projectId } from "../utils/ids"
 import { logger } from "../server/logger"
 
-const COS_BASE_PATH = process.env.COS_BASE_PATH ?? "/mnt/cos"
+if (!process.env.COS_BASE_PATH) {
+  throw new Error("COS_BASE_PATH environment variable is required")
+}
+
+const COS_BASE_PATH = process.env.COS_BASE_PATH
 
 export interface CreateProjectInput {
   userId: string
@@ -47,7 +51,7 @@ export class ProjectService {
       updatedAt: now,
     })
 
-    // Link the user's workspace to this project via workspace_refs.
+    // Link the user's workspace to this project via WorkspaceTable.
     // Also ensure the opencode workspace.directory points to the project directory.
     const [user] = await db
       .select({ workspaceId: users.workspaceId })
@@ -56,15 +60,6 @@ export class ProjectService {
       .limit(1)
 
     if (user?.workspaceId) {
-      // Ensure workspace_ref record exists (insert/ignore — may already exist from session creation)
-      await db
-        .insert(workspaceRefs)
-        .values({ workspaceId: user.workspaceId, userId: input.userId, projectId: id })
-        .onConflictDoUpdate({
-          target: workspaceRefs.workspaceId,
-          set: { projectId: id },
-        })
-
       // Point the workspace at this project directory
       await db
         .insert(WorkspaceTable)
@@ -73,12 +68,13 @@ export class ProjectService {
           type: "local",
           name: input.name.trim(),
           directory,
-          project_id: "global",
+          project_id: id,
           time_used: Date.now(),
+          userId: input.userId,
         })
         .onConflictDoUpdate({
           target: WorkspaceTable.id,
-          set: { directory, name: input.name.trim() },
+          set: { directory, name: input.name.trim(), userId: input.userId, project_id: id },
         })
     }
 

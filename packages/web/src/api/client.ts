@@ -1,20 +1,7 @@
 import { useAuthStore } from 'src/stores/auth'
 
-function apiBaseUrl(): string {
-  const configured = import.meta.env.VITE_OPENIMAGO_API_URL
-  if (configured) return configured.replace(/\/+$/, '')
-
-  const loc = globalThis.location
-  const isLoopback = loc?.hostname === 'localhost' || loc?.hostname === '127.0.0.1'
-  if (isLoopback && loc.port !== '5467') {
-    return `${loc.protocol}//${loc.hostname}:5467`
-  }
-
-  return ''
-}
-
 function apiUrl(path: string): string {
-  return path.startsWith('http') ? path : `${apiBaseUrl()}${path}`
+  return path
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -36,7 +23,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const body = await res.text().catch(() => '')
     const returnedHtml = /^\s*<!doctype html|<html[\s>]/i.test(body)
     throw new Error(returnedHtml
-      ? 'API returned HTML. Check VITE_OPENIMAGO_API_URL or Quasar dev proxy: requests must hit the openimago backend, not the OpenCode UI.'
+      ? 'API returned HTML. Check Quasar dev proxy: requests must hit the openimago backend, not the OpenCode UI.'
       : `Expected JSON response from ${path}`)
   }
   return res.json()

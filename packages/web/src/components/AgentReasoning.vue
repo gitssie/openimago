@@ -26,6 +26,7 @@
 import { computed, ref, watch } from 'vue';
 import { MarkdownRender } from 'markstream-vue';
 import type { ReasoningPart } from '@opencode-ai/sdk/v2';
+import { extractHeading } from 'src/utils/heading';
 
 interface Props {
   part: ReasoningPart;
@@ -39,44 +40,6 @@ const displayText = computed(() => (props.text ?? props.part.text ?? '').trim())
 const streaming = computed(() => !props.part.time?.end);
 
 // ── Heading extraction ────────────────────────────────────────────────────
-
-function cleanHeadingText(value: string): string {
-  return value
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/[*_~]+/g, '')
-    .trim();
-}
-
-function extractHeading(text: string): string {
-  const markdown = text.replace(/\r\n?/g, '\n');
-
-  const html = markdown.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i);
-  if (html?.[1]) {
-    const value = cleanHeadingText(html[1].replace(/<[^>]+>/g, ' '));
-    if (value) return value;
-  }
-
-  const atx = markdown.match(/^\s{0,3}#{1,6}[ \t]+(.+?)(?:[ \t]+#+[ \t]*)?$/m);
-  if (atx?.[1]) {
-    const value = cleanHeadingText(atx[1]);
-    if (value) return value;
-  }
-
-  const setext = markdown.match(/^([^\n]+)\n(?:=+|-+)\s*$/m);
-  if (setext?.[1]) {
-    const value = cleanHeadingText(setext[1]);
-    if (value) return value;
-  }
-
-  const strong = markdown.match(/^\s*(?:\*\*|__)(.+?)(?:\*\*|__)\s*$/m);
-  if (strong?.[1]) {
-    const value = cleanHeadingText(strong[1]);
-    if (value) return value;
-  }
-
-  return '';
-}
 
 const heading = computed(() => extractHeading(displayText.value));
 

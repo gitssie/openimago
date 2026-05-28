@@ -1,8 +1,8 @@
 import { Context, Effect, Layer } from "effect"
 import { eq } from "drizzle-orm"
 import { db } from "../db/client"
-import { workspaceRefs } from "../db/schema"
-import { logger } from "../server/logger"
+import { users } from "../db/schema"
+import { WorkspaceTable } from "../db/workspace-schema"
 
 // ─── Testable factory ─────────────────────────────────────────────────────────
 
@@ -18,18 +18,17 @@ export interface WorkspaceResolverService {
 export function makeWorkspaceResolver(
   lookup: (workspaceId: string) => Promise<string | null>,
 ): WorkspaceResolverService {
-  // Simple in-memory Map cache (no TTL needed — workspace→user mapping is stable)
-  const cache = new Map<string, string | null>()
+  // Only cache positive results (workspace → user is stable once created).
+  const cache = new Map<string, string>()
 
   return {
     ownerOf: (workspaceId: string) =>
       Effect.gen(function* () {
         if (cache.has(workspaceId)) {
-          const cached = cache.get(workspaceId) ?? null
-          return cached
+          return cache.get(workspaceId)!
         }
         const result = yield* Effect.promise(() => lookup(workspaceId))
-        cache.set(workspaceId, result)
+        if (result) cache.set(workspaceId, result)
         return result
       }),
   }
@@ -48,12 +47,19 @@ export const WorkspaceResolverLive = Layer.effect(
   WorkspaceResolver,
   Effect.gen(function* () {
     return makeWorkspaceResolver(async (workspaceId: string) => {
-      const rows = await db
-        .select({ userId: workspaceRefs.userId })
-        .from(workspaceRefs)
-        .where(eq(workspaceRefs.workspaceId, workspaceId))
+      const workspaceRows = await db
+        .select({ userId: WorkspaceTable.userId })
+        .from(WorkspaceTable)
+        .where(eq(WorkspaceTable.id, workspaceId))
         .limit(1)
-      return rows[0]?.userId ?? null
+      if (workspaceRows[0]?.userId) return workspaceRows[0].userId
+
+      const userRows = await db
+        .select({ userId: users.id })
+        .from(users)
+        .where(eq(users.workspaceId, workspaceId))
+        .limit(1)
+      return userRows[0]?.userId ?? null
     })
   }),
 )

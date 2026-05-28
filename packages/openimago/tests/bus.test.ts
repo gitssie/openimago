@@ -113,4 +113,33 @@ describe("UserEventBus", () => {
     expect(bobEvents).toHaveLength(1)
     expect(bobEvents[0]?.type).toBe("bob.event")
   })
+
+  test("single event error does NOT crash the entire fanout", async () => {
+    // resolver.ownerOf throws for "wrk_error" to simulate a transient DB failure
+    const resolver = makeWorkspaceResolver(async (ws) => {
+      if (ws === "wrk_alice") return "user_alice"
+      if (ws === "wrk_error") throw new Error("DB transient failure")
+      return null
+    })
+
+    const events: GlobalEvent[] = [
+      mkGlobalEvent("wrk_error", "should.fail"),
+      mkGlobalEvent("wrk_alice", "should.succeed"),
+    ]
+    const upstreamStream = Stream.fromIterable(events)
+    const bus = makeUserEventBus(upstreamStream, resolver)
+
+    const received = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const stream = yield* bus.events("user_alice")
+          yield* Effect.forkScoped(bus.startFanout())
+          return yield* stream.pipe(Stream.runCollect, Effect.map((c) => Array.from(c) as BusEvent[]))
+        }),
+      ) as Effect.Effect<BusEvent[], never, never>,
+    )
+
+    expect(received).toHaveLength(1)
+    expect(received[0]?.type).toBe("should.succeed")
+  })
 })

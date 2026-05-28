@@ -411,6 +411,146 @@ routes.get("/api/event", (c) => {
 
 `proxyRequest` 的 `new Response(response.body, ...)` 天然支持 streaming，浏览器端 `EventSource` 正常接收。
 
+### 5.7 SSE 事件契约与前端状态规则
+
+openimago 前端通过 `/api/event` 接收 OpenCode 的 SSE 事件流。以下是关键事件及其处理规则。
+
+#### 5.7.1 事件 payload 格式
+
+OpenCode 在不同层次发出的事件 payload 结构有差异，前端必须兼容两种格式：
+
+**格式 A — Bus 事件（SSE 直出）**：
+```typescript
+{
+  type: "session.created",
+  properties: {
+    sessionID: "ses_xxx",
+    info: Session          // 完整 Session 信息
+  }
+}
+```
+
+**格式 B — Sync 事件（持久化层）**：
+```typescript
+{
+  type: "session.created.1",
+  aggregate: "sessionID",
+  data: {
+    sessionID: "ses_xxx",
+    info: Session
+  }
+}
+```
+
+**前端归一化规则**：
+- `payload.properties?.info` **或** `payload.data?.info` → 统一取 `info`
+- `payload.properties?.sessionID` **或** `payload.data?.sessionID` → 统一取 `sessionID`
+- 优先检查 `properties`，fallback 到 `data`
+
+**关键 Session 事件**：
+
+| 事件类型 | payload 结构 | 触发时机 |
+|---------|-------------|---------|
+| `session.created` | `{ properties: { sessionID, info } }` | 新建会话（包括后端 openimago 转发创建） |
+| `session.updated` | `{ properties: { sessionID, info } }` | 标题变更、时间戳更新、权限变更等 |
+| `session.deleted` | `{ properties: { sessionID, info } }` | 会话被删除 |
+| `session.error` | `{ properties: { sessionID?, error } }` | 会话出错 |
+| `session.diff` | `{ properties: { sessionID, diff } }` | 文件变更摘要 |
+
+**Session Info 核心字段**：
+```typescript
+interface Session {
+  id: string            // "ses_xxx"
+  parentID?: string     // 子会话的父会话 ID — 必须保留
+  directory: string     // "/mnt/cos/xxx"
+  title: string         // 会话标题 — 可为空字符串 ""
+  time: {
+    created: number     // Unix ms
+    updated: number     // Unix ms
+    archived?: number   // Unix ms
+  }
+  // ... 其他字段
+}
+```
+
+#### 5.7.2 前端状态管理规则
+
+**规则 1：`session.created` 等同于 `session.updated`**
+
+后端 openimago 通过 `POST /api/platform/sessions` 创建会话时会转发到 OpenCode，OpenCode 创建成功后发出 `session.created` 事件。前端**必须**用此事件将新会话注入本地状态。两种事件的处理逻辑完全一致：以 `info` 为准，upsert 到会话列表。
+
+```typescript
+// 伪代码 — session.created 和 session.updated 共用同一 handler
+function handleSessionEvent(event) {
+  const { sessionID, info } = normalizePayload(event)
+  updateOrInsertSession(sessionID, info)  // upsert
+}
+```
+
+**规则 2：禁止乐观假数据**
+
+前端**不得**在等待 OpenCode 响应前自行构造临时 Session 对象插入列表。创建会话的正确流程：
+
+```
+用户操作 → POST /api/platform/sessions (body: { title?, projectId? })
+         → openimago mkdir → forward POST /session
+         → OpenCode 返回 Session → openimago 返回前端
+         → SSE 推送 session.created → 前端 upsert 到列表
+```
+
+错误做法（必须避免）：
+```typescript
+// ❌ 禁止：假乐观更新
+const fakeId = "pending_" + Date.now()
+sessions.unshift({ id: fakeId, title: "新会话", ... })
+
+// ❌ 禁止：硬编码 title
+const newSession = { id: response.id, title: "Untitled", ... }
+```
+
+**规则 3：标题为空就是空，UI 层做 fallback**
+
+- `Session.title` 可能为空字符串 `""` — OpenCode 允许无标题会话
+- **Store / Service 层**：空标题 `""` 保持为空，不要用 `"Untitled"` 或类似硬编码替换
+- **UI 渲染层**：仅在此层做 fallback 显示，如 `session.title || "未命名会话"`
+- 错误示例：`store.dispatch(setSession({ ...info, title: info.title || "Untitled" }))` — 这会污染数据
+
+**规则 4：首次消息流程**
+
+```
+1. 用户新建会话（POST /session）
+2. 前端收到 session.created 事件 → 列表中出现新会话（title 为空）
+3. 用户发送第一条消息（POST /session/:id/prompt）
+4. OpenCode 的 agent 根据首条消息内容自动生成标题
+5. 后端发出 session.updated 事件（含新 title）
+6. 前端收到后更新会话标题
+```
+
+**规则 5：会话列表由后端/事件驱动**
+
+- 列表数据源**始终**是 `GET /api/session`（直查 PG）或 SSE 事件
+- 不自行维护 localStorage/editTime 等客户端侧缓存作为权威数据源
+- 列表排序以 `time.created` / `time.updated` 为准，不引入客户端时间戳
+
+**规则 6：保留 parentID / 子会话关系**
+
+- `Session.parentID` 表示 fork 的子会话，前端**不得**丢失或忽略
+- 渲染子会话时保留层级结构（如缩进、嵌套或在详情页展示关联关系）
+- 删除父会话时，OpenCode 会递归删除所有子会话，前端应从列表移除对应的所有 `session.deleted` 事件
+
+#### 5.7.3 Untitled 陷阱与排查清单
+
+以下是从实际项目中总结的常见错误模式：
+
+| # | 问题 | 症状 | 修复 |
+|---|------|------|------|
+| 1 | Store 层自动补 `"Untitled"` 取代空标题 | 后端更新标题后无法区分"用户取名 Untitled"和"空标题 fallback" | Store 层保持原始空串，UI 层用 `|| "未命名"` |
+| 2 | `session.created` 被忽略，只处理 `session.updated` | 后端创建的会话不进入前端列表 | `session.created` 和 `session.updated` 共用 upsert handler |
+| 3 | 前端乐观插入假 session 对象 | 列表出现重复条目或 ghost session | 移除所有 optimistic insert；等待 SSE 事件 |
+| 4 | 未归一化 `properties.info` / `data.info` | 特定场景下 session 的 info 为 `undefined` | 实现 normalizePayload 统一提取 |
+| 5 | 排序用客户端时间戳 | 排序与后端不一致 | 始终用 `time.created` / `time.updated` |
+| 6 | `parentID` 被丢弃 | fork 后子会话显示为根会话 | 保留并传递 `parentID` |
+
 ## 6. proxyMiddleware 路由匹配
 
 已实现（`src/server/middleware.ts`）。逻辑：

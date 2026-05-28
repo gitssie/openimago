@@ -1,22 +1,64 @@
+// ================================================================
 // openimago — Dark + Neon Creative Workshop
-// --------------------------------------------------
+// Build-time SCSS variables for Quasar theme & component usage.
+// For runtime CSS custom properties, see app.scss § DESIGN TOKENS.
+// ================================================================
 
-// Neon accent palette
-$neon-cyan: #00f0ff;
+// ── Neon accent palette ─────────────────────────────────────────
+$neon-cyan:   #00f0ff;
 $neon-purple: #a855f7;
-$neon-pink: #ff2d95;
+$neon-pink:   #ff2d95;
+$neon-green:  #39ff14;
 
-// Quasar brand colors
-$primary: #00f0ff;
-$secondary: #a855f7;
-$accent: #ff2d95;
+// ── Quasar brand colours ────────────────────────────────────────
+$primary:   $neon-cyan;
+$secondary: $neon-purple;
+$accent:    $neon-pink;
 
-// Dark theme
-$dark: #0a0a0f;
+// ── Dark theme ──────────────────────────────────────────────────
+$dark:      #0a0a0f;
 $dark-page: #0a0a0f;
 
-// Semantic
-$positive: #39ff14;
-$negative: #ff2d95;
-$info: #00f0ff;
-$warning: #f59e0b;
+// ── Semantic ────────────────────────────────────────────────────
+$positive: $neon-green;
+$negative: $neon-pink;
+$info:     $neon-cyan;
+$warning:  #f59e0b;  // also used by --imago-warning-* tokens
+
+// ── Background palette ──────────────────────────────────────────
+$bg-void:    #08080f;
+$bg-deep:    #0a0a0f;
+$bg-panel:   #12121a;
+$bg-surface: #111113;
+$bg-card:    #18181b;
+$bg-code:    #0d1117;
+
+// ── Text palette ────────────────────────────────────────────────
+$text-primary:   #e8e8ec;
+$text-secondary: #d4d4d8;
+$text-muted:     #a1a1aa;
+$text-dim:       #71717a;
+$text-faint:     #52525b;
+
+// ── Borders ─────────────────────────────────────────────────────
+$border-ghost:  rgba(255, 255, 255, 0.03);
+$border-subtle: rgba(255, 255, 255, 0.04);
+$border-light:  rgba(255, 255, 255, 0.06);
+$border-soft:   rgba(255, 255, 255, 0.08);
+$border-dim:    rgba(255, 255, 255, 0.12);
+
+// ── Radii ───────────────────────────────────────────────────────
+$radius-xs:   4px;
+$radius-sm:   6px;
+$radius-md:   8px;
+$radius-lg:  12px;
+$radius-xl:  16px;
+$radius-2xl: 20px;
+$radius-3xl: 24px;
+$radius-pill: 999px;
+
+// ── Blur intensities ────────────────────────────────────────────
+$blur-chrome: 20px;
+$blur-panel:  16px;
+$blur-card:   18px;
+$blur-glass:  24px;

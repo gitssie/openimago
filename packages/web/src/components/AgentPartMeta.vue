@@ -1,12 +1,12 @@
 <template>
-  <div class="part-meta-item">
-    <div class="part-meta-header row items-center no-wrap" @click="open = !open">
+  <div class="part-meta-item imago-part">
+    <div class="imago-part__header" @click="open = !open">
       <q-icon :name="icon" size="14px" color="grey-6" class="q-mr-xs" />
-      <span class="part-meta-title col">{{ title }}</span>
+      <span class="imago-part__title col">{{ title }}</span>
       <q-icon :name="open ? 'expand_less' : 'expand_more'" size="14px" color="grey-5" />
     </div>
 
-    <div v-if="open" class="part-meta-body">
+    <div v-if="open" class="imago-part__body">
       <slot />
     </div>
   </div>
@@ -24,36 +24,5 @@ const props = withDefaults(defineProps<{
 });
 
 const open = ref(props.defaultOpen);
+// No scoped style — visual rules from global .imago-part
 </script>
-
-<style lang="scss" scoped>
-.part-meta-item {
-  margin: 4px 0;
-  border-radius: 8px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(255, 255, 255, 0.65);
-  overflow: hidden;
-}
-
-.part-meta-header {
-  min-height: 30px;
-  padding: 6px 10px;
-  cursor: pointer;
-  user-select: none;
-
-  &:hover {
-    background: rgba(0, 0, 0, 0.03);
-  }
-}
-
-.part-meta-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: $grey-8;
-}
-
-.part-meta-body {
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
-  padding: 8px 10px;
-}
-</style>

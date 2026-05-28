@@ -128,14 +128,6 @@ export const GlobalEventUpstreamLive = Layer.effect(
 
       // Parse SSE and publish each event into the shared PubSub
       yield* parseSseChunks(response.body as ReadableStream<Uint8Array>).pipe(
-        Stream.tap((evt) =>
-          Effect.sync(() => {
-            logger.info(
-              { type: evt.payload.type, workspace: evt.workspace, directory: evt.directory },
-              "upstream: received event from opencode",
-            )
-          }),
-        ),
         Stream.runForEach((evt) => PubSub.publish(pubsub, evt)),
       )
 

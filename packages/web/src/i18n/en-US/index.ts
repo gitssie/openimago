@@ -47,6 +47,8 @@ export default {
     followupMany: '{count} follow-ups',
     followupFailed: 'Send failed',
     followupPaused: 'Follow-ups paused',
+    queueFollowup: 'Queue follow-up',
+    loadingEarlier: 'Loading earlier messages',
     sendNow: 'Send now',
     revertActive: 'Restorable message available',
     retrying: 'Retrying...',

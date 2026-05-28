@@ -63,6 +63,10 @@ export interface QueuedFollowup {
 }
 
 const OPTIMISTIC_PART_ID_PREFIX = 'optimistic:';
+const INITIAL_MESSAGE_PAGE_SIZE = 80;
+const HISTORY_MESSAGE_PAGE_SIZE = 200;
+const RECENT_EVENT_ID_LIMIT = 500;
+const SESSION_MESSAGE_CACHE_LIMIT = 40;
 
 // ── Composable ────────────────────────────────────────────────────────────────
 
@@ -105,6 +109,7 @@ export function useAgentSession(
   const sessionList = ref<SessionItem[]>([]);
   const childSessions = ref<Record<string, SessionItem[]>>({});
   const sessionMessages = ref<Record<string, SessionMessageCache[]>>({});
+  const historyCursor = ref<Record<string, string | undefined>>({});
   const availableCommands = ref<string[]>([]);
   const availableAgents = ref<string[]>([]);
 
@@ -123,6 +128,12 @@ export function useAgentSession(
   // ── Internal bookkeeping ────────────────────────────────────────────────────
 
   let sseAbort: AbortController | null = null;
+  const recentEventIds: string[] = [];
+  const recentEventIdSet = new Set<string>();
+  const cachedSessionIds: string[] = [];
+  const cachedSessionIdSet = new Set<string>();
+  const messageLoadInflight = new Map<string, Promise<void>>();
+  const historyLoadInflight = new Map<string, Promise<boolean>>();
 
   /** Per-part accumulated delta text */
   const partText = ref<Map<string, string>>(new Map());
@@ -177,7 +188,37 @@ export function useAgentSession(
     curAsstMessage.value = null;
   }
 
+  function setHistoryCursor(sid: string, cursor: string | undefined) {
+    historyCursor.value = {
+      ...historyCursor.value,
+      [sid]: cursor,
+    };
+  }
+
+  function touchSessionMessageCache(sid: string) {
+    if (cachedSessionIdSet.has(sid)) {
+      const index = cachedSessionIds.indexOf(sid);
+      if (index >= 0) cachedSessionIds.splice(index, 1);
+    } else {
+      cachedSessionIdSet.add(sid);
+    }
+
+    cachedSessionIds.push(sid);
+    while (cachedSessionIds.length > SESSION_MESSAGE_CACHE_LIMIT) {
+      const stale = cachedSessionIds.shift();
+      if (!stale || stale === sessionId.value) continue;
+      cachedSessionIdSet.delete(stale);
+      const { [stale]: _messages, ...nextMessages } = sessionMessages.value;
+      const { [stale]: _cursor, ...nextCursor } = historyCursor.value;
+      void _messages;
+      void _cursor;
+      sessionMessages.value = nextMessages;
+      historyCursor.value = nextCursor;
+    }
+  }
+
   function cacheSessionMessages(sid: string, entries: RawMessageEntry[]) {
+    touchSessionMessageCache(sid);
     sessionMessages.value = {
       ...sessionMessages.value,
       [sid]: entries
@@ -239,6 +280,38 @@ export function useAgentSession(
     const lastAssistant = lastAssistantEntry?.info.role === 'assistant' ? lastAssistantEntry.info : undefined;
 
     curAsstMessage.value = lastAssistant ?? null;
+  }
+
+  function rememberEventId(id: string | undefined): boolean {
+    if (!id) return false;
+    if (recentEventIdSet.has(id)) return true;
+
+    recentEventIdSet.add(id);
+    recentEventIds.push(id);
+    while (recentEventIds.length > RECENT_EVENT_ID_LIMIT) {
+      const stale = recentEventIds.shift();
+      if (stale) recentEventIdSet.delete(stale);
+    }
+    return false;
+  }
+
+  function normalizeEvent(raw: Record<string, unknown>): Event | null {
+    const syncEvent = raw.syncEvent as Record<string, unknown> | undefined;
+    const source = syncEvent ?? raw;
+    const id = typeof source.id === 'string' ? source.id : undefined;
+    if (rememberEventId(id)) return null;
+
+    const rawType = source.type;
+    const type = (typeof rawType === 'string' ? rawType : '').replace(/\.\d+$/, '');
+    if (!type) return null;
+
+    const properties = 'properties' in source ? source.properties : source.data;
+    return {
+      ...source,
+      id,
+      type,
+      properties,
+    } as Event;
   }
 
   function refreshDisplayMessages(sid: string | null = sessionId.value) {
@@ -380,6 +453,7 @@ export function useAgentSession(
   }
 
   function mergeCachedMessages(sessionIdForMessage: string, entries: RawMessageEntry[]) {
+    touchSessionMessageCache(sessionIdForMessage);
     const merged = new Map<string, SessionMessageCache>();
 
     for (const existing of sessionMessages.value[sessionIdForMessage] ?? []) {
@@ -623,14 +697,19 @@ export function useAgentSession(
   }
 
   async function loadSessionMessages(sid: string) {
+    const pending = messageLoadInflight.get(sid);
+    if (pending) return pending;
+
     resetChatState();
-    try {
-      const [msgs, todos, sessionInfo] = await Promise.all([
-        AgentService.loadMessages(sid, { limit: 50 }),
+    const task = (async () => {
+      const [page, todos, sessionInfo] = await Promise.all([
+        AgentService.loadMessagePage(sid, { limit: INITIAL_MESSAGE_PAGE_SIZE }),
         AgentService.loadTodos(sid).catch(() => []),
         AgentService.getSession(sid).catch(() => null),
       ]);
+      const msgs = page.entries;
       cacheSessionMessages(sid, msgs);
+      setHistoryCursor(sid, page.nextCursor);
       sessionTodos.value = todos;
       if (sessionInfo) {
         if (sessionInfo.parentID) {
@@ -640,7 +719,7 @@ export function useAgentSession(
         }
       }
       refreshDisplayMessages(sid);
-      historyExhausted.value = msgs.length < 50;
+      historyExhausted.value = !page.nextCursor;
       await nextTick();
       scrollToBottomNow();
 
@@ -685,40 +764,56 @@ export function useAgentSession(
       } catch {
         // silent
       }
-    } catch {
+    })().catch(() => {
       // silent
-    }
+    }).finally(() => {
+      messageLoadInflight.delete(sid);
+    });
+
+    messageLoadInflight.set(sid, task);
+    return task;
   }
 
   async function loadOlderMessages() {
-    if (!sessionId.value || historyLoading.value || historyExhausted.value) {
+    const sid = sessionId.value;
+    if (!sid || historyLoading.value || historyExhausted.value) {
       return false;
     }
 
-    const oldestUser = displayMessages.value.find((message) => message.role === 'user');
-    const before = oldestUser?.info?.id;
+    const before = historyCursor.value[sid];
     if (!before) {
       historyExhausted.value = true;
       return false;
     }
 
+    const inflightKey = `${sid}\n${before}`;
+    const pending = historyLoadInflight.get(inflightKey);
+    if (pending) return pending;
+
     historyLoading.value = true;
-    try {
-      const older = await AgentService.loadMessages(sessionId.value, { limit: 50, before });
+    const task = (async () => {
+      const page = await AgentService.loadMessagePage(sid, { limit: HISTORY_MESSAGE_PAGE_SIZE, before });
+      const older = page.entries;
       if (!older.length) {
         historyExhausted.value = true;
         return false;
       }
 
-      mergeCachedMessages(sessionId.value, older);
-      refreshDisplayMessages(sessionId.value);
-      historyExhausted.value = older.length < 50;
+      mergeCachedMessages(sid, older);
+      setHistoryCursor(sid, page.nextCursor);
+      refreshDisplayMessages(sid);
+      historyExhausted.value = !page.nextCursor;
       return !historyExhausted.value;
-    } catch {
+    })().catch(() => {
+      historyExhausted.value = true;
       return false;
-    } finally {
+    }).finally(() => {
       historyLoading.value = false;
-    }
+      historyLoadInflight.delete(inflightKey);
+    });
+
+    historyLoadInflight.set(inflightKey, task);
+    return task;
   }
 
   async function switchSession(sid: string) {
@@ -727,16 +822,13 @@ export function useAgentSession(
     await loadSessionMessages(sid);
   }
 
-  async function createNewSession() {
-    try {
-      const session = await AgentService.createSession();
-      upsertSession(session);
-      sessionId.value = session.id;
-      resetChatState();
-      void nextTick(() => focusInput());
-    } catch {
-      notifyError('Failed to create session');
-    }
+  function createNewSession() {
+    sessionId.value = null;
+    inputMessage.value = '';
+    pendingAttachments.value = [];
+    selectedDatasets.value = [];
+    resetChatState();
+    void nextTick(() => focusInput());
   }
 
   async function deleteSession(sid: string) {
@@ -798,11 +890,12 @@ export function useAgentSession(
         break;
       }
 
+      case 'session.created':
       case 'session.updated': {
         const info = event.properties.info;
-        const item = {
+        const item: SessionItem = {
           id: info.id,
-          title: info.title ?? 'Untitled',
+          title: info.title ?? '',
           time: new Date(info.time?.created ?? Date.now()),
           ...(info.parentID ? { parentID: info.parentID } : {}),
           ...(info.revert ? { revert: info.revert } : {}),
@@ -962,11 +1055,10 @@ export function useAgentSession(
         for await (const raw of stream) {
           if (sseAbort?.signal.aborted) break;
 
-          // Unwrap sync envelope: raw SSE uses {type:"sync", syncEvent:{...}}
-          // then strip version suffix: e.g. "message.part.updated.1" → "message.part.updated"
-          const inner = (raw as Record<string, unknown>).syncEvent ?? raw;
-          const normalizedType = String((inner as { type?: string }).type ?? '').replace(/\.\d+$/, '');
-          handleEvent({ ...(inner as Event), type: normalizedType as Event['type'] });
+          // Align with OpenCode event shape: unwrap sync envelope, map data → properties,
+          // strip version suffix, and ignore duplicate event IDs from dual raw/normalized delivery.
+          const event = normalizeEvent(raw);
+          if (event) handleEvent(event);
         }
       } catch {
         // AbortError or connection closed — not fatal

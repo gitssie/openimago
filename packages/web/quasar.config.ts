@@ -5,8 +5,6 @@ import { defineConfig } from '#q-app/wrappers';
 import { fileURLToPath } from 'node:url';
 
 export default defineConfig((ctx) => {
-  const openimagoApiUrl = process.env.VITE_OPENIMAGO_API_URL || 'http://localhost:5467'
-
   return {
     // https://v2.quasar.dev/quasar-cli-vite/prefetch-feature
     // preFetch: true,
@@ -109,15 +107,15 @@ export default defineConfig((ctx) => {
       open: true, // opens browser window automatically
       proxy: {
         '/api': {
-          target: openimagoApiUrl,
+          target: 'http://localhost:5467',
           changeOrigin: true,
         },
         '/auth': {
-          target: openimagoApiUrl,
+          target: 'http://localhost:5467',
           changeOrigin: true,
         },
         '/health': {
-          target: openimagoApiUrl,
+          target: 'http://localhost:5467',
           changeOrigin: true,
         },
       },

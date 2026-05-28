@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { db } from "../src/db/client"
-import { workspaceRefs, users, userAuths } from "../src/db/schema"
+import { users, userAuths } from "../src/db/schema"
 import { WorkspaceTable } from "../src/db/workspace-schema"
 import { SessionTable } from "../src/db/session-schema"
 import { setup, teardown, setupSessionTable, setupMessageTable } from "./helper"
@@ -21,7 +21,7 @@ beforeAll(async () => {
 }, 30_000)
 
 afterAll(async () => {
-  await db.delete(SessionTable); await db.delete(workspaceRefs)
+  await db.delete(SessionTable)
   await db.delete(userAuths); await db.delete(users); await db.delete(WorkspaceTable)
   await teardown()
 }, 10_000)
@@ -101,7 +101,7 @@ async function readSSE(token: string, timeoutMs: number): Promise<Record<string,
 describe("/api/event SSE endpoint", () => {
   test("receives server.connected event on connection", async () => {
     const reg = await registerUser("sse_conn")
-    await db.insert(workspaceRefs).values({ workspaceId: reg.user.workspaceId, userId: reg.user.id }).onConflictDoNothing()
+    // userId is already set on WorkspaceTable during registerUser → no manual mapping needed
 
     // Give EventLayer time to init
     await new Promise((r) => setTimeout(r, 6000))
@@ -114,7 +114,7 @@ describe("/api/event SSE endpoint", () => {
 
   test("receives session.updated after creating a session", async () => {
     const reg = await registerUser("sse_sess")
-    await db.insert(workspaceRefs).values({ workspaceId: reg.user.workspaceId, userId: reg.user.id }).onConflictDoNothing()
+    // userId is already set on WorkspaceTable during registerUser → no manual mapping needed
 
     // Connect to SSE
     const abort = new AbortController()

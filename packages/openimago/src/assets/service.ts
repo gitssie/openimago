@@ -5,7 +5,11 @@ import { db } from "../db/client"
 import { assets } from "../db/schema"
 import { userId as genUserId } from "../utils/ids"
 
-const COS_BASE_PATH = process.env.COS_BASE_PATH ?? "/mnt/cos"
+if (!process.env.COS_BASE_PATH) {
+  throw new Error("COS_BASE_PATH environment variable is required")
+}
+
+const COS_BASE_PATH = process.env.COS_BASE_PATH
 
 function getMaxUploadSize(): number {
   return parseInt(process.env.MAX_UPLOAD_SIZE ?? "104857600", 10)

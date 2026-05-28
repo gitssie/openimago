@@ -1,13 +1,13 @@
 <template>
   <q-layout view="lHh Lpr lFf" class="main-shell">
-    <q-header class="main-header">
+    <q-header class="imago-header main-header">
       <q-toolbar class="main-toolbar">
         <q-btn flat dense round icon="menu" aria-label="Menu" class="menu-btn" @click="toggleLeftDrawer" />
 
-        <q-toolbar-title class="page-title">{{ pageTitle }}</q-toolbar-title>
+        <q-toolbar-title class="imago-text-cyan imago-page-title">{{ pageTitle }}</q-toolbar-title>
 
-        <q-btn flat no-caps class="user-chip" aria-label="User">
-          <q-avatar size="46px" class="user-avatar">
+        <q-btn flat no-caps class="imago-user-chip user-chip" aria-label="User">
+          <q-avatar size="46px" class="imago-user-avatar user-avatar">
             <q-icon name="person" />
           </q-avatar>
           <span class="user-name">{{ auth.user?.username || auth.user?.email || 'Timmy' }}</span>
@@ -33,61 +33,61 @@
       </q-toolbar>
     </q-header>
 
-    <q-drawer v-model="leftDrawerOpen" show-if-above bordered :mini="miniState" :width="160" :mini-width="160" class="main-drawer">
-      <div class="drawer-brand">openimago</div>
+    <q-drawer v-model="leftDrawerOpen" show-if-above bordered :mini="miniState" :width="160" :mini-width="160" class="imago-drawer main-drawer">
+      <div class="imago-text-cyan imago-brand imago-drawer-brand drawer-brand">openimago</div>
 
       <q-list class="nav-list">
-        <q-item clickable v-ripple to="/projects" class="nav-item" active-class="nav-item--active">
+        <q-item clickable v-ripple to="/projects" class="imago-nav-item nav-item" active-class="imago-nav-active">
           <q-item-section avatar>
             <q-icon name="folder" />
           </q-item-section>
-          <q-item-section class="nav-label">项目</q-item-section>
+          <q-item-section class="imago-nav-label nav-label">项目</q-item-section>
         </q-item>
 
-        <q-item clickable v-ripple to="/prompts" class="nav-item" active-class="nav-item--active">
+        <q-item clickable v-ripple to="/prompts" class="imago-nav-item nav-item" active-class="imago-nav-active">
           <q-item-section avatar>
             <q-icon name="grid_view" />
           </q-item-section>
-          <q-item-section class="nav-label">Prompt</q-item-section>
+          <q-item-section class="imago-nav-label nav-label">Prompt</q-item-section>
         </q-item>
 
-        <q-item clickable v-ripple to="/sessions" class="nav-item" active-class="nav-item--active">
+        <q-item clickable v-ripple to="/sessions" class="imago-nav-item nav-item" active-class="imago-nav-active">
           <q-item-section avatar>
             <q-icon name="deployed_code" />
           </q-item-section>
-          <q-item-section class="nav-label">工作台</q-item-section>
+          <q-item-section class="imago-nav-label nav-label">工作台</q-item-section>
         </q-item>
 
-        <q-item clickable v-ripple to="/assets" class="nav-item" active-class="nav-item--active">
+        <q-item clickable v-ripple to="/assets" class="imago-nav-item nav-item" active-class="imago-nav-active">
           <q-item-section avatar>
             <q-icon name="image" />
           </q-item-section>
-          <q-item-section class="nav-label">资产</q-item-section>
+          <q-item-section class="imago-nav-label nav-label">资产</q-item-section>
         </q-item>
 
-        <q-item clickable v-ripple to="/admin/users" class="nav-item" active-class="nav-item--active">
+        <q-item clickable v-ripple to="/admin/users" class="imago-nav-item nav-item" active-class="imago-nav-active">
           <q-item-section avatar>
             <q-icon name="group" />
           </q-item-section>
-          <q-item-section class="nav-label">用户</q-item-section>
+          <q-item-section class="imago-nav-label nav-label">用户</q-item-section>
         </q-item>
 
-        <q-item clickable v-ripple class="nav-item">
+        <q-item clickable v-ripple class="imago-nav-item nav-item">
           <q-item-section avatar>
             <q-icon name="bar_chart" />
           </q-item-section>
-          <q-item-section class="nav-label">统计</q-item-section>
+          <q-item-section class="imago-nav-label nav-label">统计</q-item-section>
         </q-item>
       </q-list>
 
-      <q-item clickable v-ripple to="/settings" class="nav-item nav-settings" active-class="nav-item--active">
+      <q-item clickable v-ripple to="/settings" class="imago-nav-item nav-item nav-settings" active-class="imago-nav-active">
         <q-item-section avatar>
           <q-icon name="settings" />
         </q-item-section>
-        <q-item-section class="nav-label">设置</q-item-section>
+        <q-item-section class="imago-nav-label nav-label">设置</q-item-section>
       </q-item>
 
-      <q-btn round flat icon="keyboard_double_arrow_right" class="drawer-collapse" @click="toggleLeftDrawer" />
+      <q-btn round flat icon="keyboard_double_arrow_right" class="imago-btn-glass drawer-collapse" @click="toggleLeftDrawer" />
     </q-drawer>
 
     <q-page-container>
@@ -150,10 +150,6 @@ function handleLogout() {
 
 .main-header {
   height: 86px;
-  background: rgb(3 7 18 / 64%) !important;
-  border-bottom: 1px solid rgb(133 174 220 / 18%);
-  box-shadow: none;
-  backdrop-filter: blur(20px);
 }
 
 .main-toolbar {
@@ -167,76 +163,10 @@ function handleLogout() {
   margin-right: 22px;
 }
 
-.page-title {
-  color: #18f6ff;
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: 0.03em;
-  text-shadow: 0 0 16px rgb(24 246 255 / 46%);
-}
-
-.user-chip {
-  color: #d8dfed;
-  gap: 10px;
-  padding: 0;
-  font-size: 15px;
-}
-
-.user-avatar {
-  color: #20efff;
-  background: linear-gradient(135deg, rgb(25 239 255 / 20%), rgb(160 55 255 / 42%));
-  border: 1px solid rgb(144 85 255 / 80%);
-  box-shadow: 0 0 18px rgb(140 55 255 / 42%);
-}
-
-.main-drawer {
-  background: rgb(2 7 18 / 72%) !important;
-  border-right: 1px solid rgb(133 174 220 / 20%) !important;
-  backdrop-filter: blur(20px);
-}
-
-.drawer-brand {
-  height: 86px;
-  display: flex;
-  align-items: center;
-  padding-left: 22px;
-  color: #20f7ff;
-  font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
-  font-size: 21px;
-  font-weight: 700;
-  letter-spacing: -0.08em;
-  border-bottom: 1px solid rgb(133 174 220 / 18%);
-  text-shadow: 0 0 11px rgb(32 247 255 / 56%);
-}
-
 .nav-list {
   padding: 46px 18px 0;
   display: grid;
   gap: 16px;
-}
-
-.nav-item {
-  min-height: 54px;
-  color: #d8dfed;
-  border: 1px solid transparent;
-  border-radius: 10px;
-}
-
-.nav-item :deep(.q-icon) {
-  font-size: 22px;
-}
-
-.nav-label {
-  display: none;
-}
-
-.nav-item--active,
-.nav-item.q-router-link--active {
-  color: #12f3ff !important;
-  background: linear-gradient(90deg, rgb(0 235 255 / 18%), rgb(21 34 68 / 18%)) !important;
-  border-color: rgb(130 178 239 / 22%);
-  border-left: 2px solid #16f5ff !important;
-  box-shadow: inset 0 0 24px rgb(0 238 255 / 12%);
 }
 
 .nav-settings {
@@ -250,9 +180,6 @@ function handleLogout() {
   position: absolute;
   bottom: 34px;
   left: 50px;
-  color: #d9efff;
-  border: 1px solid #16f5ff;
-  background: rgb(0 64 130 / 24%);
-  box-shadow: 0 0 18px rgb(0 154 255 / 34%);
+  border-radius: 50%;
 }
 </style>

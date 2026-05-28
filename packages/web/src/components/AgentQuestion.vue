@@ -1,5 +1,5 @@
 <template>
-  <div class="agent-question-dock">
+  <div class="agent-question-dock imago-dock imago-dock--glass">
     <!-- Header: "1 of N questions" + progress dots -->
     <div class="question-header row items-center no-wrap q-px-sm q-pt-xs">
       <span class="text-caption text-grey-6 col">{{ t('agentQuestion.questionCount', { current: tabIndex + 1, total }) }}</span>
@@ -7,20 +7,20 @@
         <button
           v-for="(_, i) in questions"
           :key="i"
-          class="progress-dot"
-          :class="{ 'progress-dot--active': i === tabIndex, 'progress-dot--answered': isAnswered(i) }"
+          class="imago-dot-progress"
+          :class="{ 'imago-dot-progress--active': i === tabIndex, 'imago-dot-progress--completed': isAnswered(i) }"
           :disabled="sending"
           @click="jump(i)"
         />
       </div>
     </div>
 
-    <q-separator color="grey-3" />
+    <div class="imago-dock__sep" />
 
     <!-- Question body -->
     <div class="question-body q-px-sm q-py-xs">
       <div class="text-body2 text-weight-medium q-mb-xs">{{ currentQuestion.question }}</div>
-      <div class="text-caption text-grey-5 q-mb-sm">
+      <div class="text-caption text-grey-6 q-mb-sm">
         {{ currentQuestion.multiple ? t('agentQuestion.selectAll') : t('agentQuestion.selectOne') }}
       </div>
 
@@ -29,8 +29,8 @@
         <button
           v-for="(opt, i) in currentQuestion.options"
           :key="i"
-          class="option-btn"
-          :class="{ 'option-btn--picked': isOptionPicked(opt.label) }"
+          class="imago-option"
+          :class="{ 'imago-option--picked': isOptionPicked(opt.label) }"
           :disabled="sending"
           @click="selectOption(opt.label)"
         >
@@ -58,8 +58,8 @@
         <template v-if="currentQuestion.custom !== false">
           <button
             v-if="!editingCustom"
-            class="option-btn option-btn--custom"
-            :class="{ 'option-btn--picked': customOn }"
+            class="imago-option imago-option--custom"
+            :class="{ 'imago-option--picked': customOn }"
             :disabled="sending"
             @click="openCustom"
           >
@@ -83,7 +83,7 @@
             </span>
           </button>
 
-          <div v-else class="option-btn option-btn--custom option-btn--picked option-btn--editing">
+          <div v-else class="imago-option imago-option--custom imago-option--picked imago-option--editing">
             <span class="option-check">
               <q-icon
                 v-if="currentQuestion.multiple"
@@ -115,7 +115,7 @@
       </div>
     </div>
 
-    <q-separator color="grey-3" />
+    <div class="imago-dock__sep" />
 
     <!-- Footer actions -->
     <div class="question-footer row items-center justify-between q-px-sm q-py-xs">
@@ -138,8 +138,8 @@
         />
         <q-btn
           no-caps unelevated
-          :color="isLast ? 'primary' : 'grey-3'"
-          :text-color="isLast ? 'white' : 'grey-7'"
+          :color="isLast ? 'primary' : 'grey-8'"
+          :text-color="isLast ? 'white' : 'grey-3'"
            :label="isLast ? t('agentQuestion.submit') : t('agentQuestion.next')"
           :loading="sending"
           :disable="sending"
@@ -301,45 +301,16 @@ async function rejectAll() {
   left: 0;
   right: 0;
   margin-bottom: 8px;
-  background: white;
-  border: 1px solid $grey-3;
-  border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-  overflow: hidden;
 }
 
 .question-header {
   min-height: 28px;
 }
 
-.progress-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  border: none;
-  background: $grey-4;
-  cursor: pointer;
-  padding: 0;
-  transition: background 0.15s, transform 0.15s;
-
-  &--active {
-    background: $primary;
-    transform: scale(1.25);
-  }
-
-  &--answered {
-    background: $positive;
-  }
-
-  &:disabled {
-    cursor: default;
-    opacity: 0.6;
-  }
-}
-
 .question-body {
   max-height: 220px;
   overflow-y: auto;
+  color: var(--imago-text-primary);
 }
 
 .options-list {
@@ -348,37 +319,8 @@ async function rejectAll() {
   gap: 3px;
 }
 
-.option-btn {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  width: 100%;
-  padding: 5px 8px;
-  border: 1px solid $grey-3;
-  border-radius: 6px;
-  background: white;
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 0.15s, background 0.15s;
-
-  &:hover:not(:disabled) {
-    border-color: $primary;
-    background: rgba($primary, 0.04);
-  }
-
-  &--picked {
-    border-color: $primary;
-    background: rgba($primary, 0.06);
-  }
-
-  &--editing {
-    cursor: default;
-  }
-
-  &:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
+.imago-option--editing {
+  cursor: default;
 }
 
 .option-check {
@@ -397,18 +339,28 @@ async function rejectAll() {
 .option-label {
   font-size: 12px;
   font-weight: 500;
-  color: $dark;
+  color: var(--imago-text-primary);
   line-height: 1.3;
 }
 
 .option-description {
   font-size: 11px;
   line-height: 1.3;
+  color: var(--imago-text-faint);
 }
 
 .custom-input {
   width: 100%;
   margin-top: 2px;
+
+  :deep(.q-field__native) {
+    color: var(--imago-text-primary);
+    caret-color: $primary;
+  }
+
+  :deep(.q-field__native::placeholder) {
+    color: rgba(255, 255, 255, 0.25);
+  }
 }
 
 .question-footer {

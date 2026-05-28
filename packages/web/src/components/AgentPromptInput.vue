@@ -8,14 +8,12 @@
       @change="onFileSelected"
     >
 
-    <div class="input-card">
+    <div class="input-card imago-input-card">
       <div v-if="attachments.length > 0" class="attachment-chip-row row q-col-gutter-xs q-px-xs q-pt-xs">
         <div v-for="attachment in attachments" :key="attachment.id" class="col-auto">
           <q-chip
             dense
             removable
-            color="blue-1"
-            text-color="primary"
             icon="attach_file"
             class="attachment-chip"
             @remove="emit('remove-attachment', attachment.id)"
@@ -34,6 +32,7 @@
         :maxlength="4000"
         :disable="disabled"
         class="chat-input"
+        dark
         @update:model-value="onInputUpdate"
         @keydown="handleKeydown"
       />
@@ -45,7 +44,7 @@
           round
           icon="attach_file"
           size="sm"
-          color="grey-6"
+          class="attach-btn"
           :disable="disabled"
           @click="fileInputRef?.click()"
         >
@@ -56,9 +55,9 @@
 
         <q-icon
           name="circle"
-          :color="connected ? 'positive' : 'grey-4'"
           size="8px"
-          class="q-mr-xs"
+          class="connection-dot imago-dot-status"
+          :class="{ 'imago-dot-status--live': connected }"
         >
           <q-tooltip>{{ connected ? t('agent.connected') : t('agent.connecting') }}</q-tooltip>
         </q-icon>
@@ -66,27 +65,26 @@
         <q-btn
           round
           unelevated
-          :icon="loading ? 'stop' : 'arrow_upward'"
-          :color="(localDraft.trim() || attachments.length > 0 || loading) ? 'primary' : 'grey-3'"
-          :text-color="(localDraft.trim() || attachments.length > 0 || loading) ? 'white' : 'grey-5'"
-          :disable="disabled ? true : (!localDraft.trim() && attachments.length === 0 && !loading)"
+          :icon="actionIcon"
           size="sm"
           class="send-btn"
-          @click="loading ? emit('abort') : emit('submit', localDraft)"
+          :class="{ 'send-btn--active': hasAction }"
+          :disable="disabled ? true : !hasAction"
+          @click="handlePrimaryAction"
         >
-          <q-tooltip>{{ loading ? t('agent.stop') : t('agent.send') }}</q-tooltip>
+          <q-tooltip>{{ actionTooltip }}</q-tooltip>
         </q-btn>
       </div>
     </div>
 
-    <div class="text-caption text-grey-5 text-center q-mt-xs">
+    <div class="composer-hint">
       {{ t('agent.inputHint') }}
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { QInput } from 'quasar';
 import { useI18n } from 'vue-i18n';
 import type { PendingAttachment } from 'src/composables/useAgentSession';
@@ -112,6 +110,15 @@ const inputRef = ref<QInput | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const localDraft = ref(props.draft);
 
+const hasDraft = computed(() => localDraft.value.trim().length > 0 || props.attachments.length > 0);
+const hasAction = computed(() => hasDraft.value || props.loading);
+const actionIcon = computed(() => (props.loading && !hasDraft.value ? 'stop' : 'arrow_upward'));
+const actionTooltip = computed(() => {
+  if (props.loading && !hasDraft.value) return t('agent.stop');
+  if (props.loading) return t('agent.queueFollowup');
+  return t('agent.send');
+});
+
 watch(() => props.draft, (value) => {
   if (value !== localDraft.value) {
     localDraft.value = value;
@@ -125,10 +132,19 @@ function onInputUpdate(value: string | number | null) {
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault();
-    if (localDraft.value.trim() && !props.loading) {
+    if (hasDraft.value) {
       emit('submit', localDraft.value);
     }
   }
+}
+
+function handlePrimaryAction() {
+  if (hasDraft.value) {
+    emit('submit', localDraft.value);
+    return;
+  }
+
+  if (props.loading) emit('abort');
 }
 
 function onFileSelected(event: Event) {
@@ -154,16 +170,7 @@ defineExpose({
 }
 
 .input-card {
-  background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 4px 12px 8px;
-  transition: border-color 0.15s, box-shadow 0.15s;
-
-  &:focus-within {
-    border-color: $primary;
-    box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
-  }
+  // layout hook — visual rules in global .imago-input-card
 }
 
 .attachment-chip-row {
@@ -173,11 +180,30 @@ defineExpose({
 .attachment-chip {
   max-width: 240px;
 
+  :deep(.q-chip) {
+    background: var(--imago-border-light) !important;
+    color: var(--imago-text-muted);
+    border: 1px solid var(--imago-border-light);
+    border-radius: var(--imago-radius-md);
+  }
+
+  :deep(.q-chip__icon) {
+    color: var(--imago-text-muted);
+  }
+
   :deep(.q-chip__content) {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 11px;
+  }
+
+  :deep(.q-chip__icon--remove) {
+    color: var(--imago-text-dim);
+
+    &:hover {
+      color: var(--imago-text-muted);
+    }
   }
 }
 
@@ -195,10 +221,84 @@ defineExpose({
     padding-bottom: 4px;
     line-height: 1.5;
     resize: none;
+    color: var(--imago-text-secondary);
+
+    &::placeholder {
+      color: var(--imago-text-faint);
+    }
+  }
+
+  :deep(.q-field__native) {
+    color: var(--imago-text-secondary);
+  }
+
+  :deep(.q-field__control::placeholder) {
+    color: var(--imago-text-faint);
+  }
+
+  :deep(.q-field--disabled .q-field__control) {
+    opacity: 0.5;
   }
 }
 
 .input-actions {
   min-height: 36px;
+}
+
+.attach-btn {
+  :deep(.q-btn__content) {
+    color: var(--imago-text-muted);
+
+    &:hover {
+      color: var(--imago-text-secondary);
+    }
+  }
+
+  :deep(.q-icon) {
+    color: var(--imago-text-muted);
+  }
+
+  &:hover :deep(.q-icon) {
+    color: var(--imago-text-secondary);
+  }
+}
+
+.connection-dot {
+  margin-right: 8px;
+}
+
+.send-btn {
+  :deep(.q-btn__content) {
+    color: var(--imago-text-faint);
+  }
+
+  :deep(.q-icon) {
+    color: var(--imago-text-faint);
+  }
+
+  :deep(.q-btn) {
+    background: var(--imago-bg-raised);
+  }
+
+  &--active {
+    :deep(.q-btn__content) {
+      color: var(--imago-text-primary);
+    }
+
+    :deep(.q-icon) {
+      color: var(--imago-text-primary);
+    }
+
+    :deep(.q-btn) {
+      background: var(--imago-border-dim);
+    }
+  }
+}
+
+.composer-hint {
+  font-size: 12px;
+  color: var(--imago-text-faint);
+  text-align: center;
+  margin-top: 4px;
 }
 </style>

@@ -63,11 +63,12 @@ export class SessionState {
         break
       }
 
+      case 'session.created':
       case 'session.updated': {
         const info = event.properties.info
         const item: SessionItem = {
           id: info.id,
-          title: info.title ?? 'Untitled',
+          title: info.title ?? '',
           time: new Date(info.time?.created ?? Date.now()),
           ...(info.parentID ? { parentID: info.parentID } : {}),
           ...(info.revert ? { revert: info.revert } : {}),

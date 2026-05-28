@@ -4,7 +4,11 @@ import { db } from "../db/client"
 import { projects } from "../db/schema"
 import { logger } from "../server/logger"
 
-const COS_BASE_PATH = process.env.COS_BASE_PATH ?? "/mnt/cos"
+if (!process.env.COS_BASE_PATH) {
+  throw new Error("COS_BASE_PATH environment variable is required")
+}
+
+const COS_BASE_PATH = process.env.COS_BASE_PATH
 
 export interface FileSystem {
   mkdir(path: string): Promise<void>

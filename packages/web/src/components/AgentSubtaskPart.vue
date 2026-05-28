@@ -18,8 +18,8 @@ defineProps<{ part: SubtaskPart }>();
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  background: rgba(0, 0, 0, 0.03);
-  border-radius: 6px;
+  background: var(--imago-bg-raised);
+  border-radius: var(--imago-radius-sm);
   padding: 8px;
   font-size: 12px;
 }

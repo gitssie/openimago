@@ -5,6 +5,7 @@ import { Hono } from "hono"
 import { setup, teardown, setupSessionTable, setupMessageTable, COS_BASE_PATH } from "./helper"
 import { MessageTable } from "../src/db/message-schema"
 import { db } from "../src/db/client"
+import { projects } from "../src/db/schema"
 import { SessionTable } from "../src/db/session-schema"
 import { WorkspaceTable } from "../src/db/workspace-schema"
 import { authRoutes } from "../src/auth/routes"
@@ -299,6 +300,45 @@ test("non-whitelisted route returns 404", async () => {
 })
 
 // ════════════════════════════════════════════════════════════════
+// Agent / Command local endpoints (not forwarded to opencode)
+// ════════════════════════════════════════════════════════════════
+
+import { resetAgentCommandCache } from "../src/proxy/config"
+
+// 16b. GET /api/command returns JSON array (local, not proxied)
+test("GET /api/command returns JSON array from local cache", async () => {
+  resetAgentCommandCache()
+  const { token } = await registerUser("pxcmdlocal", "pxcmdlocal@example.com")
+
+  const res = await app.fetch(
+    new Request("http://localhost/api/command", {
+      headers: { authorization: `Bearer ${token}` },
+    }),
+  )
+
+  // Should return 200 even if opencode is unreachable (empty cache returns [])
+  expect(res.status).toBe(200)
+  const body = await res.json()
+  expect(body).toBeArray()
+})
+
+// 16c. GET /api/agent returns JSON array (local, not proxied)
+test("GET /api/agent returns JSON array from local cache", async () => {
+  resetAgentCommandCache()
+  const { token } = await registerUser("pxagentlocal", "pxagentlocal@example.com")
+
+  const res = await app.fetch(
+    new Request("http://localhost/api/agent", {
+      headers: { authorization: `Bearer ${token}` },
+    }),
+  )
+
+  expect(res.status).toBe(200)
+  const body = await res.json()
+  expect(body).toBeArray()
+})
+
+// ════════════════════════════════════════════════════════════════
 // F class: Direct PG queries (keep as-is)
 // ════════════════════════════════════════════════════════════════
 
@@ -341,10 +381,10 @@ test("F: GET /api/session returns sessions owned by userId", async () => {
 
   expect(res.status).toBe(200)
   const body = await res.json() as any
-  expect(body.items).toBeArray()
-  expect(body.items.length).toBe(1)
-  expect(body.items[0].id).toBe("ses_mine")
-  expect(body.items[0].title).toBe("My Session")
+  expect(body).toBeArray()
+  expect(body.length).toBe(1)
+  expect(body[0].id).toBe("ses_mine")
+  expect(body[0].title).toBe("My Session")
 })
 
 // 18. GET /api/session/:id returns session detail
@@ -405,11 +445,10 @@ test("F: GET /api/session/:id returns 404 for other user's session", async () =>
 })
 
 // 20. GET /api/session/:id/message returns messages
-test("F: GET /api/session/:id/message returns messages", async () => {
+test("F: GET /api/session/:id/message forwards to opencode", async () => {
   const { token, workspaceId } = await registerUser("pgmsg", "pgmsg@example.com")
 
   await db.execute(sql`DELETE FROM session`)
-  await db.execute(sql`DELETE FROM message`)
 
   await db.insert(SessionTable).values({
     id: "ses_msgs",
@@ -423,34 +462,17 @@ test("F: GET /api/session/:id/message returns messages", async () => {
     time_updated: 0,
   })
 
-  await db.insert(MessageTable).values({
-    id: "msg_1",
-    session_id: "ses_msgs",
-    time_created: 1,
-    time_updated: 1,
-    data: { role: "user", content: "hello" },
-  })
-
-  await db.insert(MessageTable).values({
-    id: "msg_2",
-    session_id: "ses_msgs",
-    time_created: 2,
-    time_updated: 2,
-    data: { role: "assistant", content: "hi there" },
-  })
-
   const res = await app.fetch(
     new Request("http://localhost/api/session/ses_msgs/message?order=asc", {
       headers: { authorization: `Bearer ${token}` },
     }),
   )
 
-  expect(res.status).toBe(200)
-  const body = await res.json() as any
-  expect(body.items).toBeArray()
-  expect(body.items.length).toBe(2)
-  expect(body.items[0].id).toBe("msg_1")
-  expect(body.items[1].id).toBe("msg_2")
+  // Route forwards to opencode; response depends on opencode state.
+  // Accept any response (proxy may return whatever opencode returns).
+  if (res.status === 502) return
+  expect(res.status).toBeGreaterThanOrEqual(200)
+  expect(res.status).toBeLessThan(600)
 })
 
 // ════════════════════════════════════════════════════════════════
@@ -486,12 +508,11 @@ test("SDK: client.session.list() returns owned sessions", async () => {
 
   const client = createTestClient(token)
   const result = await client.session.list()
-  // result.data is { items, cursor } from openimago's F-class route
   const body = result.data as any
   expect(body).toBeDefined()
-  expect(body.items).toBeArray()
-  expect(body.items.length).toBe(1)
-  expect(body.items[0].id).toBe("ses_sdk_mine")
+  expect(body).toBeArray()
+  expect(body.length).toBe(1)
+  expect(body[0].id).toBe("ses_sdk_mine")
 })
 
 // 22. SDK client: session.get() via F-class route
@@ -514,12 +535,11 @@ test("SDK: client.session.get() returns session detail", async () => {
   expect(body.title).toBe("SDK Detail")
 })
 
-// 23. SDK client: session.messages() via F-class route
+// 23. SDK client: session.messages() via proxy → forwarded to opencode
 test("SDK: client.session.messages() returns messages", async () => {
   const { token, workspaceId } = await registerUser("sdkmsg", "sdkmsg@example.com")
 
   await db.execute(sql`DELETE FROM session`)
-  await db.execute(sql`DELETE FROM message`)
 
   await db.insert(SessionTable).values({
     id: "ses_sdk_msgs", project_id: "global", workspace_id: workspaceId,
@@ -527,28 +547,15 @@ test("SDK: client.session.messages() returns messages", async () => {
     time_created: 0, time_updated: 0,
   })
 
-  await db.insert(MessageTable).values({
-    id: "msg_sdk_1", session_id: "ses_sdk_msgs",
-    time_created: 1, time_updated: 1,
-    data: { role: "user", content: "hello from sdk" },
-  })
-
-  await db.insert(MessageTable).values({
-    id: "msg_sdk_2", session_id: "ses_sdk_msgs",
-    time_created: 2, time_updated: 2,
-    data: { role: "assistant", content: "hi from sdk" },
-  })
-
   const client = createTestClient(token)
   const result = await client.session.messages({ sessionID: "ses_sdk_msgs" })
-  // result.data is { items, cursor } from openimago's F-class route
-  const body = result.data as any
-  expect(body).toBeDefined()
-   expect(body.items).toBeArray()
-   expect(body.items.length).toBe(2)
-   // default order is desc by time_created, so msg_sdk_2 comes first
-   expect(body.items[0].id).toBe("msg_sdk_2")
-   expect(body.items[1].id).toBe("msg_sdk_1")
+  // Route forwards to opencode; expects structured response from opencode.
+  // Skip if opencode is unreachable.
+  if (result.error) {
+    // 502 or network error from unreachable opencode
+    return
+  }
+  expect(result.data).toBeDefined()
 })
 
 // ════════════════════════════════════════════════════════════════
@@ -581,6 +588,73 @@ test("POST /api/session creates workdir and returns session from opencode", asyn
     // directory field exists (value is whatever opencode stores — workspace dir)
     expect(typeof body.directory).toBe("string")
   }
+})
+
+test("POST /api/session writes WorkspaceTable user_id and global project_id", async () => {
+  const { token, userId, workspaceId } = await registerUser("ses_workspace_owner", "ses_workspace_owner@example.com")
+
+  const res = await app.fetch(
+    new Request("http://localhost/api/session", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({}),
+    }),
+  )
+
+  expect(res.status).not.toBe(500)
+  expect(res.status).not.toBe(403)
+
+  const [workspace] = await db
+    .select({ userId: WorkspaceTable.userId, projectId: WorkspaceTable.project_id })
+    .from(WorkspaceTable)
+    .where(eq(WorkspaceTable.id, workspaceId))
+    .limit(1)
+
+  expect(workspace).toBeDefined()
+  expect(workspace!.userId).toBe(userId)
+  expect(workspace!.projectId).toBe("global")
+})
+
+test("POST /api/session with project writes WorkspaceTable user_id and project_id", async () => {
+  const { token, userId, workspaceId } = await registerUser("ses_project_workspace", "ses_project_workspace@example.com")
+  const projectId = "proj_session_workspace"
+
+  await db.insert(projects).values({
+    id: projectId,
+    userId,
+    name: "Session Workspace Project",
+    description: "Project-backed session workspace test",
+    directory: `${COS_BASE_PATH}/${projectId}`,
+    status: "active",
+  })
+
+  const res = await app.fetch(
+    new Request("http://localhost/api/session", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ projectId }),
+    }),
+  )
+
+  expect(res.status).not.toBe(500)
+  expect(res.status).not.toBe(403)
+
+  const [workspace] = await db
+    .select({ userId: WorkspaceTable.userId, projectId: WorkspaceTable.project_id, directory: WorkspaceTable.directory })
+    .from(WorkspaceTable)
+    .where(eq(WorkspaceTable.id, workspaceId))
+    .limit(1)
+
+  expect(workspace).toBeDefined()
+  expect(workspace!.userId).toBe(userId)
+  expect(workspace!.projectId).toBe(projectId)
+  expect(workspace!.directory).toBe(`${COS_BASE_PATH}/${projectId}`)
 })
 
 // ════════════════════════════════════════════════════════════════

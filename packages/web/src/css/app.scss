@@ -3,192 +3,1064 @@
 // 对标 Midjourney / RunwayML 的视觉质量
 // ================================================================
 
-// --------------------------------------
-// 0. Animated gradient background
-// --------------------------------------
-body {
-  background: #08080f !important;
+// -----------------------------------------------------------------
+// §1  DESIGN TOKENS — CSS Custom Properties
+//    Single source of truth for all repeated values.
+//    Components reference these with var(--imago-*) instead of
+//    hardcoding rgba / px / shadow values.
+// -----------------------------------------------------------------
+:root {
+  /* ── Palette: Background ─────────────────────── */
+  --imago-bg-void:    #08080f;
+  --imago-bg-deep:    #0a0a0f;
+  --imago-bg-panel:   #12121a;
+  --imago-bg-surface: rgba(20, 20, 36, 0.50);
+  --imago-bg-glass:   rgba(18, 18, 32, 0.60);
+  --imago-bg-raised:  rgba(255, 255, 255, 0.04);
+  --imago-bg-code:    #0d1117;
+
+  /* ── Palette: Neon Accents ───────────────────── */
+  --imago-neon-cyan:   #00f0ff;
+  --imago-neon-purple: #a855f7;
+  --imago-neon-pink:   #ff2d95;
+  --imago-neon-green:  #39ff14;
+
+  /* ── Accent variants ──────────────────────────── */
+  --imago-cyan-bright: #2ff7ff;
+
+  /* ── Palette: Text ───────────────────────────── */
+  --imago-text-primary:   #e8e8ec;
+  --imago-text-secondary: #d4d4d8;
+  --imago-text-muted:     #a1a1aa;
+  --imago-text-dim:       #71717a;
+  --imago-text-faint:     #52525b;
+
+  /* ── Palette: Borders ────────────────────────── */
+  --imago-border-ghost:  rgba(255, 255, 255, 0.03);
+  --imago-border-subtle: rgba(255, 255, 255, 0.04);
+  --imago-border-light:  rgba(255, 255, 255, 0.06);
+  --imago-border-soft:   rgba(255, 255, 255, 0.08);
+  --imago-border-dim:    rgba(255, 255, 255, 0.12);
+  /* Accent borders */
+  --imago-border-cyan:        rgba(0, 240, 255, 0.15);
+  --imago-border-cyan-active: rgba(0, 240, 255, 0.40);
+  --imago-border-purple:      rgba(168, 85, 247, 0.06);
+
+  /* ── Opacity scales — repeated accent fills ──── */
+  --imago-cyan-04:  rgba(0, 240, 255, 0.04);
+  --imago-cyan-06:  rgba(0, 240, 255, 0.06);
+  --imago-cyan-08:  rgba(0, 240, 255, 0.08);
+  --imago-green-20: rgba(20, 142, 63, 0.20);
+
+  /* ── Semantic: Warning ───────────────────────── */
+  --imago-warning-border: rgba(245, 158, 11, 0.18);
+  --imago-warning-bg:     rgba(245, 158, 11, 0.06);
+
+  /* ── Radii ───────────────────────────────────── */
+  --imago-radius-xs:   4px;
+  --imago-radius-sm:   6px;
+  --imago-radius-md:   8px;
+  --imago-radius-lg:  12px;
+  --imago-radius-xl:  16px;
+  --imago-radius-2xl: 20px;
+  --imago-radius-3xl: 24px;
+  --imago-radius-pill: 999px;
+
+  /* ── Glows: Text ─────────────────────────────── */
+  --imago-glow-cyan-text:   0 0 10px rgba(0, 240, 255, 0.35),
+                             0 0 30px rgba(0, 240, 255, 0.10);
+  --imago-glow-purple-text: 0 0 10px rgba(168, 85, 247, 0.35),
+                             0 0 30px rgba(168, 85, 247, 0.10);
+  --imago-glow-cyan-inline: 0 0 8px rgba(0, 240, 255, 0.22);
+
+  /* ── Glows: Surfaces ─────────────────────────── */
+  --imago-glow-cyan-soft:  0 0 12px rgba(0, 240, 255, 0.06);
+  --imago-glow-cyan-ring:  0 0 0 1px rgba(0, 240, 255, 0.20),
+                            0 0 12px rgba(0, 240, 255, 0.06);
+  --imago-glow-cyan-halo:  0 0 32px rgba(0, 240, 255, 0.10),
+                            0 0 64px rgba(168, 85, 247, 0.05);
+  --imago-glow-featured:   0 0 26px rgba(23, 239, 255, 0.18),
+                            inset 0 0 42px rgba(0, 225, 255, 0.08);
+  --imago-glow-glass:      0 0 60px rgba(0, 240, 255, 0.04),
+                            0 8px 40px rgba(0, 0, 0, 0.50);
+
+  /* ── Glows: Interactive ──────────────────────── */
+  --imago-glow-btn-cyan:   0 0 22px rgba(24, 229, 255, 0.46);
+  --imago-glow-btn-cyan-sm: 0 0 20px rgba(26, 236, 255, 0.58);
+  --imago-glow-btn-purple: 0 0 18px rgba(140, 55, 255, 0.42);
+  --imago-glow-btn-glass:  0 0 18px rgba(0, 154, 255, 0.34);
+
+  /* ── Button Palette ──────────────────────────── */
+  --imago-btn-text-dark: #021018;
+
+  /* ── Blur ────────────────────────────────────── */
+  --imago-blur-chrome: blur(20px);
+  --imago-blur-glass:  blur(24px) saturate(120%);
+  --imago-blur-panel:  blur(16px);
+  --imago-blur-light:  blur(12px);
+
+  /* ── Transitions ─────────────────────────────── */
+  --imago-ease-fast:    0.15s ease;
+  --imago-ease-default: 0.25s ease;
+  --imago-ease-smooth:  0.30s ease;
 }
 
+
+// -----------------------------------------------------------------
+// §2  BACKGROUND SYSTEMS
+//    Full-page ambient layers & reusable backdrop utilities.
+// -----------------------------------------------------------------
+
+// Body baseline
+body {
+  background: var(--imago-bg-void) !important;
+}
+
+// Ambient vignette — soft cyan / purple / pink radial wash
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: 0;
-  background:
-    radial-gradient(ellipse 80% 60% at 30% 20%, rgba(0,240,255,0.04) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 80% at 70% 80%, rgba(168,85,247,0.04) 0%, transparent 60%),
-    radial-gradient(ellipse 40% 40% at 50% 50%, rgba(255,45,149,0.02) 0%, transparent 70%);
   pointer-events: none;
+  background:
+    radial-gradient(ellipse 80% 60% at 30% 20%, var(--imago-cyan-04) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 80% at 70% 80%, rgba(168, 85, 247, 0.04) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 40% at 50% 50%, rgba(255, 45, 149, 0.02) 0%, transparent 70%);
 }
 
-// --------------------------------------
-// 1. Chrome autofill fix
-// --------------------------------------
+// Backdrop-filter shortcuts — attach to any glass surface
+.imago-glass {
+  backdrop-filter: var(--imago-blur-glass);
+  -webkit-backdrop-filter: var(--imago-blur-glass);
+}
+.imago-glass--chrome {
+  backdrop-filter: var(--imago-blur-chrome);
+  -webkit-backdrop-filter: var(--imago-blur-chrome);
+}
+.imago-glass--panel {
+  backdrop-filter: var(--imago-blur-panel);
+  -webkit-backdrop-filter: var(--imago-blur-panel);
+}
+
+
+// -----------------------------------------------------------------
+// §3  SURFACES / CARDS
+//    Panel, card, drawer, and popup surface primitives.
+// -----------------------------------------------------------------
+
+// Large glass panel — auth cards, modal wraps
+.imago-panel {
+  background: var(--imago-bg-glass) !important;
+  backdrop-filter: var(--imago-blur-glass);
+  -webkit-backdrop-filter: var(--imago-blur-glass);
+  border: 1px solid var(--imago-border-light);
+  border-radius: var(--imago-radius-2xl);
+  box-shadow: var(--imago-glow-glass);
+}
+
+// Grid card — project cards, list items
+.imago-card {
+  background: var(--imago-bg-surface);
+  border: 1px solid var(--imago-border-subtle);
+  border-radius: var(--imago-radius-lg);
+  transition:
+    border-color var(--imago-ease-smooth),
+    box-shadow   var(--imago-ease-smooth),
+    transform    var(--imago-ease-smooth);
+}
+.imago-card:hover {
+  border-color: var(--imago-border-cyan);
+  box-shadow: var(--imago-glow-cyan-soft);
+  transform: translateY(-2px);
+}
+
+// Featured card — elevated with cyan glow border
+.imago-card--featured {
+  border-color: var(--imago-neon-cyan);
+  box-shadow: var(--imago-glow-featured);
+}
+
+// Compact surface — dialogs, docks, inline panels
+.imago-surface {
+  background: var(--imago-bg-surface);
+  border: 1px solid var(--imago-border-light);
+  border-radius: var(--imago-radius-lg);
+}
+
+// Auth glass panel — frosted surface with dynamic cyan/purple border
+.imago-panel--auth {
+  position: relative;
+  background: linear-gradient(145deg, rgba(0, 18, 34, 0.60), rgba(10, 7, 24, 0.70));
+  backdrop-filter: var(--imago-blur-glass);
+  -webkit-backdrop-filter: var(--imago-blur-glass);
+  border: 1px solid var(--imago-border-cyan-active);
+  border-right-color: var(--imago-neon-purple);
+  border-radius: var(--imago-radius-3xl);
+  box-shadow:
+    0 0 34px rgba(0, 232, 255, 0.14),
+    inset 0 0 48px rgba(4, 187, 255, 0.05);
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(circle at 50% 0%, rgba(31, 231, 255, 0.14), transparent 34%);
+  }
+}
+
+
+// -----------------------------------------------------------------
+// §4  BUTTONS / ACTIONS
+//    Reusable button presets for the neon visual language.
+// -----------------------------------------------------------------
+
+// Neon cyan filled button
+.imago-btn-cyan {
+  color: var(--imago-btn-text-dark);
+  background: linear-gradient(90deg, #22f2ff, #18d9ee);
+  border-radius: var(--imago-radius-lg);
+  box-shadow: var(--imago-glow-btn-cyan);
+  font-weight: 700;
+}
+
+// Neon violet gradient (cyan → purple)
+.imago-btn-violet {
+  color: var(--imago-btn-text-dark);
+  background: linear-gradient(90deg, #24edff, #bc42ff);
+  border-radius: var(--imago-radius-lg);
+  font-weight: 700;
+}
+
+// Glass outline button
+.imago-btn-glass {
+  color: #d9efff;
+  background: rgba(0, 64, 130, 0.24);
+  border: 1px solid #16f5ff;
+  border-radius: var(--imago-radius-md);
+  box-shadow: var(--imago-glow-btn-glass);
+}
+
+// Subtle ghost button — secondary actions
+.imago-btn-ghost {
+  color: var(--imago-text-secondary);
+  background: var(--imago-bg-raised);
+  border: 1px solid var(--imago-border-soft);
+  border-radius: var(--imago-radius-md);
+}
+.imago-btn-ghost:hover {
+  background: var(--imago-border-soft);
+}
+
+// Neon submit button — tall action button for forms (auth, settings, etc.)
+.imago-submit {
+  height: 50px;
+  border-radius: 13px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--imago-btn-text-dark);
+}
+.imago-submit--cyan {
+  background: linear-gradient(90deg, #21efff, #16dce9);
+  box-shadow: var(--imago-glow-btn-cyan-sm);
+}
+.imago-submit--violet {
+  background: linear-gradient(90deg, #24edff, #bc42ff);
+}
+
+// Social auth button — glass outline for OAuth providers
+.imago-btn-auth-social {
+  height: 46px;
+  color: #d6e3f4;
+  background: transparent;
+  border: 1px solid rgba(117, 169, 224, 0.62);
+  border-radius: 12px;
+  font-size: 16px;
+  position: relative;
+
+  .q-icon {
+    position: absolute;
+    left: 46px;
+    font-size: 24px;
+  }
+}
+
+
+// -----------------------------------------------------------------
+// §5  TEXT / GLOW
+//    Neon highlights, brand typography, and text treatments.
+// -----------------------------------------------------------------
+
+// Neon text — block-level glow
+.imago-text-cyan {
+  color: var(--imago-neon-cyan);
+  text-shadow: var(--imago-glow-cyan-text);
+}
+.imago-text-purple {
+  color: var(--imago-neon-purple);
+  text-shadow: var(--imago-glow-purple-text);
+}
+
+// Inline neon highlight — lighter glow for inline use
+.imago-highlight-cyan {
+  color: var(--imago-neon-cyan);
+  text-shadow: var(--imago-glow-cyan-inline);
+}
+
+// Brand type — bold logo / hero text
+.imago-brand {
+  font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.08em;
+}
+
+
+// -----------------------------------------------------------------
+// §6  LAYOUT CHROME
+//    Header, drawer, nav, sidebar, and sticky strip primitives.
+// -----------------------------------------------------------------
+
+// Glass header
+.imago-header {
+  background: rgba(8, 8, 15, 0.85) !important;
+  backdrop-filter: var(--imago-blur-chrome);
+  -webkit-backdrop-filter: var(--imago-blur-chrome);
+  border-bottom: 1px solid var(--imago-border-ghost);
+}
+
+// Glass drawer / sidebar chrome
+.imago-drawer {
+  background: rgba(8, 8, 15, 0.90) !important;
+  backdrop-filter: var(--imago-blur-light);
+  -webkit-backdrop-filter: var(--imago-blur-light);
+  border-right: 1px solid var(--imago-border-ghost) !important;
+}
+
+// Active nav item (cyan text, inner glow, left border + subtle bg)
+.imago-nav-active {
+  color: var(--imago-neon-cyan) !important;
+  background: var(--imago-cyan-04) !important;
+  border-left: 2px solid var(--imago-neon-cyan);
+  box-shadow: inset 0 0 24px rgb(0 238 255 / 12%);
+}
+
+// Nav item — drawer / sidebar link base
+.imago-nav-item {
+  min-height: 54px;
+  color: var(--imago-text-secondary);
+  border: 1px solid transparent;
+  border-radius: 10px;
+
+  .q-icon {
+    font-size: 22px;
+  }
+}
+
+// Mini drawer label — hidden by default (shown when drawer expands)
+.imago-nav-label {
+  display: none;
+}
+
+// Drawer brand area
+.imago-drawer-brand {
+  height: 86px;
+  display: flex;
+  align-items: center;
+  padding-left: 22px;
+  border-bottom: 1px solid rgb(133 174 220 / 18%);
+}
+
+// Fixed bottom strip (input bar, footer chrome)
+.imago-strip-bottom {
+  background: rgba(8, 8, 15, 0.95) !important;
+  backdrop-filter: var(--imago-blur-panel);
+  -webkit-backdrop-filter: var(--imago-blur-panel);
+  border-top: 1px solid var(--imago-border-subtle) !important;
+}
+
+// Fixed side strip (session sidebar, file panel)
+.imago-strip-side {
+  background: rgba(8, 8, 15, 0.80) !important;
+  backdrop-filter: var(--imago-blur-panel);
+  -webkit-backdrop-filter: var(--imago-blur-panel);
+  border-right: 1px solid var(--imago-border-ghost) !important;
+}
+
+
+// -----------------------------------------------------------------
+// §7  FORMS
+//    Input overrides, autofill fix, spotlight input, panel input.
+// -----------------------------------------------------------------
+
+// Chrome autofill — prevent white flash in dark inputs
 .q-field__native:-webkit-autofill,
 input:-webkit-autofill {
-  -webkit-box-shadow: 0 0 0 1000px #12121a inset !important;
-  -webkit-text-fill-color: #e8e8ec !important;
-  caret-color: #e8e8ec !important;
+  -webkit-box-shadow: 0 0 0 1000px var(--imago-bg-panel) inset !important;
+  -webkit-text-fill-color: var(--imago-text-primary) !important;
+  caret-color: var(--imago-text-primary) !important;
   transition: background-color 5000s ease-in-out 0s;
 }
 
-// --------------------------------------
-// 2. QInput — all inputs get subtle border glow on focus
-// --------------------------------------
+// Quasar outlined field — base
 .q-field--outlined .q-field__control {
-  border-radius: 10px;
-  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  border-radius: var(--imago-radius-md);
+  transition:
+    border-color var(--imago-ease-default),
+    box-shadow   var(--imago-ease-default);
 }
+
+// Quasar outlined field — focused
 .q-field--focused.q-field--outlined .q-field__control {
-  box-shadow: 0 0 0 1px rgba(0,240,255,0.2), 0 0 12px rgba(0,240,255,0.06);
+  box-shadow: var(--imago-glow-cyan-ring);
 }
 
-// --------------------------------------
-// 3. Spotlight input — the hero element
-// --------------------------------------
-.spotlight-input {
+// Spotlight input — hero prompt field with neon focus halo
+.imago-input-spotlight {
   .q-field__control {
-    background: rgba(16,16,28,0.95) !important;
-    border: 1px solid rgba(255,255,255,0.06) !important;
-    border-radius: 16px !important;
+    background: rgba(16, 16, 28, 0.95) !important;
+    border: 1px solid var(--imago-border-light) !important;
+    border-radius: var(--imago-radius-xl) !important;
     min-height: 48px;
-    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    transition:
+      border-color var(--imago-ease-smooth),
+      box-shadow   var(--imago-ease-smooth);
   }
+
   &.q-field--focused .q-field__control {
-    border-color: rgba(0,240,255,0.4) !important;
+    border-color: var(--imago-border-cyan-active) !important;
     box-shadow:
-      0 0 32px rgba(0,240,255,0.10),
-      0 0 64px rgba(168,85,247,0.05),
-      inset 0 0 32px rgba(0,240,255,0.02);
+      var(--imago-glow-cyan-halo),
+      inset 0 0 32px rgba(0, 240, 255, 0.02);
   }
+
   .q-field__native {
-    caret-color: #00f0ff;
-    &::placeholder { color: rgba(255,255,255,0.2); }
+    caret-color: var(--imago-neon-cyan);
+
+    &::placeholder { color: rgba(255, 255, 255, 0.20); }
   }
 }
 
-// --------------------------------------
-// 4. Neon text
-// --------------------------------------
-.neon-text-cyan {
-  color: #00f0ff;
-  text-shadow: 0 0 10px rgba(0,240,255,0.35), 0 0 30px rgba(0,240,255,0.1);
-}
-.neon-text-purple {
-  color: #a855f7;
-  text-shadow: 0 0 10px rgba(168,85,247,0.35), 0 0 30px rgba(168,85,247,0.1);
+// Panel input — dark translucent input for forms inside glass cards
+.imago-input-panel {
+  .q-field__control {
+    background: rgba(3, 13, 30, 0.42);
+    border-radius: var(--imago-radius-lg);
+    height: 56px;
+    padding: 0 16px;
+  }
+
+  .q-field__native,
+  .q-field__label {
+    color: #b5c4d8;
+    font-size: 16px;
+  }
+
+  .q-field__control::before {
+    border-color: rgba(114, 174, 231, 0.62);
+  }
+
+  .q-field__control:hover::before,
+  &.q-field--focused .q-field__control::after {
+    border-color: var(--imago-cyan-bright);
+  }
 }
 
-// --------------------------------------
-// 5. Glass card (auth, modals)
-// --------------------------------------
-.glass-card {
-  background: rgba(18,18,32,0.60) !important;
-  backdrop-filter: blur(24px) saturate(120%);
-  -webkit-backdrop-filter: blur(24px) saturate(120%);
-  border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 20px;
-  box-shadow:
-    0 0 60px rgba(0,240,255,0.04),
-    0 8px 40px rgba(0,0,0,0.5);
+// Panel input adornment icons
+.imago-input-panel__icon {
+  color: #26efff;
+  font-size: 23px;
+}
+.imago-input-panel__action {
+  color: #c8d8ef;
+  cursor: pointer;
+  font-size: 22px;
 }
 
-// --------------------------------------
-// 6. Card grid (projects, prompts)
-// --------------------------------------
-.grid-card {
-  background: rgba(20,20,36,0.50);
-  border: 1px solid rgba(255,255,255,0.04);
+// Auth tab bar — glass tab switcher
+.imago-auth-tabs {
+  max-width: 348px;
+  margin: 0 auto 24px;
+  overflow: hidden;
+  border: 1px solid rgba(123, 174, 234, 0.58);
   border-radius: 14px;
-  transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
-  &:hover {
-    border-color: rgba(0,240,255,0.15);
-    box-shadow: 0 4px 24px rgba(0,240,255,0.06);
-    transform: translateY(-2px);
+  background: rgba(4, 12, 29, 0.45);
+}
+.imago-auth-tab {
+  min-height: 40px;
+  color: #aeb9c8;
+  font-size: 15px;
+  font-weight: 500;
+}
+.imago-auth-tab--active {
+  color: #22f7ff;
+  background: linear-gradient(180deg, rgba(25, 233, 255, 0.28), rgba(9, 68, 91, 0.40));
+  box-shadow: inset 0 0 18px rgba(39, 236, 255, 0.54), 0 0 22px rgba(39, 236, 255, 0.22);
+}
+
+// Auth divider — "or" separator with lateral rules
+.imago-auth-divider {
+  margin-bottom: 18px;
+
+  .q-separator {
+    background: rgba(156, 184, 214, 0.58);
   }
 }
-
-// --------------------------------------
-// 7. Nav active state
-// --------------------------------------
-.q-item.q-router-link--active {
-  background: rgba(0,240,255,0.04) !important;
-  border-left: 2px solid #00f0ff;
+.imago-auth-divider__text {
+  padding: 0 16px;
+  color: #c5d0de;
+  font-size: 14px;
 }
 
-// --------------------------------------
-// 8. Chat bubbles
-// --------------------------------------
-.chat-bubble-user {
-  background: rgba(0,240,255,0.06);
-  border: 1px solid rgba(0,240,255,0.08);
+
+// -----------------------------------------------------------------
+// §8  CHAT BUBBLES
+//    Message bubbles — user (right) and assistant / AI (left).
+// -----------------------------------------------------------------
+
+.imago-bubble-user {
+  background: var(--imago-cyan-06);
+  border: 1px solid var(--imago-cyan-08);
   border-radius: 18px 18px 4px 18px;
   padding: 12px 18px;
-  color: #e8e8ec;
+  color: var(--imago-text-primary);
 }
-.chat-bubble-ai {
-  background: rgba(168,85,247,0.04);
-  border: 1px solid rgba(168,85,247,0.06);
+
+.imago-bubble-ai {
+  background: rgba(168, 85, 247, 0.04);
+  border: 1px solid var(--imago-border-purple);
   border-radius: 18px 18px 18px 4px;
   padding: 12px 18px;
-  color: #e8e8ec;
+  color: var(--imago-text-primary);
 }
 
-// --------------------------------------
-// 9. Page transition
-// --------------------------------------
-.page-enter-active {
-  animation: fade-up 0.2s ease;
-}
-@keyframes fade-up {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
 
-// --------------------------------------
-// 10. Scrollbar
-// --------------------------------------
+// -----------------------------------------------------------------
+// §9  SCROLLBARS
+//    WebKit scrollbar customization — subtle purple thumb.
+// -----------------------------------------------------------------
+
 ::-webkit-scrollbar { width: 5px; }
+
 ::-webkit-scrollbar-track { background: transparent; }
+
 ::-webkit-scrollbar-thumb {
-  background: rgba(168,85,247,0.12);
+  background: rgba(168, 85, 247, 0.12);
   border-radius: 10px;
 }
-::-webkit-scrollbar-thumb:hover { background: rgba(168,85,247,0.25); }
 
-// --------------------------------------
-// 11. Workspace layout
-// --------------------------------------
-.session-sidebar {
-  background: rgba(8,8,15,0.8) !important;
-  border-right: 1px solid rgba(255,255,255,0.03) !important;
-  backdrop-filter: blur(12px);
-}
-.input-area {
-  background: rgba(8,8,15,0.95) !important;
-  border-top: 1px solid rgba(255,255,255,0.04) !important;
-  backdrop-filter: blur(16px);
-}
-.bg-primary-opacity {
-  background: rgba(0,240,255,0.04) !important;
-  border-left: 2px solid #00f0ff;
+::-webkit-scrollbar-thumb:hover { background: rgba(168, 85, 247, 0.25); }
+
+
+// -----------------------------------------------------------------
+// §10  PAGE TRANSITIONS
+//     Global page-level fade-up entrance.
+// -----------------------------------------------------------------
+
+.page-enter-active { animation: imago-fade-up 0.2s ease; }
+
+@keyframes imago-fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-// --------------------------------------
-// 12. Header
-// --------------------------------------
-.q-header {
-  background: rgba(8,8,15,0.85) !important;
-  backdrop-filter: blur(16px);
-  border-bottom: 1px solid rgba(255,255,255,0.03);
+
+// -----------------------------------------------------------------
+// §11  UTILITIES
+//     Small, single-purpose helpers that pages can compose.
+// -----------------------------------------------------------------
+
+// Screen reader only — visually hidden, announced by AT
+.imago-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-// --------------------------------------
-// 13. Drawer
-// --------------------------------------
-.q-drawer {
-  background: rgba(8,8,15,0.90) !important;
-  backdrop-filter: blur(12px);
-  border-right: 1px solid rgba(255,255,255,0.03) !important;
+// Prevent pointer events on decorative layers
+.imago-pointer-none { pointer-events: none; }
+
+/* ── Flex helpers ────────────────────────────── */
+.imago-flex-center  { display: flex; align-items: center; justify-content: center; }
+.imago-flex-between { display: flex; align-items: center; justify-content: space-between; }
+.imago-flex-start   { display: flex; align-items: center; justify-content: flex-start; }
+.imago-flex-end     { display: flex; align-items: center; justify-content: flex-end; }
+.imago-flex-col     { display: flex; flex-direction: column; }
+
+/* ── Text helpers ────────────────────────────── */
+.imago-text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.imago-text-center { text-align: center; }
+.imago-text-right  { text-align: right; }
+
+/* ── Sizing ──────────────────────────────────── */
+.imago-w-full { width: 100%; }
+
+/* ── Gap scale ───────────────────────────────── */
+.imago-gap-xs { gap: 4px; }
+.imago-gap-sm { gap: 8px; }
+.imago-gap-md { gap: 12px; }
+.imago-gap-lg { gap: 16px; }
+
+// Glowing green dot — connection / live indicator
+.imago-dot-live {
+  width: 8px;
+  height: 8px;
+  display: inline-block;
+  background: var(--imago-neon-green);
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(40, 255, 101, 0.72);
+}
+
+// Status badge — active / online capsule
+.imago-badge-active {
+  padding: 0 10px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  color: #41ff70;
+  background: var(--imago-green-20);
+  border: 1px solid rgba(46, 255, 108, 0.18);
+  border-radius: var(--imago-radius-lg);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+// Hover lift — subtle card elevation on hover
+.imago-hover-lift {
+  transition: transform var(--imago-ease-smooth);
+}
+.imago-hover-lift:hover { transform: translateY(-2px); }
+
+// Code-like monospace badge (tool names, file paths)
+.imago-badge-mono {
+  display: inline-flex;
+  align-items: center;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Menlo', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--imago-text-muted);
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--imago-radius-xs);
+  padding: 1px 6px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+// Durations / meta text pill
+.imago-badge-meta {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  color: var(--imago-text-dim);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: var(--imago-radius-md);
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
+
+// -----------------------------------------------------------------
+// §12  DOCKS / OVERLAYS
+//     Workspace dock panels, floating overlays, and inline panels.
+// -----------------------------------------------------------------
+
+.imago-dock {
+  border: 1px solid var(--imago-border-light);
+  border-radius: var(--imago-radius-lg);
+  background: var(--imago-bg-surface);
+  overflow: hidden;
+}
+
+.imago-dock--glass {
+  background: var(--imago-bg-glass);
+  backdrop-filter: var(--imago-blur-panel);
+  -webkit-backdrop-filter: var(--imago-blur-panel);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.50);
+}
+
+.imago-dock--warning {
+  border-color: var(--imago-warning-border);
+  background: var(--imago-warning-bg);
+}
+
+.imago-dock__sep {
+  height: 1px;
+  background: var(--imago-border-subtle);
+}
+
+
+// -----------------------------------------------------------------
+// §13  OPTIONS / CHOICES
+//     Dark bordered option buttons for selection lists and chips.
+// -----------------------------------------------------------------
+
+.imago-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--imago-border-light);
+  border-radius: var(--imago-radius-sm);
+  background: var(--imago-bg-raised);
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--imago-text-primary);
+  transition: border-color var(--imago-ease-fast), background var(--imago-ease-fast);
+}
+
+.imago-option:hover:not(:disabled) {
+  border-color: var(--imago-neon-cyan);
+  background: var(--imago-cyan-06);
+}
+
+.imago-option--picked {
+  border-color: var(--imago-neon-cyan);
+  background: var(--imago-cyan-08);
+}
+
+.imago-option:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.imago-option--chip {
+  display: inline-flex;
+  width: auto;
+  padding: 4px 12px;
+  border-radius: var(--imago-radius-md);
+  color: var(--imago-text-muted);
+  font-size: 13px;
+  font-weight: 400;
+  background: transparent;
+  border-color: var(--imago-border-light);
+}
+
+
+// -----------------------------------------------------------------
+// §14  DOTS / STATUS
+//     Connection and progress indicator dots.
+// -----------------------------------------------------------------
+
+.imago-dot-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  background: var(--imago-text-faint);
+
+  &--live {
+    background: var(--imago-neon-green);
+    box-shadow: 0 0 12px rgba(40, 255, 101, 0.72);
+  }
+}
+
+.imago-dot-progress {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: none;
+  background: var(--imago-border-dim);
+  cursor: pointer;
+  padding: 0;
+  transition: background var(--imago-ease-fast), transform var(--imago-ease-fast);
+
+  &--active {
+    background: var(--imago-neon-cyan);
+    transform: scale(1.25);
+  }
+
+  &--completed {
+    background: var(--imago-neon-green);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+}
+
+
+// -----------------------------------------------------------------
+// §15  PART PANELS
+//     Collapsible meta panels for tool results, files, subtasks.
+// -----------------------------------------------------------------
+
+.imago-part {
+  border: 1px solid var(--imago-border-light);
+  border-radius: var(--imago-radius-md);
+  background: var(--imago-bg-raised);
+  overflow: hidden;
+  margin: 4px 0;
+}
+
+.imago-part__header {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+
+  &:hover {
+    background: var(--imago-bg-raised);
+  }
+}
+
+.imago-part__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--imago-text-secondary);
+}
+
+.imago-part__body {
+  border-top: 1px solid var(--imago-border-light);
+  padding: 8px 10px;
+}
+
+
+// -----------------------------------------------------------------
+// §16  INPUT CARD
+//     Dark bordered card shell for the chat composer.
+// -----------------------------------------------------------------
+
+.imago-input-card {
+  background: #18181b;
+  border: 1px solid var(--imago-border-light);
+  border-radius: var(--imago-radius-lg);
+  padding: 4px 12px 8px;
+  transition: border-color var(--imago-ease-fast);
+
+  &:focus-within {
+    border-color: var(--imago-border-soft);
+  }
+}
+
+
+// -----------------------------------------------------------------
+// §17  PAGE COMPONENTS
+//     Extracted from MainLayout and ProjectsPage scoped styles.
+//     Visual patterns reused across pages.
+// -----------------------------------------------------------------
+
+// Large page title — bold neon heading
+.imago-page-title {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+// User chip — header user display button
+.imago-user-chip {
+  color: var(--imago-text-secondary);
+  gap: 10px;
+  padding: 0;
+  font-size: 15px;
+}
+
+// User avatar — glowing cyan-purple gradient border
+.imago-user-avatar {
+  color: var(--imago-neon-cyan);
+  background: linear-gradient(135deg, rgb(25 239 255 / 20%), rgb(160 55 255 / 42%));
+  border: 1px solid rgb(144 85 255 / 80%);
+  box-shadow: 0 0 18px rgb(140 55 255 / 42%);
+}
+
+// Empty folder graphic — decorative folder for empty-state pages
+.imago-empty-folder {
+  position: relative;
+  width: 220px;
+  height: 174px;
+  margin: 0 auto;
+  filter: drop-shadow(0 24px 35px rgb(0 180 255 / 24%));
+
+  &__back,
+  &__front {
+    position: absolute;
+    border: 1px solid rgb(126 192 255 / 72%);
+    background: linear-gradient(145deg, rgb(96 164 255 / 30%), rgb(33 116 202 / 16%));
+    box-shadow: inset 0 0 34px rgb(134 197 255 / 20%), 0 0 32px rgb(0 189 255 / 20%);
+  }
+
+  &__back {
+    top: 35px;
+    left: 38px;
+    width: 190px;
+    height: 122px;
+    border-radius: 12px 18px 18px 18px;
+    transform: translate(26px, -14px);
+    opacity: 0.55;
+  }
+
+  &__front {
+    right: 28px;
+    bottom: 14px;
+    left: 28px;
+    height: 138px;
+    border-radius: 16px 16px 18px 18px;
+
+    &::before {
+      position: absolute;
+      top: -46px;
+      left: 13px;
+      width: 95px;
+      height: 52px;
+      content: '';
+      background: inherit;
+      border: inherit;
+      border-bottom: 0;
+      border-radius: 15px 28px 0 0;
+    }
+  }
+}
+
+// Empty state typography
+.imago-empty-heading {
+  margin: 28px 0 8px;
+  color: #bfc5d3;
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.imago-empty-desc {
+  margin: 0 0 34px;
+  color: #8f96aa;
+  font-size: 17px;
+}
+
+// Project card — visual identity (background, border, glow)
+//   Use alongside .imago-card; layout dimensions remain scoped.
+.imago-project-card {
+  overflow: hidden;
+  color: var(--imago-text-primary);
+  background: linear-gradient(145deg, rgb(7 13 30 / 78%), rgb(5 7 18 / 76%));
+  border: 1px solid rgb(134 162 204 / 32%);
+  box-shadow: inset 0 0 40px rgb(63 123 255 / 5%);
+  backdrop-filter: blur(18px);
+
+  &:hover {
+    transform: none;
+  }
+}
+
+// Project icon — folder icon with colored glow variants
+.imago-project-icon {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+
+  color: #b76cff;
+  background: rgb(139 64 255 / 16%);
+  border: 1px solid rgb(145 78 255 / 70%);
+  box-shadow: inset 0 0 22px rgb(145 78 255 / 14%);
+
+  .q-icon { font-size: 29px; }
+
+  &--cyan {
+    color: #38f0ff;
+    background: rgb(30 219 255 / 15%);
+    border-color: rgb(30 219 255 / 58%);
+  }
+
+  &--blue {
+    color: #6a9cff;
+    background: rgb(67 112 255 / 16%);
+    border-color: rgb(67 112 255 / 62%);
+  }
+}
+
+// Project card title
+.imago-project-title {
+  margin-top: 16px;
+  color: var(--imago-text-primary);
+  font-size: 21px;
+  font-weight: 700;
+}
+
+// Project card description
+.imago-project-desc {
+  height: 48px;
+  margin-top: 8px;
+  overflow: hidden;
+  color: #aab1c1;
+  font-size: 14px;
+  line-height: 1.62;
+}
+
+// Ghost separator — subtle dark separator for cards
+.imago-separator-ghost {
+  margin: 15px 0 10px;
+  background: rgb(151 168 203 / 18%);
+}
+
+// Meta data row — card footer with icon-leading items
+.imago-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #aab1c1;
+  font-size: 12px;
+
+  .meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+  }
+}
+
+// Glass dialog — dark blurred dialog for modals
+.imago-dialog-glass {
+  min-width: 400px;
+  color: var(--imago-text-primary);
+  background: rgb(7 13 30 / 92%);
+  border: 1px solid rgb(23 239 255 / 35%);
+  border-radius: var(--imago-radius-xl);
+}
+
+
+// =================================================================
+// BACKWARD-COMPATIBILITY ALIASES
+// These match the old class names used in existing Vue templates.
+// Remove once components migrate to the imago-* vocabulary.
+// =================================================================
+
+.neon-text-cyan  { @extend .imago-text-cyan; }
+.neon-text-purple { @extend .imago-text-purple; }
+
+.glass-card { @extend .imago-panel; }
+.grid-card  { @extend .imago-card; }
+
+.chat-bubble-user { @extend .imago-bubble-user; }
+.chat-bubble-ai   { @extend .imago-bubble-ai; }
+
+.spotlight-input { @extend .imago-input-spotlight; }
+
+.session-sidebar { @extend .imago-strip-side; }
+.input-area      { @extend .imago-strip-bottom; }
+.bg-primary-opacity { @extend .imago-nav-active; }
+
+// Quasar overrides that match now-generated classes
+.q-header { @extend .imago-header; }
+.q-drawer { @extend .imago-drawer; }
+
+// Nav active — Quasar router link
+.q-item.q-router-link--active {
+  background: var(--imago-cyan-04) !important;
+  border-left: 2px solid var(--imago-neon-cyan);
 }

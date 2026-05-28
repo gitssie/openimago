@@ -3,10 +3,11 @@ import { and, or, eq, like, isNull, gte, gt, lt, asc, desc } from "drizzle-orm"
 import { mkdir } from "node:fs/promises"
 import { authMiddleware, proxyMiddleware } from "../server/middleware"
 import { proxyRequest, createProxyConfig, forward } from "./service"
+import { loadAgentCommandConfig, getAgents, getCommands } from "./config"
 import { db } from "../db/client"
 import { SessionTable } from "../db/session-schema"
 import { MessageTable } from "../db/message-schema"
-import { workspaceRefs, projects } from "../db/schema"
+import { projects } from "../db/schema"
 import { WorkspaceTable } from "../db/workspace-schema"
 import { logger } from "../server/logger"
 import { Effect, Stream } from "effect"
@@ -32,7 +33,11 @@ function sseEncode(data: unknown): string {
   return `data: ${JSON.stringify(data)}\n\n`
 }
 
-const COS_BASE_PATH = process.env.COS_BASE_PATH ?? "/mnt/cos"
+if (!process.env.COS_BASE_PATH) {
+  throw new Error("COS_BASE_PATH environment variable is required")
+}
+
+const COS_BASE_PATH = process.env.COS_BASE_PATH
 
 // Hono's req.raw.body is ReadableStream<any>; cast to the stricter type expected by proxyRequest
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -93,25 +98,13 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
         type: "worktree",
         name: "default",
         directory,
-        project_id: "global",
+        project_id: body.projectId ? String(body.projectId) : "global",
         time_used: Date.now(),
+        userId,
       })
       .onConflictDoUpdate({
         target: WorkspaceTable.id,
-        set: { directory, type: "worktree" },
-      })
-
-    // Record the workspace → user/project mapping.
-    await db
-      .insert(workspaceRefs)
-      .values({
-        workspaceId,
-        userId,
-        projectId: (body.projectId as string) ?? null,
-      })
-      .onConflictDoUpdate({
-        target: workspaceRefs.workspaceId,
-        set: { projectId: (body.projectId as string) ?? null },
+        set: { directory, type: "worktree", userId },
       })
 
     // Forward to opencode with real directory
@@ -156,7 +149,7 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
     }
 
     if (!workspaceId) {
-      return c.json({ items: [], cursor: { previous: undefined, next: undefined } })
+      return c.json([])
     }
 
     const conditions: any[] = [
@@ -208,13 +201,12 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
       return Buffer.from(JSON.stringify(obj)).toString("base64url")
     }
 
-    return c.json({
-      items,
-      cursor: {
-        previous: cursorFor(first, "previous"),
-        next: cursorFor(last, "next"),
-      },
-    })
+    const nextCursor = cursorFor(last, "next")
+    const prevCursor = cursorFor(first, "previous")
+    const res = c.json(items)
+    if (nextCursor) res.headers.set("X-Cursor-Next", nextCursor)
+    if (prevCursor) res.headers.set("X-Cursor-Previous", prevCursor)
+    return res
   })
 
   // ── F class: Session detail (direct PG) ────────────────────────
@@ -236,12 +228,10 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
 
   // ── F class: Session messages (direct PG) ──────────────────────
   routes.get("/api/session/:id/message", async (c) => {
-    const workspaceId = c.get("workspaceId") as string | null
+    const workspaceId = c.get("workspaceId") as string
     const sessionId = c.req.param("id")
-    const query = c.req.query()
 
-    if (!workspaceId) return c.json({ error: { code: "NOT_FOUND", message: "Session not found" } }, 404)
-
+    // Verify session belongs to this workspace before forwarding
     const [session] = await db
       .select({ id: SessionTable.id })
       .from(SessionTable)
@@ -249,66 +239,8 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
       .limit(1)
     if (!session) return c.json({ error: { code: "NOT_FOUND", message: "Session not found" } }, 404)
 
-    let cursor: any
-    if (query.cursor) {
-      try {
-        cursor = JSON.parse(Buffer.from(query.cursor, "base64url").toString())
-      } catch {
-        return c.json({ error: { code: "INVALID_CURSOR", message: "Bad cursor" } }, 400)
-      }
-    }
-
-    const conditions: any[] = [eq(MessageTable.session_id, sessionId)]
-    let order: "asc" | "desc" = query.order === "asc" ? "asc" : "desc"
-    const direction = cursor?.direction ?? "next"
-
-    if (cursor) {
-      let effOrder = order
-      if (direction === "previous" && effOrder === "asc") effOrder = "desc"
-      if (direction === "previous" && effOrder === "desc") effOrder = "asc"
-      conditions.push(
-        effOrder === "asc"
-          ? or(gt(MessageTable.time_created, cursor.time), and(eq(MessageTable.time_created, cursor.time), gt(MessageTable.id, cursor.id)))!
-          : or(lt(MessageTable.time_created, cursor.time), and(eq(MessageTable.time_created, cursor.time), lt(MessageTable.id, cursor.id)))!,
-      )
-    }
-
-    const limit = query.limit ? Math.min(Number(query.limit), 200) : undefined
-    const rows = limit
-      ? await db
-          .select()
-          .from(MessageTable)
-          .where(and(...conditions))
-          .orderBy(
-            order === "asc" ? asc(MessageTable.time_created) : desc(MessageTable.time_created),
-            order === "asc" ? asc(MessageTable.id) : desc(MessageTable.id),
-          )
-          .limit(limit)
-      : await db
-          .select()
-          .from(MessageTable)
-          .where(and(...conditions))
-          .orderBy(
-            order === "asc" ? asc(MessageTable.time_created) : desc(MessageTable.time_created),
-            order === "asc" ? asc(MessageTable.id) : desc(MessageTable.id),
-          )
-
-    const items = direction === "previous" ? rows.toReversed() : rows
-    const first = items[0]
-    const last = items.at(-1)
-
-    const cursorFor = (msg: typeof items[number] | undefined, dir: "previous" | "next") => {
-      if (!msg) return undefined
-      return Buffer.from(JSON.stringify({ id: msg.id, time: msg.time_created, order, direction: dir })).toString("base64url")
-    }
-
-    return c.json({
-      items,
-      cursor: {
-        previous: cursorFor(first, "previous"),
-        next: cursorFor(last, "next"),
-      },
-    })
+    const directory = c.get("directory") as string
+    return proxyRequest(config, c.req.url, "GET", c.req.raw.headers, null, directory, workspaceId)
   })
 
   // ── C class: needs directory ───────────────────────────────────
@@ -504,17 +436,23 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
     return proxyRequest(config, c.req.url, "GET", c.req.raw.headers, null, undefined, workspaceId)
   })
 
-  // ── Command / Agent / Question / Permission ───────────────────
-  routes.get("/api/command", (c) => {
-    const workspaceId = c.get("workspaceId") as string
-    const directory = c.get("directory") as string
-    return proxyRequest(config, c.req.url, "GET", c.req.raw.headers, null, directory, workspaceId)
+  // ── Command / Agent (local cache, not forwarded) ─────────────
+  // These are configuration endpoints — openimago fetches the data
+  // from opencode once and caches it in memory. Subsequent requests
+  // are served locally without forwarding to opencode.
+  routes.get("/api/command", async (c) => {
+    // Lazy-load on first request; subsequent requests use cache
+    if (getCommands(config).length === 0) {
+      await loadAgentCommandConfig(config)
+    }
+    return c.json(getCommands(config))
   })
 
-  routes.get("/api/agent", (c) => {
-    const workspaceId = c.get("workspaceId") as string
-    const directory = c.get("directory") as string
-    return proxyRequest(config, c.req.url, "GET", c.req.raw.headers, null, directory, workspaceId)
+  routes.get("/api/agent", async (c) => {
+    if (getAgents(config).length === 0) {
+      await loadAgentCommandConfig(config)
+    }
+    return c.json(getAgents(config))
   })
 
   routes.get("/api/question", (c) => {

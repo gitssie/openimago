@@ -312,6 +312,7 @@ async function findOrCreateUser(
     directory: "",
     project_id: "global",
     time_used: Date.now(),
+    userId: id,
   })
 
   const token = await signJwt({ userId: id, role: "user" })

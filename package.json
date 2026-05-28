@@ -1,13 +1,19 @@
 {
   "name": "openimago",
   "private": true,
-  "workspaces": [
-    "packages/openimago",
-    "packages/web"
-  ],
+  "packageManager": "bun@1.3.14",
   "scripts": {
-    "dev": "bun --hot ./packages/openimago/index.ts & cd packages/web && yarn dev",
-    "dev:backend": "bun --hot ./packages/openimago/index.ts",
-    "dev:frontend": "cd packages/web && yarn dev"
+    "dev": "(cd packages/openimago && bun --hot index.ts) & BACKEND_PID=$!; trap 'kill $BACKEND_PID 2>/dev/null; wait $BACKEND_PID 2>/dev/null' EXIT INT TERM; cd packages/web && bun run dev",
+    "dev:backend": "cd packages/openimago && bun --hot index.ts",
+    "dev:frontend": "cd packages/web && bun run dev",
+    "typecheck": "bun turbo typecheck",
+    "check": "bun run typecheck && cd packages/web && bun run lint"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "turbo": "^2.8.13",
+    "typescript": "^5.9.3"
   }
 }

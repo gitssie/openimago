@@ -61,12 +61,11 @@ export async function migrate() {
   `)
 
   await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS workspace_refs (
-      workspace_id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES users(id),
-      project_id TEXT REFERENCES projects(id),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
+    ALTER TABLE workspace ADD COLUMN IF NOT EXISTS user_id TEXT
+  `)
+
+  await db.execute(sql`
+    ALTER TABLE workspace ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   `)
 
   await db.execute(sql`
@@ -104,6 +103,7 @@ export async function truncate() {
   await db.execute(sql`DELETE FROM assets`)
   await db.execute(sql`DELETE FROM prompt_templates`)
   await db.execute(sql`DELETE FROM workspace_refs`)
+  await db.execute(sql`DELETE FROM workspace`)
   await db.execute(sql`DELETE FROM projects`)
   await db.execute(sql`DELETE FROM user_auths`)
   await db.execute(sql`DELETE FROM users`)

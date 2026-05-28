@@ -1,7 +1,7 @@
 {
     "$schema": "https://opencode.ai/config.json",
     "mcp": {
-        "codegraph": {
+        "lsp": {
             "type": "local",
             "command": ["codegraph", "serve", "--mcp"]
         }

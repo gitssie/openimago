@@ -89,7 +89,7 @@
           <q-inner-loading :showing="isSessionSwitching" color="grey-5" />
 
           <div v-if="!isSessionSwitching && displayMessages.length === 0" class="empty-chat flex flex-center">
-            <div class="empty-chat__content">
+            <div class="empty-chat__content imago-surface">
               <q-icon name="chat_bubble_outline" size="48px" color="grey-6" class="q-mb-md" />
               <div class="text-h6 text-grey-3 q-mb-xs">开始新会话</div>
               <p class="text-body2 text-grey-6">输入 prompt，生成图像、变体与可复用参数会同步出现在右侧面板。</p>
@@ -97,10 +97,10 @@
                 <q-btn
                   v-for="suggestion in suggestions"
                   :key="suggestion"
-                  outline
-                  no-caps
-                  flat
-                  class="suggestion-chip"
+                   outline
+                   no-caps
+                   flat
+                   class="suggestion-chip imago-option--chip"
                   :label="suggestion"
                   @click="useSuggestion(suggestion)"
                 />
@@ -275,7 +275,7 @@
               :on-reject="rejectQuestion"
             />
 
-            <div v-if="sessionTodos.length > 0" class="todo-dock q-mb-sm">
+            <div v-if="sessionTodos.length > 0" class="todo-dock imago-dock q-mb-sm">
               <div class="row items-center justify-between q-mb-xs">
                 <div class="text-caption text-weight-medium text-grey-5">
                   {{ t('agent.todoProgress', { done: completedTodoCount, total: sessionTodos.length }) }}
@@ -299,7 +299,7 @@
               </div>
             </div>
 
-            <div v-if="revertMessagePreview" class="revert-dock q-mb-sm row items-center justify-between q-gutter-sm">
+            <div v-if="revertMessagePreview" class="revert-dock imago-dock imago-dock--warning q-mb-sm row items-center justify-between q-gutter-sm">
               <div class="col min-width-0">
                 <div class="text-caption text-grey-5">{{ t('agent.revertActive') }}</div>
                 <div class="text-body2 text-weight-medium ellipsis">{{ revertMessagePreview }}</div>
@@ -310,7 +310,7 @@
               </div>
             </div>
 
-            <div v-if="currentQueuedFollowups.length > 0" class="followup-dock q-mb-sm">
+            <div v-if="currentQueuedFollowups.length > 0" class="followup-dock imago-dock q-mb-sm">
               <button type="button" class="followup-dock__header row items-center justify-between q-gutter-sm" @click="followupCollapsed = !followupCollapsed">
                 <div class="text-caption text-weight-medium text-grey-5">
                   {{ currentQueuedFollowups.length === 1 ? t('agent.followupOne') : t('agent.followupMany', { count: currentQueuedFollowups.length }) }}
@@ -366,7 +366,7 @@
               @remove-attachment="removeAttachment"
               @attach-files="onFilesSelected"
             />
-            <div v-else class="child-session-input-disabled text-body2 text-grey-7">
+            <div v-else class="child-session-input-disabled imago-dock text-body2 text-grey-7">
               <span>{{ t('agent.childInputDisabled') }}</span>
               <q-btn
                 flat
@@ -411,7 +411,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useQuasar, QInfiniteScroll } from 'quasar'
 import { useI18n } from 'vue-i18n'
 import type { AgentPart, FilePart, TextPart, ToolPart } from '@opencode-ai/sdk/v2'
@@ -427,6 +427,7 @@ import AgentQuestion from 'src/components/AgentQuestion.vue'
 import AgentPermission from 'src/components/AgentPermission.vue'
 import AgentPromptInput from 'src/components/AgentPromptInput.vue'
 import { useAgentSession, type DisplayMessage } from 'src/composables/useAgentSession'
+import { extractHeading } from 'src/utils/heading'
 import type { SessionItem } from 'src/services/agents'
 
 type DisplayTurn = {
@@ -468,25 +469,80 @@ const suggestions = [
   t('agent.mainTopics'),
 ] as const
 
-// ── Scroll helpers ────────────────────────────────────────────────────────────
+// ── Auto-scroll ────────────────────────────────────────────────────────────────
 
-function scrollToBottom() {
+const userScrolled = ref(false)
+const BOTTOM_THRESHOLD = 10
+
+function scrollToBottom(force = false) {
   const el = messagesAreaRef.value
-  if (el) el.scrollTop = el.scrollHeight
+  if (!el) return
+  if (force) userScrolled.value = false
+  if (userScrolled.value && !force) return
+  el.scrollTop = el.scrollHeight
 }
 
 function scrollToBottomNow() {
-  void nextTick(() => scrollToBottom())
-}
-
-function isAtBottom(): boolean {
-  const el = messagesAreaRef.value
-  if (!el) return true
-  return el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  void nextTick(() => scrollToBottom(true))
 }
 
 function scrollIfAtBottom() {
-  if (isAtBottom()) scrollToBottomNow()
+  scrollToBottom(false)
+}
+
+// ── Scroll observers ───────────────────────────────────────────────────────────
+
+let resizeObserver: ResizeObserver | null = null
+
+function setupAutoScroll() {
+  const el = messagesAreaRef.value
+  if (!el) return
+
+  resizeObserver = new ResizeObserver(() => {
+    const area = messagesAreaRef.value
+    if (!area) return
+    if (isLoading.value && !userScrolled.value) {
+      area.scrollTop = area.scrollHeight
+    }
+  })
+  resizeObserver.observe(el)
+
+  el.addEventListener('wheel', onWheel, { passive: true })
+  el.addEventListener('scroll', onScroll, { passive: true })
+}
+
+function teardownAutoScroll() {
+  const el = messagesAreaRef.value
+  if (!el) return
+
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
+
+  el.removeEventListener('wheel', onWheel)
+  el.removeEventListener('scroll', onScroll)
+}
+
+function onWheel(e: WheelEvent) {
+  const target = e.target as HTMLElement | null
+  if (target?.closest('[data-scrollable]')) return
+
+  if (e.deltaY < 0) {
+    userScrolled.value = true
+  }
+}
+
+function onScroll() {
+  const el = messagesAreaRef.value
+  if (!el) return
+
+  const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+  if (distanceFromBottom <= BOTTOM_THRESHOLD) {
+    userScrolled.value = false
+  } else {
+    userScrolled.value = true
+  }
 }
 
 // ── Composable ────────────────────────────────────────────────────────────────
@@ -541,6 +597,12 @@ const {
   (msg) => $q.notify({ color: 'positive', message: msg, icon: 'check' }),
   () => void nextTick(() => inputRef.value?.focus()),
 )
+
+watch(isLoading, (loading) => {
+  if (loading && !userScrolled.value) {
+    void nextTick(() => scrollToBottom(true))
+  }
+})
 
 // ── Computed ──────────────────────────────────────────────────────────────────
 
@@ -728,7 +790,7 @@ function getUserAgentMentions(msg: DisplayMessage): AgentPart[] {
 function getUserMetaLabel(msg: DisplayMessage): string {
   const items = [
     ...getUserAgentMentions(msg).map((part) => `@${part.name}`),
-    formatSessionTime(msg.time),
+    formatUserMessageTime(msg.time),
   ].filter(Boolean)
 
   return items.join(' · ')
@@ -767,6 +829,10 @@ function formatClock(date: Date): string {
   return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 
+function formatUserMessageTime(date: Date): string {
+  return new Intl.DateTimeFormat(undefined, { timeStyle: 'short' }).format(date)
+}
+
 function formatRetryError(error: unknown): string {
   if (typeof error === 'string') return error
   if (error && typeof error === 'object') {
@@ -783,45 +849,7 @@ function formatRetryError(error: unknown): string {
   return 'Unknown error'
 }
 
-// ── Heading extraction ────────────────────────────────────────────────────────
-
-function cleanHeadingText(value: string): string {
-  return value
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/[*_~]+/g, '')
-    .trim()
-}
-
-function extractHeading(text: string): string {
-  const markdown = text.replace(/\r\n?/g, '\n')
-
-  const html = markdown.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i)
-  if (html?.[1]) {
-    const value = cleanHeadingText(html[1].replace(/<[^>]+>/g, ' '))
-    if (value) return value
-  }
-
-  const atx = markdown.match(/^\s{0,3}#{1,6}[ \t]+(.+?)(?:[ \t]+#+[ \t]*)?$/m)
-  if (atx?.[1]) {
-    const value = cleanHeadingText(atx[1])
-    if (value) return value
-  }
-
-  const setext = markdown.match(/^([^\n]+)\n(?:=+|-+)\s*$/m)
-  if (setext?.[1]) {
-    const value = cleanHeadingText(setext[1])
-    if (value) return value
-  }
-
-  const strong = markdown.match(/^\s*(?:\*\*|__)(.+?)(?:\*\*|__)\s*$/m)
-  if (strong?.[1]) {
-    const value = cleanHeadingText(strong[1])
-    if (value) return value
-  }
-
-  return ''
-}
+// ── Message rendering helpers ────────────────────────────────────────────────
 
 function getAssistantTurnHeading(message: DisplayMessage): string {
   if (message.role !== 'assistant') return ''
@@ -1006,17 +1034,18 @@ onMounted(() => {
   void loadCommands()
   void loadSessionList()
   startEventSubscription()
-  void nextTick(() => inputRef.value?.focus())
+  void nextTick(() => { inputRef.value?.focus(); setupAutoScroll() })
 })
 
 onUnmounted(() => {
+  teardownAutoScroll()
   stopEventSubscription()
 })
 </script>
 
 <style scoped>
 :global(body) {
-  background: #09090b;
+  background: var(--imago-bg-void);
 }
 
 /* ── Base layout ─────────────────────────────────────────────────────────── */
@@ -1026,8 +1055,8 @@ onUnmounted(() => {
   width: 100vw;
   min-height: 100vh;
   overflow: hidden;
-  color: #fafafa;
-  background: #09090b;
+  color: var(--imago-text-primary);
+  background: var(--imago-bg-void);
 }
 
 .workspace-layout {
@@ -1047,8 +1076,8 @@ onUnmounted(() => {
 /* ── Left sidebar ────────────────────────────────────────────────────────── */
 
 .session-sidebar {
-  border-right: 1px solid rgba(255 255 255 / 0.06);
-  background: #09090b;
+  border-right: 1px solid var(--imago-border-light);
+  background: var(--imago-bg-void);
 }
 
 .sidebar-brand {
@@ -1059,7 +1088,7 @@ onUnmounted(() => {
 }
 
 .brand-name {
-  color: #fafafa;
+  color: var(--imago-text-primary);
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -1069,7 +1098,7 @@ onUnmounted(() => {
   height: calc(100vh - 52px);
   display: grid;
   grid-template-columns: 64px 1fr;
-  border-top: 1px solid rgba(255 255 255 / 0.06);
+  border-top: 1px solid var(--imago-border-light);
 }
 
 .session-rail {
@@ -1079,33 +1108,33 @@ onUnmounted(() => {
   gap: 4px;
   justify-items: center;
   padding-top: 16px;
-  border-right: 1px solid rgba(255 255 255 / 0.06);
-  background: #09090b;
+  border-right: 1px solid var(--imago-border-light);
+  background: var(--imago-bg-void);
 }
 
 .rail-btn,
 .rail-collapse {
   width: 40px;
   height: 40px;
-  color: #a1a1aa;
+  color: var(--imago-text-muted);
   border: 1px solid transparent;
   transition: color 120ms ease;
 }
 
 .rail-btn:hover,
 .rail-collapse:hover {
-  color: #d4d4d8;
+  color: var(--imago-text-secondary);
 }
 
 .rail-btn--active {
-  color: #fafafa;
-  background: rgba(255 255 255 / 0.06);
+  color: var(--imago-text-primary);
+  background: var(--imago-border-light);
 }
 
 .rail-collapse {
   position: absolute;
   bottom: 20px;
-  color: #71717a;
+  color: var(--imago-text-dim);
 }
 
 /* ── Session list ────────────────────────────────────────────────────────── */
@@ -1114,21 +1143,21 @@ onUnmounted(() => {
   min-width: 0;
   padding: 14px 12px 14px 16px;
   overflow-y: auto;
-  background: #09090b;
+  background: var(--imago-bg-void);
 }
 
 .new-session-btn {
   width: 100%;
   height: 36px;
-  color: #fafafa;
-  background: rgba(255 255 255 / 0.08);
-  border-radius: 8px;
+  color: var(--imago-text-primary);
+  background: var(--imago-border-soft);
+  border-radius: var(--imago-radius-md);
   font-size: 14px;
   font-weight: 500;
 }
 
 .new-session-btn:hover {
-  background: rgba(255 255 255 / 0.12);
+  background: var(--imago-border-dim);
 }
 
 .session-group {
@@ -1138,7 +1167,7 @@ onUnmounted(() => {
 .session-group__title {
   display: flex;
   justify-content: space-between;
-  color: #71717a;
+  color: var(--imago-text-dim);
   font-size: 12px;
   font-weight: 500;
   margin: 0 8px 8px;
@@ -1153,7 +1182,7 @@ onUnmounted(() => {
 
 .session-list-empty {
   margin-top: 12px;
-  color: #52525b;
+  color: var(--imago-text-faint);
   font-size: 13px;
   text-align: center;
 }
@@ -1161,35 +1190,35 @@ onUnmounted(() => {
 .session-item {
   min-height: 60px;
   padding: 8px 10px 8px 10px;
-  color: #a1a1aa;
+  color: var(--imago-text-muted);
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--imago-radius-md);
   background: transparent;
 }
 
 .session-item:hover {
-  background: rgba(255 255 255 / 0.04);
+  background: var(--imago-bg-raised);
 }
 
 .session-item--active {
-  background: rgba(255 255 255 / 0.06);
-  border-color: rgba(255 255 255 / 0.08);
+  background: var(--imago-border-light);
+  border-color: var(--imago-border-soft);
 }
 
 .session-title {
-  color: #d4d4d8;
+  color: var(--imago-text-secondary);
   font-size: 13px;
   line-height: 1.3;
 }
 
 .session-preview {
   margin-top: 4px;
-  color: #71717a !important;
+  color: var(--imago-text-dim) !important;
   font-size: 12px;
 }
 
 .session-time {
-  color: #71717a;
+  color: var(--imago-text-dim);
   font-size: 11px;
 }
 
@@ -1208,7 +1237,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #09090b;
+  background: var(--imago-bg-void);
 }
 
 .session-topbar {
@@ -1217,8 +1246,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 0 20px;
-  border-bottom: 1px solid rgba(255 255 255 / 0.06);
-  background: #09090b;
+  border-bottom: 1px solid var(--imago-border-light);
+  background: var(--imago-bg-void);
 }
 
 .session-heading {
@@ -1226,7 +1255,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   padding: 0;
-  color: #d4d4d8;
+  color: var(--imago-text-secondary);
   background: transparent;
   border: 0;
   font-size: 14px;
@@ -1235,7 +1264,7 @@ onUnmounted(() => {
 }
 
 .session-heading:hover {
-  color: #fafafa;
+  color: var(--imago-text-primary);
 }
 
 .col.min-width-0 {
@@ -1268,16 +1297,16 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #71717a;
+  color: var(--imago-text-dim);
   font-size: 12px;
 }
 
 .topbar-icon {
   width: 32px;
   height: 32px;
-  color: #a1a1aa;
-  border-color: rgba(255 255 255 / 0.06);
-  border-radius: 8px;
+  color: var(--imago-text-muted);
+  border-color: var(--imago-border-light);
+  border-radius: var(--imago-radius-md);
   background: transparent;
 }
 
@@ -1293,16 +1322,13 @@ onUnmounted(() => {
 
 .empty-chat {
   height: 100%;
-  color: #71717a;
+  color: var(--imago-text-dim);
 }
 
 .empty-chat__content {
   width: min(420px, 84%);
   padding: 32px 28px;
   text-align: center;
-  border: 1px solid rgba(255 255 255 / 0.06);
-  border-radius: 12px;
-  background: #111113;
 }
 
 .suggestions {
@@ -1313,15 +1339,9 @@ onUnmounted(() => {
   margin-top: 16px;
 }
 
-.suggestion-chip {
-  color: #a1a1aa;
-  border-color: rgba(255 255 255 / 0.06);
-  border-radius: 8px;
-}
-
 .suggestion-chip:hover {
-  border-color: rgba(255 255 255 / 0.12);
-  background: rgba(255 255 255 / 0.04);
+  border-color: var(--imago-border-dim);
+  background: var(--imago-bg-raised);
 }
 
 .message-turn + .message-turn {
@@ -1350,10 +1370,10 @@ onUnmounted(() => {
   width: fit-content;
   max-width: min(82%, 64ch);
   margin-left: auto;
-  background: rgba(255 255 255 / 0.06);
-  border: 1px solid rgba(255 255 255 / 0.08);
+  background: var(--imago-border-light);
+  border: 1px solid var(--imago-border-soft);
   padding: 8px 12px;
-  border-radius: 6px;
+  border-radius: var(--imago-radius-sm);
   display: inline-block;
 }
 
@@ -1369,19 +1389,19 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
   padding: 8px 0;
-  color: #71717a;
+  color: var(--imago-text-dim);
   font-size: 12px;
 }
 
 .compaction-divider__line {
   flex: 1;
   height: 1px;
-  background: rgba(255 255 255 / 0.08);
+  background: var(--imago-border-soft);
 }
 
 .compaction-divider__label {
   white-space: nowrap;
-  color: #71717a;
+  color: var(--imago-text-dim);
 }
 
 .assistant-content {
@@ -1411,9 +1431,9 @@ onUnmounted(() => {
   max-width: min(100%, 220px);
   height: 48px;
   padding: 0 10px;
-  border-radius: 6px;
-  background: rgba(255 255 255 / 0.08);
-  border: 1px solid rgba(255 255 255 / 0.10);
+  border-radius: var(--imago-radius-sm);
+  background: var(--imago-border-soft);
+  border: 1px solid var(--imago-border-dim);
   font-size: 12px;
   line-height: 1.3;
   min-width: 0;
@@ -1430,7 +1450,7 @@ onUnmounted(() => {
   width: 48px;
   height: 48px;
   object-fit: cover;
-  border-radius: 6px;
+  border-radius: var(--imago-radius-sm);
 }
 
 .user-attachments + .user-message-body {
@@ -1451,9 +1471,9 @@ onUnmounted(() => {
   width: 100%;
   max-width: min(100%, 520px);
   padding: 10px 12px;
-  border-radius: 6px;
-  background: rgba(255 255 255 / 0.06);
-  border: 1px solid rgba(255 255 255 / 0.08);
+  border-radius: var(--imago-radius-sm);
+  background: var(--imago-border-light);
+  border: 1px solid var(--imago-border-soft);
 }
 
 .user-comment-path {
@@ -1462,9 +1482,9 @@ onUnmounted(() => {
 
 .user-comment-preview {
   padding: 6px 8px;
-  border-radius: 6px;
-  background: rgba(255 255 255 / 0.04);
-  color: rgba(255 255 255 / 0.72);
+  border-radius: var(--imago-radius-sm);
+  background: var(--imago-bg-raised);
+  color: rgba(255, 255, 255, 0.72);
   white-space: pre-wrap;
 }
 
@@ -1481,9 +1501,9 @@ onUnmounted(() => {
   gap: 6px;
   max-width: 280px;
   padding: 5px 10px;
-  border-radius: 999px;
-  background: rgba(255 255 255 / 0.06);
-  border: 1px solid rgba(255 255 255 / 0.08);
+  border-radius: var(--imago-radius-pill);
+  background: var(--imago-border-light);
+  border: 1px solid var(--imago-border-soft);
   font-size: 12px;
   line-height: 1.3;
 }
@@ -1497,11 +1517,11 @@ onUnmounted(() => {
 .user-message-meta {
   font-size: 12px;
   line-height: 1.2;
-  color: rgba(255 255 255 / 0.50);
+  color: rgba(255, 255, 255, 0.50);
 }
 
 .user-turn-action {
-  background: rgba(255 255 255 / 0.06);
+  background: var(--imago-border-light);
   opacity: 0;
   transition: opacity 150ms ease;
 }
@@ -1549,19 +1569,19 @@ onUnmounted(() => {
 }
 
 .text-part :deep(code) {
-  background: rgba(255 255 255 / 0.06);
-  border: 1px solid rgba(255 255 255 / 0.08);
+  background: var(--imago-border-light);
+  border: 1px solid var(--imago-border-soft);
   padding: 1px 5px;
-  border-radius: 4px;
+  border-radius: var(--imago-radius-xs);
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 0.875em;
   word-break: break-all;
 }
 
 .text-part :deep(pre) {
-  background: #0d1117;
+  background: var(--imago-bg-code);
   padding: 12px 16px;
-  border-radius: 8px;
+  border-radius: var(--imago-radius-md);
   overflow-x: auto;
   margin: 10px 0;
   font-size: 0.875em;
@@ -1586,12 +1606,12 @@ onUnmounted(() => {
 }
 
 .text-part :deep(blockquote) {
-  border-left: 3px solid rgba(255 255 255 / 0.12);
+  border-left: 3px solid var(--imago-border-dim);
   margin: 8px 0;
   padding: 6px 12px;
-  color: #a1a1aa;
-  background: rgba(255 255 255 / 0.02);
-  border-radius: 0 6px 6px 0;
+  color: var(--imago-text-muted);
+  background: var(--imago-border-subtle);
+  border-radius: 0 var(--imago-radius-sm) var(--imago-radius-sm) 0;
 }
 
 .text-part :deep(table) {
@@ -1603,26 +1623,26 @@ onUnmounted(() => {
 
 .text-part :deep(th),
 .text-part :deep(td) {
-  border: 1px solid rgba(255 255 255 / 0.08);
+  border: 1px solid var(--imago-border-soft);
   padding: 6px 10px;
   text-align: left;
 }
 
 .text-part :deep(th) {
-  background: rgba(255 255 255 / 0.04);
+  background: var(--imago-bg-raised);
   font-weight: 600;
 }
 
 .text-part :deep(tr:nth-child(even)) {
-  background: rgba(255 255 255 / 0.02);
+  background: var(--imago-border-subtle);
 }
 
 /* ── Input / composer region ─────────────────────────────────────────────── */
 
 .input-area {
   padding: 12px 20px 16px;
-  background: #111113;
-  border-top: 1px solid rgba(255 255 255 / 0.06);
+  background: var(--imago-bg-panel);
+  border-top: 1px solid var(--imago-border-light);
 }
 
 .input-container {
@@ -1631,9 +1651,6 @@ onUnmounted(() => {
 }
 
 .todo-dock {
-  border: 1px solid rgba(255 255 255 / 0.06);
-  background: rgba(255 255 255 / 0.03);
-  border-radius: 12px;
   padding: 10px 12px;
 }
 
@@ -1654,16 +1671,10 @@ onUnmounted(() => {
 }
 
 .revert-dock {
-  border: 1px solid rgba(245 158 11 / 0.18);
-  background: rgba(245 158 11 / 0.06);
-  border-radius: 12px;
   padding: 10px 12px;
 }
 
 .followup-dock {
-  border: 1px solid rgba(255 255 255 / 0.06);
-  background: rgba(255 255 255 / 0.03);
-  border-radius: 12px;
   padding: 10px 12px;
 }
 
@@ -1702,9 +1713,6 @@ onUnmounted(() => {
 
 .child-session-input-disabled {
   width: 100%;
-  border-radius: 12px;
-  border: 1px solid rgba(255 255 255 / 0.06);
-  background: rgba(255 255 255 / 0.03);
   padding: 14px 16px;
 }
 
@@ -1713,8 +1721,8 @@ onUnmounted(() => {
 .side-panel {
   height: 100vh;
   overflow: hidden;
-  background: #111113;
-  border-left: 1px solid rgba(255 255 255 / 0.06);
+  background: var(--imago-bg-panel);
+  border-left: 1px solid var(--imago-border-light);
 }
 
 .side-panel__inner {
@@ -1725,7 +1733,7 @@ onUnmounted(() => {
 
 .side-tabs {
   flex-shrink: 0;
-  color: #71717a;
+  color: var(--imago-text-dim);
 }
 
 .side-panel__body {

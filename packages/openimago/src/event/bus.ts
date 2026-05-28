@@ -39,19 +39,41 @@ export function makeUserEventBus(
         let ws = evt.workspace ?? evt.directory ?? ""
         if (!ws || ws.startsWith("/")) {
           const p = evt.payload.properties as Record<string, unknown> | undefined
-          ws = (p?.workspaceID as string) ?? ws
+          // Try properties.workspaceID, then properties.info.workspaceID (session.created/updated)
+          const infoWs = (p?.info as Record<string, unknown> | undefined)?.workspaceID as string | undefined
+          ws = (p?.workspaceID as string) ?? infoWs ?? ""
         }
-        if (!ws || ws.startsWith("/")) return
+        // Last resort: extract workspace from directory path (e.g. /opt/work/wrk_xxx → wrk_xxx)
+        if ((!ws || ws.startsWith("/")) && evt.directory) {
+          const parts = evt.directory.split("/").filter(Boolean)
+          ws = parts.pop() ?? ""
+        }
+        if (!ws || ws.startsWith("/")) {
+          logger.warn(
+            { workspaceId: evt.workspace ?? evt.directory ?? "<unknown>", eventType: evt.payload.type, reason: "unable to resolve workspaceId" },
+            "UserEventBus: skipping event — cannot resolve workspace to workspaceId",
+          )
+          return
+        }
 
         const uid = yield* resolver.ownerOf(ws)
-        if (!uid) return
+        if (!uid) {
+          logger.warn(
+            { workspaceId: ws, eventType: evt.payload.type, reason: "ownerOf returned null/undefined" },
+            "UserEventBus: skipping event — no owner found for workspace",
+          )
+          return
+        }
 
         const cbs = callbacks.get(uid)
         if (cbs) for (const fn of cbs) fn(evt.payload)
 
         const ps = pubsubs.get(uid)
         if (ps) yield* PubSub.publish(ps, evt.payload)
-      }),
+      }).pipe(Effect.catchAllCause((cause) => {
+        logger.warn({ cause, eventType: evt.payload.type }, "UserEventBus: fanout event error, skipping")
+        return Effect.void
+      })),
     ),
     Stream.ensuring(Effect.gen(function* () {
       for (const [, es] of emitEnds) for (const end of es) end()
@@ -115,9 +137,16 @@ export const UserEventBusLive = Layer.effect(UserEventBus, Effect.gen(function* 
   const upstream = yield* GlobalEventUpstream
   const resolver = yield* WorkspaceResolver
   const bus = makeUserEventBus(upstream.stream, resolver)
-  yield* Effect.forkDaemon(bus.startFanout().pipe(Effect.catchAll((err) => {
-    logger.error({ err }, "UserEventBus: fanout fiber failed")
-    return Effect.void
-  })))
+  yield* Effect.forkDaemon(
+    Effect.forever(
+      bus.startFanout().pipe(
+        Effect.catchAll((err) => {
+          logger.error({ err }, "UserEventBus: fanout fiber failed, restarting in 1s")
+          return Effect.void
+        }),
+        Effect.delay("1 second"),
+      ),
+    ),
+  )
   return { subscribe: bus.subscribe, events: bus.events }
 }))

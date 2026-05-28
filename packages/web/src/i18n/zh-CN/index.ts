@@ -47,6 +47,8 @@ export default {
     followupMany: '{count} 个后续问题',
     followupFailed: '发送失败',
     followupPaused: '后续对话已暂停',
+    queueFollowup: '加入后续队列',
+    loadingEarlier: '正在加载更早的消息',
     sendNow: '立即发送',
     revertActive: '当前有可恢复的消息',
     retrying: '重试中...',

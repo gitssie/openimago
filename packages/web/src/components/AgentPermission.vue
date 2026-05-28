@@ -1,39 +1,39 @@
 <template>
-  <div class="agent-permission-dock">
+  <div class="agent-permission-dock imago-dock imago-dock--glass">
     <!-- Header -->
     <div class="perm-header row items-center no-wrap q-px-sm q-pt-xs q-pb-xs">
       <q-icon name="security" size="16px" color="warning" class="q-mr-xs" />
-      <span class="text-caption text-weight-bold text-grey-7">{{ t('agentPermission.required') }}</span>
+      <span class="text-caption text-weight-bold text-grey-5">{{ t('agentPermission.required') }}</span>
     </div>
 
-    <q-separator color="grey-3" />
+    <div class="imago-dock__sep" />
 
     <!-- Body -->
     <div class="perm-body q-px-sm q-py-xs">
-      <div class="text-body2 text-weight-medium q-mb-xs">
+      <div class="text-body2 text-weight-medium q-mb-xs" style="color: #e8e8ec;">
         {{ permissionLabel }}
       </div>
       <div v-if="request.patterns && request.patterns.length > 0" class="q-mb-xs">
         <q-chip
           v-for="p in request.patterns"
           :key="p"
-          dense outline color="grey-6" size="sm"
+          dense outline color="grey-5" size="sm"
           class="q-mr-xs"
         >
           {{ p }}
         </q-chip>
       </div>
-      <div v-if="metadataEntries.length > 0" class="text-caption text-grey-6">
+      <div v-if="metadataEntries.length > 0" class="text-caption text-grey-5">
         <span v-for="[k, v] in metadataEntries" :key="k" class="q-mr-sm">
           <span class="text-weight-medium">{{ k }}:</span> {{ v }}
         </span>
       </div>
-      <div v-if="request.tool" class="text-caption text-grey-6 q-mt-xs">
+      <div v-if="request.tool" class="text-caption text-grey-5 q-mt-xs">
         <span class="text-weight-medium">Tool:</span> {{ request.tool.callID }}
       </div>
     </div>
 
-    <q-separator color="grey-3" />
+    <div class="imago-dock__sep" />
 
     <!-- Footer actions -->
     <div class="perm-footer row items-center justify-between q-px-sm q-py-xs">
@@ -47,7 +47,7 @@
       <div class="row q-gutter-xs">
         <q-btn
           flat no-caps dense
-          color="grey-7"
+          color="grey-5"
           :label="t('agentPermission.allowOnce')"
           :loading="sending"
           :disable="sending"
@@ -117,16 +117,11 @@ async function respond(response: 'once' | 'always' | 'reject') {
   left: 0;
   right: 0;
   margin-bottom: 8px;
-  background: white;
-  border: 1px solid $warning;
-  border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-  overflow: hidden;
 }
 
 .perm-header {
   min-height: 28px;
-  background: rgba($warning, 0.06);
+  background: rgba($warning, 0.04);
 }
 
 .perm-body {

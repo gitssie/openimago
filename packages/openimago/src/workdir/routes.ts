@@ -3,7 +3,8 @@ import { eq } from "drizzle-orm"
 import { authMiddleware } from "../server/middleware"
 import { workDirService } from "./service"
 import { db } from "../db/client"
-import { workspaceRefs, projects } from "../db/schema"
+import { projects } from "../db/schema"
+import { WorkspaceTable } from "../db/workspace-schema"
 
 export const workDirRoutes = new Hono()
 
@@ -22,22 +23,22 @@ workDirRoutes.post("/", async (c) => {
   return c.json({ directory: result.directory }, result.status as any)
 })
 
-// GET /api/workdir — list workspace_refs for this user
+// GET /api/workdir — list workspaces for this user
 workDirRoutes.get("/", async (c) => {
   const userId = c.get("userId") as string
   const projectId = c.req.query("projectId")
 
-  const conditions = [eq(workspaceRefs.userId, userId)]
-  if (projectId) conditions.push(eq(workspaceRefs.projectId, projectId))
+  const conditions = [eq(WorkspaceTable.userId, userId)]
+  if (projectId) conditions.push(eq(WorkspaceTable.project_id, projectId))
 
   const rows = await db
     .select({
-      workspaceId: workspaceRefs.workspaceId,
-      projectId: workspaceRefs.projectId,
-      createdAt: workspaceRefs.createdAt,
+      workspaceId: WorkspaceTable.id,
+      projectId: WorkspaceTable.project_id,
+      createdAt: WorkspaceTable.createdAt,
     })
-    .from(workspaceRefs)
-    .where(eq(workspaceRefs.userId, userId))
+    .from(WorkspaceTable)
+    .where(eq(WorkspaceTable.userId, userId))
 
   return c.json({ refs: rows })
 })
