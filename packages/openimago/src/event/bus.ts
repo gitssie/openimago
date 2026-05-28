@@ -36,6 +36,10 @@ export function makeUserEventBus(
   const fanout: Effect.Effect<void> = upstreamStream.pipe(
     Stream.mapEffect((evt: GlobalEvent) =>
       Effect.gen(function* () {
+        // Skip server-level events (heartbeat, connected, etc.) — they have no
+        // workspace-level relevance and would otherwise produce WARN noise.
+        if (evt.payload.type.startsWith("server.")) return
+
         let ws = evt.workspace ?? evt.directory ?? ""
         if (!ws || ws.startsWith("/")) {
           const p = evt.payload.properties as Record<string, unknown> | undefined

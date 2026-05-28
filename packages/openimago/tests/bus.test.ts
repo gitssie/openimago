@@ -142,4 +142,39 @@ describe("UserEventBus", () => {
     expect(received).toHaveLength(1)
     expect(received[0]?.type).toBe("should.succeed")
   })
+
+  test("server events are silently skipped regardless of workspace", async () => {
+    // Resolver returns user_alice for wrk_alice — but should never be called
+    // because server.* events are filtered before workspace resolution.
+    let resolveCalls = 0
+    const resolver = makeWorkspaceResolver(async (ws) => {
+      resolveCalls++
+      if (ws === "wrk_alice") return "user_alice"
+      return null
+    })
+
+    const events: GlobalEvent[] = [
+      mkGlobalEvent("wrk_alice", "server.heartbeat"),
+      mkGlobalEvent("", "server.connected"),
+      mkGlobalEvent("wrk_alice", "session.updated"),
+    ]
+    const upstreamStream = Stream.fromIterable(events)
+    const bus = makeUserEventBus(upstreamStream, resolver)
+
+    const received = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const stream = yield* bus.events("user_alice")
+          yield* Effect.forkScoped(bus.startFanout())
+          return yield* stream.pipe(Stream.runCollect, Effect.map((c) => Array.from(c) as BusEvent[]))
+        }),
+      ) as Effect.Effect<BusEvent[], never, never>,
+    )
+
+    // Only session.updated reaches the user; server events are skipped
+    expect(received).toHaveLength(1)
+    expect(received[0]?.type).toBe("session.updated")
+    // Resolver was called only for session.updated, not for server events
+    expect(resolveCalls).toBe(1)
+  })
 })
