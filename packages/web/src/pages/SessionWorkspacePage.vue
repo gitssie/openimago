@@ -1,13 +1,9 @@
 <template>
   <div class="session-workspace">
-    <div class="aurora aurora--cyan" />
-    <div class="aurora aurora--violet" />
-
     <div class="workspace-layout">
       <aside class="session-sidebar">
-        <div class="session-sidebar__brand">
-          <span class="brand-mark">openimago</span>
-          <span class="brand-pulse" />
+        <div class="sidebar-brand">
+          <span class="brand-name">openimago</span>
         </div>
 
         <div class="session-shell">
@@ -19,7 +15,7 @@
               flat
               :icon="item.icon"
               :aria-label="item.label"
-              :class="['rail-btn', { 'rail-btn--active': item.active, 'rail-settings': item.icon === 'settings' }]"
+              :class="['rail-btn', { 'rail-btn--active': item.active }]"
             />
             <q-btn round flat icon="keyboard_double_arrow_right" aria-label="收起侧栏" class="rail-collapse" />
           </nav>
@@ -68,7 +64,7 @@
                 no-caps
                 size="sm"
                 class="breadcrumb-parent-btn q-px-none"
-                color="cyan-4"
+                color="grey-5"
                 :label="getSessionLabel(currentParentSession)"
                 @click="handleSwitchSession(currentParentSession.id)"
               />
@@ -82,7 +78,7 @@
 
           <div class="topbar-actions">
             <div v-if="isSessionSwitching || isLoading" class="topbar-status">
-              <q-spinner-dots size="16px" color="cyan-4" />
+              <q-spinner-dots size="16px" color="grey-5" />
               <span>{{ isLoading ? '生成中' : '切换会话' }}</span>
             </div>
             <q-btn outline icon="light_mode" class="topbar-icon" aria-label="外观" round />
@@ -90,19 +86,20 @@
         </header>
 
         <div ref="messagesAreaRef" class="messages-container">
-          <q-inner-loading :showing="isSessionSwitching" color="cyan-4" />
+          <q-inner-loading :showing="isSessionSwitching" color="grey-5" />
 
           <div v-if="!isSessionSwitching && displayMessages.length === 0" class="empty-chat flex flex-center">
             <div class="empty-chat__content">
-              <q-icon name="auto_awesome" />
-              <h1>把想象推入夜色引擎</h1>
-              <p>输入 prompt，生成图像、变体与可复用参数会同步出现在右侧面板。</p>
+              <q-icon name="chat_bubble_outline" size="48px" color="grey-6" class="q-mb-md" />
+              <div class="text-h6 text-grey-3 q-mb-xs">开始新会话</div>
+              <p class="text-body2 text-grey-6">输入 prompt，生成图像、变体与可复用参数会同步出现在右侧面板。</p>
               <div class="suggestions">
                 <q-btn
                   v-for="suggestion in suggestions"
                   :key="suggestion"
                   outline
                   no-caps
+                  flat
                   class="suggestion-chip"
                   :label="suggestion"
                   @click="useSuggestion(suggestion)"
@@ -120,97 +117,98 @@
             @load="onLoadHistory"
           >
             <template #loading>
-              <div class="row justify-center q-py-sm">
-                <q-spinner-dots size="24px" color="cyan-5" />
+              <div class="history-loading row justify-center items-center q-gutter-sm q-py-sm">
+                <q-spinner-dots size="24px" color="grey-5" />
+                <span>{{ t('agent.loadingEarlier') }}</span>
               </div>
             </template>
 
             <div v-for="turn in displayTurns" :key="turn.user.id" class="message-turn">
-              <q-chat-message sent bg-color="cyan-10" text-color="white" class="message-row">
-                <template #avatar>
-                  <q-avatar size="44px" class="message-avatar"><div class="portrait" /></q-avatar>
-                </template>
-                <template #default>
-                  <div class="user-message-content">
-                    <div v-if="getUserComments(turn.user).length > 0" class="user-comments q-mb-sm">
-                      <div v-for="comment in getUserComments(turn.user)" :key="comment.id" class="user-comment-card">
-                        <div class="row items-center q-gutter-xs text-caption text-blue-grey-2">
-                          <q-icon name="comment" size="14px" />
-                          <span class="text-weight-medium">{{ t('agent.context') }}</span>
-                          <span v-if="comment.path" class="ellipsis user-comment-path">{{ comment.path }}</span>
-                        </div>
-                        <div v-if="comment.preview" class="user-comment-preview text-caption q-mt-xs">{{ comment.preview }}</div>
-                        <div class="q-mt-xs">{{ comment.comment }}</div>
+              <div class="turn-container">
+                <!-- User message: right-aligned compact card -->
+                <div class="user-turn-content">
+                  <div v-if="getUserComments(turn.user).length > 0" class="user-comments q-mb-sm">
+                    <div v-for="comment in getUserComments(turn.user)" :key="comment.id" class="user-comment-card">
+                      <div class="row items-center q-gutter-xs text-caption text-blue-grey-2">
+                        <q-icon name="comment" size="14px" />
+                        <span class="text-weight-medium">{{ t('agent.context') }}</span>
+                        <span v-if="comment.path" class="ellipsis user-comment-path">{{ comment.path }}</span>
                       </div>
+                      <div v-if="comment.preview" class="user-comment-preview text-caption q-mt-xs">{{ comment.preview }}</div>
+                      <div class="q-mt-xs">{{ comment.comment }}</div>
                     </div>
-                    <div v-if="getUserContextFiles(turn.user).length > 0" class="user-context-files q-mb-sm">
-                      <div class="text-caption text-blue-grey-2 q-mb-xs">上下文</div>
-                      <div class="row q-col-gutter-xs q-row-gutter-xs">
-                        <div v-for="attachment in getUserContextFiles(turn.user)" :key="attachment.id" class="col-auto">
-                          <div class="user-context-chip">
-                            <q-icon :name="attachment.mime.includes('image') ? 'image' : 'description'" size="14px" />
-                            <span class="ellipsis">{{ attachment.filename || '附件' }}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div v-if="getUserAttachments(turn.user).length > 0" class="user-attachments q-mb-sm">
-                      <div v-for="attachment in getUserAttachments(turn.user)" :key="attachment.id" class="user-attachment-chip">
-                        <img
-                          v-if="attachment.mime.includes('image')"
-                          :src="attachment.url"
-                          :alt="attachment.filename || '附件'"
-                          class="user-attachment-image"
-                        >
-                        <template v-else>
-                          <q-icon name="attach_file" size="14px" />
+                  </div>
+                  <div v-if="getUserContextFiles(turn.user).length > 0" class="user-context-files q-mb-sm">
+                    <div class="text-caption text-blue-grey-2 q-mb-xs">上下文</div>
+                    <div class="row q-col-gutter-xs q-row-gutter-xs" style="justify-content: flex-end">
+                      <div v-for="attachment in getUserContextFiles(turn.user)" :key="attachment.id" class="col-auto">
+                        <div class="user-context-chip">
+                          <q-icon :name="attachment.mime.includes('image') ? 'image' : 'description'" size="14px" />
                           <span class="ellipsis">{{ attachment.filename || '附件' }}</span>
-                        </template>
+                        </div>
                       </div>
                     </div>
+                  </div>
+                  <div v-if="getUserAttachments(turn.user).length > 0" class="user-attachments q-mb-sm">
+                    <div v-for="attachment in getUserAttachments(turn.user)" :key="attachment.id" class="user-attachment-chip">
+                      <img
+                        v-if="attachment.mime.includes('image')"
+                        :src="attachment.url"
+                        :alt="attachment.filename || '附件'"
+                        class="user-attachment-image"
+                      >
+                      <template v-else>
+                        <q-icon name="attach_file" size="14px" />
+                        <span class="ellipsis">{{ attachment.filename || '附件' }}</span>
+                      </template>
+                    </div>
+                  </div>
+                  <div class="user-message-body">
                     <AgentUserMessageBody
                       v-if="getUserMessageText(turn.user)"
                       :text="getUserMessageText(turn.user)"
                       :references="getUserContextFiles(turn.user)"
                       :agents="getUserAgentMentions(turn.user)"
                     />
-                    <div v-if="getUserMetaLabel(turn.user) || canRevertTurn(turn.user)" class="user-message-footer q-mt-sm row items-center justify-between q-gutter-sm">
-                      <div v-if="getUserMetaLabel(turn.user)" class="user-message-meta">{{ getUserMetaLabel(turn.user) }}</div>
-                      <div class="row items-center q-gutter-xs">
-                        <q-btn flat dense round size="sm" icon="content_copy" color="white" class="user-turn-action" @click="copyTurn(turn.user)">
-                          <q-tooltip>{{ t('shared.copy') }}</q-tooltip>
-                        </q-btn>
-                        <q-btn v-if="canRevertTurn(turn.user)" flat dense round size="sm" icon="history" color="white" class="user-turn-action" @click="revertTurn(turn.user)">
-                          <q-tooltip>{{ t('agent.restore') }}</q-tooltip>
-                        </q-btn>
-                      </div>
+                  </div>
+                  <div v-if="getUserMetaLabel(turn.user) || canRevertTurn(turn.user)" class="user-message-footer q-mt-sm row items-center justify-between q-gutter-sm">
+                    <div v-if="getUserMetaLabel(turn.user)" class="user-message-meta">{{ getUserMetaLabel(turn.user) }}</div>
+                    <div class="row items-center q-gutter-xs">
+                      <q-btn flat dense round size="sm" icon="content_copy" color="white" class="user-turn-action" @click="copyTurn(turn.user)">
+                        <q-tooltip>{{ t('shared.copy') }}</q-tooltip>
+                      </q-btn>
+                      <q-btn v-if="canRevertTurn(turn.user)" flat dense round size="sm" icon="history" color="white" class="user-turn-action" @click="revertTurn(turn.user)">
+                        <q-tooltip>{{ t('agent.restore') }}</q-tooltip>
+                      </q-btn>
                     </div>
                   </div>
-                </template>
-              </q-chat-message>
+                </div>
 
-              <q-chat-message
-                v-if="turn.assistant || shouldShowAssistantPlaceholder(turn)"
-                bg-color="deep-purple-10"
-                text-color="white"
-                class="message-row"
-              >
-                <template #avatar>
-                  <div class="ai-avatar">AI</div>
-                </template>
-                <template #default>
+                <!-- Compaction divider between user and assistant message -->
+                <div v-if="hasCompaction(turn)" class="compaction-divider">
+                  <div class="compaction-divider__line"></div>
+                  <span class="compaction-divider__label">{{ getCompactionLabel(turn) }}</span>
+                  <div class="compaction-divider__line"></div>
+                </div>
+
+                <!-- Assistant content: full-width -->
+                <div
+                  v-if="turn.assistant || shouldShowAssistantPlaceholder(turn)"
+                  class="assistant-turn-content"
+                >
                   <div v-if="turn.assistant" class="assistant-content">
                     <div v-if="shouldShowAssistantPlaceholder(turn)" class="row items-center q-gutter-xs thinking-indicator">
-                      <q-spinner-dots size="16px" color="cyan-4" />
+                      <q-spinner-dots size="16px" color="grey-5" />
                       <span class="text-caption text-grey-5">
                         {{ sessionStatus === 'retry' ? '重试中...' : getAssistantThinkingLabel(turn) }}
                       </span>
                     </div>
-                    <template v-for="part in turn.assistant.parts" :key="part.id">
-                      <AgentReasoning
+                    <template v-for="part in visibleAssistantParts(turn.assistant)" :key="part.id">
+                       <AgentReasoning
                         v-if="part.type === 'reasoning' && (partText.get(part.id) ?? part.text ?? '').trim()"
                         :part="part"
                         :text="partText.get(part.id) ?? part.text ?? ''"
+                        :turn-duration-ms="getTurnDurationMs(turn)"
                       />
                       <AgentToolCall
                         v-else-if="part.type === 'tool' && !shouldHideToolPart(part)"
@@ -224,7 +222,6 @@
                       <AgentSimplePart v-else-if="part.type === 'agent'" icon="smart_toy" title="Agent" :description="part.name ?? ''" />
                       <AgentSimplePart v-else-if="part.type === 'snapshot'" icon="history" title="Snapshot" :description="part.snapshot ?? ''" />
                       <AgentSimplePart v-else-if="part.type === 'retry'" icon="refresh" title="Retry" :description="`Attempt ${part.attempt}: ${formatRetryError(part.error)}`" />
-                      <AgentSimplePart v-else-if="part.type === 'compaction'" icon="compress" title="Compaction" :description="part.auto ? 'Automatic compaction' : 'Manual compaction'" />
                       <div v-else-if="part.type === 'text'" class="text-part">
                         <MarkdownRender
                           :content="partText.get(part.id) ?? part.text ?? ''"
@@ -233,7 +230,7 @@
                         <q-spinner-dots
                           v-if="isLoading && isActiveAssistantTurn(turn) && part.id === getLastTextPartId(turn.assistant)"
                           size="1em"
-                          color="cyan-4"
+                          color="grey-4"
                         />
                       </div>
                     </template>
@@ -258,11 +255,11 @@
                     </div>
                   </div>
                   <div v-else class="row items-center q-gutter-xs thinking-indicator">
-                    <q-spinner-dots size="16px" color="cyan-4" />
+                    <q-spinner-dots size="16px" color="grey-5" />
                     <span class="text-caption text-grey-5">{{ sessionStatus === 'retry' ? '重试中...' : '正在思考...' }}</span>
                   </div>
-                </template>
-              </q-chat-message>
+                </div>
+              </div>
             </div>
 
             <div style="height: 24px" />
@@ -280,7 +277,7 @@
 
             <div v-if="sessionTodos.length > 0" class="todo-dock q-mb-sm">
               <div class="row items-center justify-between q-mb-xs">
-                <div class="text-caption text-weight-medium" style="color: #9fefff">
+                <div class="text-caption text-weight-medium text-grey-5">
                   {{ t('agent.todoProgress', { done: completedTodoCount, total: sessionTodos.length }) }}
                 </div>
                 <div v-if="activeTodoLabel" class="text-caption text-grey-5 ellipsis todo-dock__preview">
@@ -291,7 +288,7 @@
                 <div v-for="todo in sessionTodos" :key="todo.content" class="todo-dock__item row no-wrap items-start q-gutter-sm">
                   <q-icon
                     :name="todo.status === 'completed' ? 'check_circle' : todo.status === 'in_progress' ? 'more_horiz' : todo.status === 'cancelled' ? 'cancel' : 'radio_button_unchecked'"
-                    :color="todo.status === 'completed' ? 'positive' : todo.status === 'in_progress' ? 'cyan-4' : todo.status === 'cancelled' ? 'grey-5' : 'grey-4'"
+                    :color="todo.status === 'completed' ? 'positive' : todo.status === 'in_progress' ? 'grey-5' : todo.status === 'cancelled' ? 'grey-5' : 'grey-4'"
                     size="16px"
                     class="q-mt-xs"
                   />
@@ -315,7 +312,7 @@
 
             <div v-if="currentQueuedFollowups.length > 0" class="followup-dock q-mb-sm">
               <button type="button" class="followup-dock__header row items-center justify-between q-gutter-sm" @click="followupCollapsed = !followupCollapsed">
-                <div class="text-caption text-weight-medium" style="color: #9fefff">
+                <div class="text-caption text-weight-medium text-grey-5">
                   {{ currentQueuedFollowups.length === 1 ? t('agent.followupOne') : t('agent.followupMany', { count: currentQueuedFollowups.length }) }}
                 </div>
                 <div v-if="followupCollapsed" class="text-caption text-grey-6 ellipsis followup-dock__preview">
@@ -344,7 +341,7 @@
                       {{ t('agent.followupFailed') }}
                     </div>
                   </div>
-                  <q-btn dense no-caps size="sm" color="cyan-4" :loading="sendingFollowupId === item.id" :label="t('agent.sendNow')" @click="sendQueuedFollowup(item.id, true)" />
+                  <q-btn dense no-caps size="sm" color="grey-6" :loading="sendingFollowupId === item.id" :label="t('agent.sendNow')" @click="sendQueuedFollowup(item.id, true)" />
                   <q-btn flat dense no-caps size="sm" color="grey-6" :disable="sendingFollowupId === item.id" :label="'编辑'" @click="editQueuedFollowup(item.id)" />
                 </div>
               </div>
@@ -362,20 +359,20 @@
               :draft="draftInputMessage"
               :loading="isLoading"
               :connected="isConnected"
-              :disabled="isLoading"
+              :disabled="isSessionSwitching"
               :attachments="pendingAttachments"
               @submit="submitDraftMessage"
               @abort="abortSession"
               @remove-attachment="removeAttachment"
               @attach-files="onFilesSelected"
             />
-            <div v-else class="child-session-input-disabled text-body2" style="color: #9fa8bb">
+            <div v-else class="child-session-input-disabled text-body2 text-grey-7">
               <span>{{ t('agent.childInputDisabled') }}</span>
               <q-btn
                 flat
                 dense
                 no-caps
-                color="cyan-4"
+                color="grey-5"
                 class="q-ml-sm"
                 :label="t('agent.backToParent')"
                 @click="handleSwitchSession(currentParentSession.id)"
@@ -385,44 +382,27 @@
         </div>
       </main>
 
-      <aside class="result-panel">
-        <div class="result-panel__inner">
-          <q-tabs v-model="resultTab" dense no-caps active-color="cyan-4" indicator-color="cyan-4" class="result-tabs">
+      <aside class="side-panel">
+        <div class="side-panel__inner">
+          <q-tabs v-model="resultTab" dense no-caps active-color="grey-4" indicator-color="grey-7" class="side-tabs">
             <q-tab name="result" label="生成结果" />
-            <q-tab name="canvas" label="画布编辑" />
-            <q-tab name="prompt" label="提示词优化" />
+            <q-tab name="canvas" label="画布" />
+            <q-tab name="prompt" label="提示词" />
           </q-tabs>
 
-          <section class="result-card glass-card">
-            <div class="result-title">最终生成结果</div>
-            <div class="result-image city-frame" />
-            <q-separator dark class="soft-separator" />
-            <div class="variant-title">变体方案 (3/3)</div>
-            <div class="variants">
-              <button
-                v-for="variant in resultVariants"
-                :key="variant"
-                type="button"
-                :class="['variant', `variant--${variant}`, { 'variant--active': variant === 'rain' }]"
-                :aria-label="`变体 ${variant}`"
-              />
+          <div class="side-panel__body">
+            <div v-if="resultTab === 'result'" class="side-panel__placeholder">
+              <q-icon name="image" size="28px" color="grey-7" class="q-mb-sm" />
+              <div class="text-caption text-grey-7">暂无生成结果</div>
             </div>
-          </section>
-
-          <section class="params-card glass-card">
-            <div class="result-title">生成参数</div>
-            <dl>
-              <template v-for="param in generationParams" :key="param.label">
-                <dt>{{ param.label }}</dt>
-                <dd>{{ param.value }}</dd>
-              </template>
-            </dl>
-          </section>
-
-          <div class="result-actions">
-            <q-btn outline icon="refresh" label="再次生成" class="result-action" no-caps />
-            <q-btn outline icon="auto_awesome" label="变体生成" class="result-action result-action--violet" no-caps />
-            <q-btn outline icon="favorite_border" label="收藏" class="result-action" no-caps />
+            <div v-else-if="resultTab === 'canvas'" class="side-panel__placeholder">
+              <q-icon name="brush" size="28px" color="grey-7" class="q-mb-sm" />
+              <div class="text-caption text-grey-7">画布编辑器</div>
+            </div>
+            <div v-else class="side-panel__placeholder">
+              <q-icon name="auto_awesome" size="28px" color="grey-7" class="q-mb-sm" />
+              <div class="text-caption text-grey-7">提示词优化</div>
+            </div>
           </div>
         </div>
       </aside>
@@ -482,20 +462,10 @@ const railItems = [
   { icon: 'settings', label: '设置', active: false },
 ] as const
 
-const resultVariants = ['rain', 'skyline', 'drone'] as const
 const suggestions = [
   t('agent.askDocs'),
   t('agent.summarizeBase'),
   t('agent.mainTopics'),
-] as const
-
-const generationParams = [
-  { label: '模型', value: 'Midjourney v6' },
-  { label: '风格', value: '赛博朋克 / Cyberpunk' },
-  { label: '比例', value: '16:9' },
-  { label: '质量', value: 'High Quality' },
-  { label: '生成时间', value: '2024-05-24 14:35:18' },
-  { label: '提示词', value: '赛博朋克城市夜景，雨天，霓虹灯光，未来感，飞行器，超高细节...' },
 ] as const
 
 // ── Scroll helpers ────────────────────────────────────────────────────────────
@@ -657,12 +627,12 @@ function getChildTaskDescription(session: SessionItem): string {
     const parts = parentEntries[entryIndex]?.parts ?? []
     for (let partIndex = parts.length - 1; partIndex >= 0; partIndex -= 1) {
       const part = parts[partIndex]
-      if (part?.type !== 'tool' || (part as ToolPart).tool !== 'task') continue
+        if (part?.type !== 'tool' || part.tool !== 'task') continue
 
-      const state = (part as ToolPart).state as {
-        metadata?: Record<string, unknown>
-        input?: Record<string, unknown>
-      }
+        const state = part.state as {
+          metadata?: Record<string, unknown>
+          input?: Record<string, unknown>
+        }
       const metadataSessionId = typeof state.metadata?.sessionId === 'string' ? state.metadata.sessionId : undefined
       if (metadataSessionId !== session.id) continue
 
@@ -891,6 +861,14 @@ function formatTurnDuration(ms?: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+function getTurnDurationMs(turn: DisplayTurn): number | undefined {
+  const started = turn.user.info?.time?.created;
+  const assistantTime = turn.assistant?.info?.time;
+  const completed = assistantTime && 'completed' in assistantTime ? (assistantTime as { completed?: number }).completed : undefined;
+  if (typeof started !== 'number' || typeof completed !== 'number' || completed < started) return undefined;
+  return completed - started;
+}
+
 function getTurnMetaLabel(turn: DisplayTurn): string {
   const created = formatSessionTime(turn.user.time)
   const assistantTime = turn.assistant?.info?.time
@@ -943,11 +921,26 @@ function shouldHideToolPart(part: ToolPart): boolean {
 }
 
 function isVisibleAssistantPart(part: DisplayMessage['parts'][number]): boolean {
-  if (part.type === 'tool') return !shouldHideToolPart(part as ToolPart)
+  if (part.type === 'compaction') return false
+  if (part.type === 'tool') return !shouldHideToolPart(part)
   if (part.type === 'text' || part.type === 'reasoning') {
     return !!(partText.value.get(part.id) ?? (part as { text?: string }).text ?? '').trim()
   }
   return true
+}
+
+function hasCompaction(turn: DisplayTurn): boolean {
+  return (turn.assistant?.parts ?? []).some((p) => p.type === 'compaction')
+}
+
+function getCompactionLabel(turn: DisplayTurn): string {
+  const compactPart = (turn.assistant?.parts ?? []).find((p) => p.type === 'compaction')
+  if (!compactPart) return ''
+  return (compactPart as { auto?: boolean }).auto ? 'Automatic compaction' : 'Manual compaction'
+}
+
+function visibleAssistantParts(message: DisplayMessage): DisplayMessage['parts'] {
+  return message.parts.filter((p) => p.type !== 'compaction')
 }
 
 function getVisibleAssistantPartCount(message: DisplayMessage | null): number {
@@ -1023,53 +1016,18 @@ onUnmounted(() => {
 
 <style scoped>
 :global(body) {
-  background: #030713;
+  background: #09090b;
 }
+
+/* ── Base layout ─────────────────────────────────────────────────────────── */
 
 .session-workspace {
   position: relative;
   width: 100vw;
   min-height: 100vh;
   overflow: hidden;
-  color: #e8eef9;
-  background:
-    linear-gradient(90deg, rgb(3 7 19 / 98%), rgb(5 8 22 / 92%) 38%, rgb(4 6 17 / 98%)),
-    radial-gradient(circle at 44% 58%, rgb(0 78 255 / 25%), transparent 30%),
-    #030713;
-}
-
-.session-workspace::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.33;
-  background-image:
-    linear-gradient(rgb(255 255 255 / 4%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(255 255 255 / 4%) 1px, transparent 1px);
-  background-size: 54px 54px;
-  mask-image: radial-gradient(circle at center, black, transparent 78%);
-}
-
-.aurora {
-  position: absolute;
-  width: 460px;
-  height: 460px;
-  filter: blur(44px);
-  opacity: 0.38;
-  pointer-events: none;
-}
-
-.aurora--cyan {
-  left: 22%;
-  bottom: -190px;
-  background: radial-gradient(circle, rgb(0 229 255 / 72%), transparent 68%);
-}
-
-.aurora--violet {
-  right: 16%;
-  top: 42%;
-  background: radial-gradient(circle, rgb(156 72 255 / 72%), transparent 70%);
+  color: #fafafa;
+  background: #09090b;
 }
 
 .workspace-layout {
@@ -1077,210 +1035,207 @@ onUnmounted(() => {
   z-index: 1;
   height: 100vh;
   display: grid;
-  grid-template-columns: 334px minmax(520px, 1fr) 490px;
+  grid-template-columns: 260px minmax(480px, 1fr) 320px;
 }
 
 .session-sidebar,
 .chat-area,
-.result-panel {
+.side-panel {
   min-width: 0;
 }
 
+/* ── Left sidebar ────────────────────────────────────────────────────────── */
+
 .session-sidebar {
-  border-right: 1px solid rgb(139 164 209 / 18%);
-  background: linear-gradient(180deg, rgb(3 8 20 / 86%), rgb(4 7 18 / 64%));
-  backdrop-filter: blur(22px);
+  border-right: 1px solid rgba(255 255 255 / 0.06);
+  background: #09090b;
 }
 
-.session-sidebar__brand {
-  height: 76px;
+.sidebar-brand {
+  height: 52px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
+  padding: 0 18px;
 }
 
-.brand-mark {
-  color: #21f5ff;
-  font-family: Orbitron, Eurostile, 'Trebuchet MS', sans-serif;
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: -0.08em;
-  text-shadow: 0 0 14px rgb(33 245 255 / 72%);
-}
-
-.brand-pulse {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: #20f4ff;
-  box-shadow: 0 0 18px #20f4ff;
+.brand-name {
+  color: #fafafa;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .session-shell {
-  height: calc(100vh - 76px);
+  height: calc(100vh - 52px);
   display: grid;
-  grid-template-columns: 75px 1fr;
-  border-top: 1px solid rgb(139 164 209 / 18%);
+  grid-template-columns: 64px 1fr;
+  border-top: 1px solid rgba(255 255 255 / 0.06);
 }
 
 .session-rail {
   position: relative;
   display: grid;
-  grid-auto-rows: 48px;
-  gap: 14px;
+  grid-auto-rows: 44px;
+  gap: 4px;
   justify-items: center;
-  padding-top: 78px;
-  border-right: 1px solid rgb(139 164 209 / 14%);
+  padding-top: 16px;
+  border-right: 1px solid rgba(255 255 255 / 0.06);
+  background: #09090b;
 }
 
 .rail-btn,
 .rail-collapse {
-  width: 48px;
-  height: 48px;
-  color: #d8dfed;
+  width: 40px;
+  height: 40px;
+  color: #a1a1aa;
   border: 1px solid transparent;
-  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  transition: color 120ms ease;
 }
 
 .rail-btn:hover,
 .rail-collapse:hover {
-  transform: translateY(-2px);
-  border-color: rgb(22 243 255 / 38%);
+  color: #d4d4d8;
 }
 
 .rail-btn--active {
-  color: #16f3ff;
-  border-color: #16f3ff;
-  background: rgb(0 221 255 / 12%);
-  box-shadow: 0 0 18px rgb(0 221 255 / 25%), inset 0 0 18px rgb(0 221 255 / 10%);
-}
-
-.rail-settings {
-  margin-top: 18px;
+  color: #fafafa;
+  background: rgba(255 255 255 / 0.06);
 }
 
 .rail-collapse {
   position: absolute;
-  bottom: 28px;
-  color: #e3f5ff;
-  border-color: #16f3ff;
-  background: rgb(0 62 130 / 22%);
+  bottom: 20px;
+  color: #71717a;
 }
+
+/* ── Session list ────────────────────────────────────────────────────────── */
 
 .session-list-panel {
   min-width: 0;
-  padding: 22px 18px 18px 24px;
+  padding: 14px 12px 14px 16px;
   overflow-y: auto;
+  background: #09090b;
 }
 
 .new-session-btn {
   width: 100%;
-  height: 40px;
-  color: #021018;
-  background: linear-gradient(90deg, #22efff, #17cde4);
-  border-radius: 9px;
-  font-size: 15px;
-  font-weight: 800;
-  box-shadow: 0 14px 34px rgb(23 205 228 / 25%);
+  height: 36px;
+  color: #fafafa;
+  background: rgba(255 255 255 / 0.08);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.new-session-btn:hover {
+  background: rgba(255 255 255 / 0.12);
 }
 
 .session-group {
-  margin-top: 30px;
+  margin-top: 20px;
 }
 
 .session-group__title {
   display: flex;
   justify-content: space-between;
-  color: #a8b0c1;
-  font-size: 13px;
-  margin: 0 10px 12px;
+  color: #71717a;
+  font-size: 12px;
+  font-weight: 500;
+  margin: 0 8px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .session-list {
   display: grid;
-  gap: 6px;
+  gap: 2px;
 }
 
 .session-list-empty {
-  margin-top: 16px;
-  color: #8f98ac;
+  margin-top: 12px;
+  color: #52525b;
   font-size: 13px;
   text-align: center;
 }
 
 .session-item {
-  min-height: 74px;
-  padding: 11px 10px 11px 12px;
-  color: #dce4f4;
+  min-height: 60px;
+  padding: 8px 10px 8px 10px;
+  color: #a1a1aa;
   border: 1px solid transparent;
-  border-radius: 10px;
-  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 2%));
+  border-radius: 8px;
+  background: transparent;
 }
 
 .session-item:hover {
-  background: rgb(20 28 48 / 44%);
+  background: rgba(255 255 255 / 0.04);
 }
 
 .session-item--active {
-  background: linear-gradient(135deg, rgb(32 255 255 / 9%), rgb(108 50 185 / 24%));
-  border-color: rgb(22 239 255 / 62%);
-  box-shadow: inset 2px 0 0 #16f3ff, 0 18px 36px rgb(0 0 0 / 22%), inset 0 0 22px rgb(120 74 255 / 10%);
+  background: rgba(255 255 255 / 0.06);
+  border-color: rgba(255 255 255 / 0.08);
 }
 
 .session-title {
-  color: #dfe6f5;
-  font-size: 14px;
-  line-height: 1.2;
+  color: #d4d4d8;
+  font-size: 13px;
+  line-height: 1.3;
 }
 
 .session-preview {
-  margin-top: 8px;
-  color: #8f98ac !important;
+  margin-top: 4px;
+  color: #71717a !important;
   font-size: 12px;
 }
 
 .session-time {
-  color: #9aa3b7;
-  font-size: 12px;
+  color: #71717a;
+  font-size: 11px;
 }
 
 .session-delete {
   opacity: 0;
-  transition: opacity 160ms ease;
+  transition: opacity 120ms ease;
 }
 
 .session-item:hover .session-delete {
   opacity: 1;
 }
 
+/* ── Chat area ───────────────────────────────────────────────────────────── */
+
 .chat-area {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  border-right: 1px solid rgb(139 164 209 / 16%);
+  background: #09090b;
 }
 
 .session-topbar {
-  height: 76px;
+  height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 26px;
-  border-bottom: 1px solid rgb(139 164 209 / 18%);
-  background: rgb(3 7 18 / 34%);
+  padding: 0 20px;
+  border-bottom: 1px solid rgba(255 255 255 / 0.06);
+  background: #09090b;
 }
 
 .session-heading {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 0;
-  color: #dfe6f4;
+  color: #d4d4d8;
   background: transparent;
   border: 0;
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.session-heading:hover {
+  color: #fafafa;
 }
 
 .col.min-width-0 {
@@ -1300,158 +1255,205 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   display: block;
-  max-width: 240px;
+  max-width: 200px;
 }
 
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
 }
 
 .topbar-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #9fefff;
+  color: #71717a;
   font-size: 12px;
 }
 
 .topbar-icon {
-  width: 36px;
-  height: 36px;
-  color: #d4dbea;
-  border-color: rgb(145 163 205 / 22%);
-  border-radius: 9px;
-  background: rgb(255 255 255 / 2%);
+  width: 32px;
+  height: 32px;
+  color: #a1a1aa;
+  border-color: rgba(255 255 255 / 0.06);
+  border-radius: 8px;
+  background: transparent;
 }
 
-.message-avatar {
-  background: linear-gradient(135deg, rgb(20 237 255 / 20%), rgb(141 55 255 / 45%));
-  border: 1px solid rgb(145 78 255 / 72%);
-  box-shadow: 0 0 18px rgb(145 78 255 / 38%);
-}
-
-.portrait {
-  width: 100%;
-  height: 100%;
-  border-radius: inherit;
-  background:
-    radial-gradient(circle at 48% 36%, #f5d0ba 0 13%, transparent 14%),
-    linear-gradient(135deg, #101b36, #07101e 42%, #0ecaff 43% 48%, #7326ff 49% 58%, #13031f 59%);
-}
+/* ── Messages ────────────────────────────────────────────────────────────── */
 
 .messages-container {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 28px 28px 20px;
+  padding: 20px 24px 12px;
   scroll-behavior: smooth;
 }
 
 .empty-chat {
   height: 100%;
-  color: #8f98ac;
+  color: #71717a;
 }
 
 .empty-chat__content {
-  width: min(460px, 84%);
-  padding: 34px;
+  width: min(420px, 84%);
+  padding: 32px 28px;
   text-align: center;
-  border: 1px solid rgb(145 163 205 / 16%);
-  border-radius: 28px;
-  background: linear-gradient(135deg, rgb(10 16 34 / 68%), rgb(10 8 24 / 38%));
-}
-
-.empty-chat__content .q-icon {
-  color: #a855f7;
-  font-size: 58px;
-  text-shadow: 0 0 20px rgb(168 85 247 / 45%);
-}
-
-.empty-chat__content h1 {
-  margin: 12px 0 8px;
-  color: #eef7ff;
-  font-size: 24px;
-}
-
-.empty-chat__content p {
-  margin: 0;
-  line-height: 1.7;
+  border: 1px solid rgba(255 255 255 / 0.06);
+  border-radius: 12px;
+  background: #111113;
 }
 
 .suggestions {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 10px;
-  margin-top: 22px;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 .suggestion-chip {
-  color: #9fefff;
-  border-color: rgb(23 234 255 / 34%);
-  border-radius: 999px;
+  color: #a1a1aa;
+  border-color: rgba(255 255 255 / 0.06);
+  border-radius: 8px;
+}
+
+.suggestion-chip:hover {
+  border-color: rgba(255 255 255 / 0.12);
+  background: rgba(255 255 255 / 0.04);
 }
 
 .message-turn + .message-turn {
-  margin-top: 8px;
+  margin-top: 24px;
 }
 
-.message-row {
-  max-width: 1100px;
+.turn-container {
+  max-width: 800px;
   margin: 0 auto;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
-.message-row :deep(.q-message-container.reverse > div:not(.q-message-avatar)) {
-  max-width: 75%;
+.user-turn-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  width: 100%;
+  max-width: 100%;
+  margin-bottom: 12px;
 }
 
-.ai-avatar {
-  width: 48px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  flex: 0 0 48px;
-  color: #d6b8ff;
-  background: rgb(101 34 173 / 32%);
-  border: 1px solid #9a4cff;
-  border-radius: 50%;
-  font-size: 22px;
-  box-shadow: 0 0 20px rgb(154 76 255 / 26%);
+.user-message-body {
+  width: fit-content;
+  max-width: min(82%, 64ch);
+  margin-left: auto;
+  background: rgba(255 255 255 / 0.06);
+  border: 1px solid rgba(255 255 255 / 0.08);
+  padding: 8px 12px;
+  border-radius: 6px;
+  display: inline-block;
+}
+
+.assistant-turn-content {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.compaction-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  color: #71717a;
+  font-size: 12px;
+}
+
+.compaction-divider__line {
+  flex: 1;
+  height: 1px;
+  background: rgba(255 255 255 / 0.08);
+}
+
+.compaction-divider__label {
+  white-space: nowrap;
+  color: #71717a;
 }
 
 .assistant-content {
   max-width: 100%;
   word-break: break-word;
   overflow-wrap: break-word;
-}
-
-.user-message-content {
-  max-width: 100%;
-  word-break: break-word;
-  overflow-wrap: break-word;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .user-attachments {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  width: fit-content;
+  max-width: min(82%, 64ch);
+  margin-left: auto;
+}
+
+.user-attachment-chip {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
+  max-width: min(100%, 220px);
+  height: 48px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: rgba(255 255 255 / 0.08);
+  border: 1px solid rgba(255 255 255 / 0.10);
+  font-size: 12px;
+  line-height: 1.3;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.user-attachment-chip:has(.user-attachment-image) {
+  height: auto;
+  padding: 0;
+}
+
+.user-attachment-image {
+  display: block;
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.user-attachments + .user-message-body {
+  margin-top: 8px;
 }
 
 .user-comments {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  align-items: flex-end;
+  width: 100%;
+  max-width: min(82%, 64ch);
+  margin-bottom: 8px;
 }
 
 .user-comment-card {
+  width: 100%;
   max-width: min(100%, 520px);
   padding: 10px 12px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: rgba(255 255 255 / 0.06);
+  border: 1px solid rgba(255 255 255 / 0.08);
 }
 
 .user-comment-path {
@@ -1460,14 +1462,17 @@ onUnmounted(() => {
 
 .user-comment-preview {
   padding: 6px 8px;
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.12);
-  color: rgba(255, 255, 255, 0.82);
+  border-radius: 6px;
+  background: rgba(255 255 255 / 0.04);
+  color: rgba(255 255 255 / 0.72);
   white-space: pre-wrap;
 }
 
 .user-context-files {
-  max-width: 100%;
+  width: fit-content;
+  max-width: min(82%, 64ch);
+  margin-left: auto;
+  margin-bottom: 8px;
 }
 
 .user-context-chip {
@@ -1477,47 +1482,33 @@ onUnmounted(() => {
   max-width: 280px;
   padding: 5px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255 255 255 / 0.06);
+  border: 1px solid rgba(255 255 255 / 0.08);
   font-size: 12px;
   line-height: 1.3;
-}
-
-.user-attachment-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: min(100%, 320px);
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  font-size: 12px;
-  line-height: 1.3;
-}
-
-.user-attachment-image {
-  display: block;
-  width: 120px;
-  max-width: min(100%, 220px);
-  max-height: 120px;
-  object-fit: cover;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
 }
 
 .user-message-footer {
   min-height: 24px;
+  width: 100%;
+  max-width: min(82%, 64ch);
 }
 
 .user-message-meta {
   font-size: 12px;
   line-height: 1.2;
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(255 255 255 / 0.50);
 }
 
 .user-turn-action {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255 255 255 / 0.06);
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.user-turn-content:hover .user-turn-action,
+.user-turn-content:focus-within .user-turn-action {
+  opacity: 1;
 }
 
 .assistant-turn-footer {
@@ -1525,7 +1516,7 @@ onUnmounted(() => {
 }
 
 .assistant-turn-action {
-  background: rgba(148, 163, 184, 0.08);
+  background: rgba(148 163 184 / 0.06);
 }
 
 .thinking-indicator {
@@ -1533,6 +1524,7 @@ onUnmounted(() => {
 }
 
 .text-part {
+  margin-top: 24px;
   white-space: pre-wrap;
   line-height: 1.65;
   word-break: break-word;
@@ -1557,8 +1549,8 @@ onUnmounted(() => {
 }
 
 .text-part :deep(code) {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255 255 255 / 0.06);
+  border: 1px solid rgba(255 255 255 / 0.08);
   padding: 1px 5px;
   border-radius: 4px;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
@@ -1594,11 +1586,11 @@ onUnmounted(() => {
 }
 
 .text-part :deep(blockquote) {
-  border-left: 3px solid #16f3ff;
+  border-left: 3px solid rgba(255 255 255 / 0.12);
   margin: 8px 0;
   padding: 6px 12px;
-  color: #9fa8bb;
-  background: rgba(22, 243, 255, 0.04);
+  color: #a1a1aa;
+  background: rgba(255 255 255 / 0.02);
   border-radius: 0 6px 6px 0;
 }
 
@@ -1611,35 +1603,37 @@ onUnmounted(() => {
 
 .text-part :deep(th),
 .text-part :deep(td) {
-  border: 1px solid rgba(139, 164, 209, 0.2);
+  border: 1px solid rgba(255 255 255 / 0.08);
   padding: 6px 10px;
   text-align: left;
 }
 
 .text-part :deep(th) {
-  background: rgba(139, 164, 209, 0.1);
+  background: rgba(255 255 255 / 0.04);
   font-weight: 600;
 }
 
 .text-part :deep(tr:nth-child(even)) {
-  background: rgba(139, 164, 209, 0.04);
+  background: rgba(255 255 255 / 0.02);
 }
 
+/* ── Input / composer region ─────────────────────────────────────────────── */
+
 .input-area {
-  padding: 16px 24px 24px;
-  background: rgb(3 7 18 / 80%);
-  border-top: 1px solid rgb(139 164 209 / 16%);
+  padding: 12px 20px 16px;
+  background: #111113;
+  border-top: 1px solid rgba(255 255 255 / 0.06);
 }
 
 .input-container {
-  max-width: 680px;
+  max-width: 800px;
   margin: 0 auto;
 }
 
 .todo-dock {
-  border: 1px solid rgba(22, 243, 255, 0.2);
-  background: rgba(22, 243, 255, 0.05);
-  border-radius: 14px;
+  border: 1px solid rgba(255 255 255 / 0.06);
+  background: rgba(255 255 255 / 0.03);
+  border-radius: 12px;
   padding: 10px 12px;
 }
 
@@ -1660,16 +1654,16 @@ onUnmounted(() => {
 }
 
 .revert-dock {
-  border: 1px solid rgba(245, 158, 11, 0.25);
-  background: rgba(245, 158, 11, 0.08);
-  border-radius: 14px;
+  border: 1px solid rgba(245 158 11 / 0.18);
+  background: rgba(245 158 11 / 0.06);
+  border-radius: 12px;
   padding: 10px 12px;
 }
 
 .followup-dock {
-  border: 1px solid rgba(22, 243, 255, 0.18);
-  background: rgba(22, 243, 255, 0.04);
-  border-radius: 14px;
+  border: 1px solid rgba(255 255 255 / 0.06);
+  background: rgba(255 255 255 / 0.03);
+  border-radius: 12px;
   padding: 10px 12px;
 }
 
@@ -1679,6 +1673,7 @@ onUnmounted(() => {
   border: 0;
   background: transparent;
   text-align: left;
+  cursor: pointer;
 }
 
 .followup-dock__preview {
@@ -1708,141 +1703,56 @@ onUnmounted(() => {
 .child-session-input-disabled {
   width: 100%;
   border-radius: 12px;
-  border: 1px solid rgba(139, 164, 209, 0.2);
-  background: rgba(10, 16, 34, 0.6);
+  border: 1px solid rgba(255 255 255 / 0.06);
+  background: rgba(255 255 255 / 0.03);
   padding: 14px 16px;
 }
 
-.result-panel {
+/* ── Right side panel ────────────────────────────────────────────────────── */
+
+.side-panel {
   height: 100vh;
-  padding: 76px 20px 20px;
-  overflow-y: auto;
+  overflow: hidden;
+  background: #111113;
+  border-left: 1px solid rgba(255 255 255 / 0.06);
 }
 
-.result-panel__inner {
-  min-height: 100%;
+.side-panel__inner {
+  height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 18px;
-  border: 1px solid rgb(145 163 205 / 18%);
-  border-radius: 18px;
-  background: linear-gradient(180deg, rgb(7 11 28 / 60%), rgb(5 8 20 / 48%));
-  backdrop-filter: blur(18px);
 }
 
-.result-tabs {
-  align-self: stretch;
-  color: #aeb6c8;
+.side-tabs {
+  flex-shrink: 0;
+  color: #71717a;
 }
 
-.glass-card {
-  padding: 16px;
-  background: rgb(8 12 29 / 72%);
-  border: 1px solid rgb(145 163 205 / 18%);
-  border-radius: 14px;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%);
+.side-panel__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
 }
 
-.result-title,
-.variant-title {
-  color: #dfe6f5;
-  font-size: 15px;
-  margin-bottom: 14px;
+.side-panel__placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
 }
 
-.result-image {
-  height: 252px;
-  border-radius: 9px;
-  margin-bottom: 16px;
-}
-
-.soft-separator {
-  opacity: 0.45;
-  margin-bottom: 14px;
-}
-
-.variants {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-}
-
-.variant {
-  height: 64px;
-  border: 1px solid rgb(141 78 255 / 38%);
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.variant--skyline {
-  filter: hue-rotate(22deg) saturate(1.2);
-}
-
-.variant--drone {
-  filter: hue-rotate(-32deg) brightness(1.08);
-}
-
-.variant--active {
-  border-color: #17eaff;
-  box-shadow: 0 0 0 1px rgb(23 234 255 / 45%), 0 0 24px rgb(23 234 255 / 18%);
-}
-
-.params-card dl {
-  display: grid;
-  grid-template-columns: 82px 1fr;
-  gap: 10px 14px;
-  margin: 0;
-  color: #9fa8bb;
-  font-size: 13px;
-}
-
-.params-card dt {
-  color: #858da1;
-}
-
-.params-card dd {
-  margin: 0;
-  line-height: 1.55;
-}
-
-.result-actions {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
-  margin-top: auto;
-}
-
-.result-action {
-  height: 44px;
-  color: #19efff;
-  border-color: rgb(25 239 255 / 46%);
-  border-radius: 10px;
-}
-
-.result-action--violet {
-  color: #b56cff;
-  border-color: rgb(181 108 255 / 48%);
-}
-
-.city-frame {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
-  background:
-    radial-gradient(circle at 22% 20%, rgb(0 231 255 / 80%), transparent 10%),
-    radial-gradient(circle at 76% 28%, rgb(255 0 174 / 78%), transparent 12%),
-    linear-gradient(90deg, transparent 0 8%, rgb(18 221 255 / 36%) 8% 10%, transparent 10% 22%, rgb(255 0 186 / 34%) 22% 24%, transparent 24% 38%, rgb(26 99 255 / 38%) 38% 41%, transparent 41%),
-    linear-gradient(180deg, #061428 0 24%, #10143c 25% 48%, #300b42 49% 72%, #050a16 73%);
-  border: 1px solid rgb(141 78 255 / 38%);
-}
+/* ── Responsive ──────────────────────────────────────────────────────────── */
 
 @media (max-width: 1280px) {
   .workspace-layout {
-    grid-template-columns: 300px minmax(520px, 1fr);
+    grid-template-columns: 260px minmax(480px, 1fr);
   }
 
-  .result-panel {
+  .side-panel {
     display: none;
   }
 }
