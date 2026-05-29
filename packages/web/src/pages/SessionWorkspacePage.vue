@@ -59,204 +59,31 @@
           </div>
         </header>
 
-        <div ref="messagesAreaRef" class="messages-container">
-          <q-inner-loading :showing="isSessionSwitching" color="grey-5" />
+        <SessionChatView
+          ref="chatViewRef"
+          :session-id="sessionId"
+          :display-messages="displayMessages"
+          :part-text="partText"
+          :is-loading="isLoading"
+          :session-status="sessionStatus"
+          :history-exhausted="historyExhausted"
+          :history-loading="historyLoading"
+          :current-session-item="currentSessionItem"
+          :active-attention-call-id="activeAttentionCallId"
+          @load-history="onLoadHistory"
+          @switch-session="handleSwitchSession"
+          @revert-turn="(msgId) => void revertMessage(msgId)"
+          @use-suggestion="useSuggestion"
+        />
 
-          <div v-if="!initialLoading && !isSessionSwitching && displayMessages.length === 0" class="empty-chat flex flex-center">
-            <div class="empty-chat__content">
-              <!-- Animated AI logo -->
-              <div class="empty-chat__logo-wrap">
-                <div class="empty-chat__logo-ring">
-                  <div class="empty-chat__logo-inner">
-                    <img src="/icons/favicon-96x96.png" alt="AI" class="empty-chat__logo-img" />
-                  </div>
-                </div>
-              </div>
-              <div class="empty-chat__title">描述你想要的画面，AI 即刻创作</div>
-              <div class="suggestions">
-                <button
-                  v-for="suggestion in suggestions"
-                  :key="suggestion.label"
-                  type="button"
-                  class="suggestion-chip"
-                  @click="useSuggestion(suggestion.label)"
-                >
-                  <q-icon :name="suggestion.icon" size="16px" class="suggestion-chip__icon" />
-                  <span>{{ suggestion.label }}</span>
-                </button>
-              </div>
-            </div>
-          </div>
 
-          <q-infinite-scroll
-            v-else
-            ref="infiniteScrollRef"
-            reverse
-            :scroll-target="messagesAreaRef ?? undefined"
-            :disable="historyExhausted || historyLoading"
-            @load="onLoadHistory"
-          >
-            <template #loading>
-              <div class="history-loading row justify-center items-center q-gutter-sm q-py-sm">
-                <q-spinner-dots size="24px" color="grey-5" />
-                <span>{{ t('agent.loadingEarlier') }}</span>
-              </div>
-            </template>
-
-            <div v-for="turn in displayTurns" :key="turn.user.id" class="message-turn">
-              <div class="turn-container">
-                <!-- User message: minimal prompt flow -->
-                <div class="user-turn-content">
-                  <div v-if="getUserComments(turn.user).length > 0" class="user-comments q-mb-sm">
-                    <div v-for="comment in getUserComments(turn.user)" :key="comment.id" class="user-comment-card">
-                      <div class="row items-center q-gutter-xs text-caption user-comment-meta">
-                        <span class="text-weight-medium">{{ t('agent.context') }}</span>
-                        <span v-if="comment.path" class="ellipsis user-comment-path">{{ comment.path }}</span>
-                      </div>
-                      <div v-if="comment.preview" class="user-comment-preview text-caption q-mt-xs">{{ comment.preview }}</div>
-                      <div class="q-mt-xs">{{ comment.comment }}</div>
-                    </div>
-                  </div>
-                  <div v-if="getUserContextFiles(turn.user).length > 0" class="user-context-files q-mb-sm">
-                    <div class="text-caption text-blue-grey-2 q-mb-xs">上下文</div>
-                    <div class="row q-col-gutter-xs q-row-gutter-xs user-context-files__list">
-                      <div v-for="attachment in getUserContextFiles(turn.user)" :key="attachment.id" class="col-auto">
-                        <div class="user-context-chip">
-                          <q-icon :name="attachment.mime.includes('image') ? 'image' : 'description'" size="14px" />
-                          <span class="ellipsis">{{ attachment.filename || '附件' }}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <div v-if="getUserAttachments(turn.user).length > 0" class="user-attachments q-mb-sm">
-                    <div v-for="attachment in getUserAttachments(turn.user)" :key="attachment.id" class="user-attachment-chip">
-                      <img
-                        v-if="attachment.mime.includes('image')"
-                        :src="attachment.url"
-                        :alt="attachment.filename || '附件'"
-                        class="user-attachment-image"
-                      >
-                      <template v-else>
-                        <q-icon name="attach_file" size="14px" />
-                        <span class="ellipsis">{{ attachment.filename || '附件' }}</span>
-                      </template>
-                    </div>
-                  </div>
-                  <div class="user-message-body">
-                    <AgentUserMessageBody
-                      v-if="getUserMessageText(turn.user)"
-                      :text="getUserMessageText(turn.user)"
-                      :references="getUserContextFiles(turn.user)"
-                      :agents="getUserAgentMentions(turn.user)"
-                    />
-                  </div>
-                  <div v-if="getUserMetaLabel(turn.user) || canRevertTurn(turn.user)" class="user-message-footer q-mt-sm row items-center justify-between q-gutter-sm">
-                    <div v-if="getUserMetaLabel(turn.user)" class="user-message-meta">{{ getUserMetaLabel(turn.user) }}</div>
-                    <div class="row items-center q-gutter-xs">
-                      <button class="user-turn-action" type="button" :title="t('shared.copy')" @click="copyTurn(turn.user)">
-                        <OiIcon name="copy" size="13px" />
-                      </button>
-                      <button v-if="canRevertTurn(turn.user)" class="user-turn-action" type="button" :title="t('agent.restore')" @click="revertTurn(turn.user)">
-                        <OiIcon name="revert" size="13px" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Compaction divider between user and assistant message -->
-                <div v-if="hasCompaction(turn)" class="compaction-divider">
-                  <div class="compaction-divider__line"></div>
-                  <span class="compaction-divider__label">{{ getCompactionLabel(turn) }}</span>
-                  <div class="compaction-divider__line"></div>
-                </div>
-
-                <!-- Assistant content: full-width -->
-                <div
-                  v-if="turn.assistant || shouldShowAssistantPlaceholder(turn)"
-                  class="assistant-turn-content"
-                >
-                  <div v-if="turn.assistant" class="assistant-content">
-                    <div v-if="shouldShowAssistantPlaceholder(turn)" class="row items-center q-gutter-xs thinking-indicator">
-                      <q-spinner-dots size="16px" color="grey-5" />
-                      <span class="text-caption text-grey-5">
-                        {{ sessionStatus === 'retry' ? '重试中...' : getAssistantThinkingLabel() }}
-                      </span>
-                    </div>
-                    <template v-for="part in visibleAssistantParts(turn.assistant)" :key="part.id">
-                       <AgentReasoning
-                        v-if="part.type === 'reasoning' && (partText.get(part.id) ?? part.text ?? '').trim()"
-                        :part="part"
-                        :text="partText.get(part.id) ?? part.text ?? ''"
-                        :turn-active="isLoading && isActiveAssistantTurn(turn)"
-                      />
-                      <AgentToolCall
-                        v-else-if="part.type === 'tool' && !shouldHideToolPart(part)"
-                        :part="part"
-                        :attention-call-id="activeAttentionCallId"
-                        :child-session-label="getToolChildSessionLabel(part)"
-                        @open-child-session="handleSwitchSession"
-                      />
-                      <AgentFilePart v-else-if="part.type === 'file'" :part="part" />
-                      <AgentSubtaskPart v-else-if="part.type === 'subtask'" :part="part" />
-                      <AgentSimplePart v-else-if="part.type === 'agent'" icon="smart_toy" title="Agent" :description="part.name ?? ''" />
-                      <AgentSimplePart v-else-if="part.type === 'snapshot'" icon="history" title="Snapshot" :description="part.snapshot ?? ''" />
-                      <AgentSimplePart v-else-if="part.type === 'retry'" icon="refresh" title="Retry" :description="`Attempt ${part.attempt}: ${formatRetryError(part.error)}`" />
-                      <div v-else-if="part.type === 'text'" class="text-part">
-                        <MarkdownRender
-                          :content="partText.get(part.id) ?? part.text ?? ''"
-                          :final="!(isLoading && isActiveAssistantTurn(turn))"
-                        />
-                        <q-spinner-dots
-                          v-if="isLoading && isActiveAssistantTurn(turn) && part.id === getLastTextPartId(turn.assistant)"
-                          size="1em"
-                          color="grey-4"
-                        />
-                      </div>
-                    </template>
-
-                    <div v-if="getTurnMetaLabel(turn) || getAssistantCopyText(turn.assistant)" class="assistant-turn-footer row items-center justify-start q-gutter-xs q-mt-sm">
-                      <div v-if="getTurnMetaLabel(turn)" class="turn-meta-label text-caption text-grey-5">
-                        {{ getTurnMetaLabel(turn) }}
-                      </div>
-                      <button
-                        v-if="getAssistantCopyText(turn.assistant)"
-                        class="assistant-copy-btn"
-                        type="button"
-                        :title="t('shared.copy')"
-                        @click="copyAssistantTurn(turn.assistant)"
-                      >
-                        <OiIcon name="copy" size="13px" />
-                      </button>
-                    </div>
-                  </div>
-                  <div v-else class="row items-center q-gutter-xs thinking-indicator">
-                    <q-spinner-dots size="16px" color="grey-5" />
-                    <span class="text-caption text-grey-5">{{ sessionStatus === 'retry' ? '重试中...' : 'Thinking...' }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div style="height: 24px" />
-          </q-infinite-scroll>
-        </div>
 
           </main>
         </UILayoutPage>
       </UILayoutPageContainer>
 
       <UILayoutFooter bordered>
-        <!-- Scroll-to-bottom affordance: floats above the footer, centered -->
-        <Transition name="scroll-btn-fade">
-          <button
-            v-if="userScrolled && displayMessages.length > 0"
-            class="scroll-to-bottom-btn"
-            :aria-label="t('agent.scrollToBottom')"
-            @click="scrollToBottomNow()"
-          >
-            <q-icon name="keyboard_arrow_down" size="18px" />
-          </button>
-        </Transition>
+
         <div class="input-area">
           <div class="input-container">
             <AgentQuestion
@@ -392,22 +219,15 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useQuasar, QInfiniteScroll } from 'quasar'
+import { useQuasar } from 'quasar'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import type { AgentPart, FilePart, TextPart, ToolPart } from '@opencode-ai/sdk/v2'
-import { MarkdownRender } from 'markstream-vue'
-import 'markstream-vue/index.css'
+import type { TextPart } from '@opencode-ai/sdk/v2'
 import OiIcon from 'src/components/ui/OiIcon.vue'
-import AgentReasoning from 'src/components/AgentReasoning.vue'
-import AgentToolCall from 'src/components/AgentToolCall.vue'
-import AgentFilePart from 'src/components/AgentFilePart.vue'
-import AgentSubtaskPart from 'src/components/AgentSubtaskPart.vue'
-import AgentSimplePart from 'src/components/AgentSimplePart.vue'
-import AgentUserMessageBody from 'src/components/AgentUserMessageBody.vue'
 import AgentQuestion from 'src/components/AgentQuestion.vue'
 import AgentPermission from 'src/components/AgentPermission.vue'
 import AgentPromptInput from 'src/components/AgentPromptInput.vue'
+import SessionChatView from 'src/components/session-workspace/SessionChatView.vue'
 import SessionWorkspaceSidebar from 'src/components/session-workspace/SessionWorkspaceSidebar.vue'
 import SessionWorkspaceResultsPanel from 'src/components/session-workspace/SessionWorkspaceResultsPanel.vue'
 import { UILayout, UILayoutDrawer, UILayoutFooter, UILayoutPage, UILayoutPageContainer } from 'src/components/ui/layout'
@@ -417,13 +237,6 @@ import type { SessionItem } from 'src/services/agents'
 type DisplayTurn = {
   user: DisplayMessage
   assistant: DisplayMessage | null
-}
-
-type UserComment = {
-  id: string
-  path?: string
-  comment: string
-  preview?: string
 }
 
 type GeneratedResultItem = {
@@ -458,12 +271,9 @@ const $q = useQuasar()
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const chatViewRef = ref<InstanceType<typeof SessionChatView> | null>(null)
 const followupCollapsed = ref(false)
 const isSessionSwitching = ref(false)
-// True while we're loading the session specified in the route param on initial mount
-const initialLoading = ref(typeof route.params.id === 'string' && !!route.params.id)
-const messagesAreaRef = ref<HTMLElement | null>(null)
-const infiniteScrollRef = ref<QInfiniteScroll | null>(null)
 const inputRef = ref<{ focus: () => void; setDraft: (value: string) => void } | null>(null)
 const draftInputMessage = ref('')
 const resultTab = ref('result')
@@ -475,106 +285,12 @@ function pageHeightFn(offset: number) {
   return { minHeight: `${window.innerHeight - offset}px`, height: `${window.innerHeight - offset}px` }
 }
 
-const suggestions = [
-  { label: '赛博朋克街道', icon: 'location_city' },
-  { label: '东方水墨山水', icon: 'landscape' },
-  { label: '3D 产品渲染', icon: 'view_in_ar' },
-  { label: '未来感建筑', icon: 'domain' },
-  { label: '电影感人像', icon: 'person' },
-  { label: '极简品牌海报', icon: 'article' },
-] as const
-
-// ── Auto-scroll ────────────────────────────────────────────────────────────────
-
-const userScrolled = ref(false)
-const BOTTOM_THRESHOLD = 120
-
-/**
- * Flag to suppress scroll-event detection while WE are programmatically scrolling.
- * Without this, our instant `scrollTop = scrollHeight` fires an `onScroll` event
- * that immediately sets `userScrolled = true`, breaking further auto-scrolling.
- */
-let programmaticScrolling = false
-let programmaticScrollTimer: ReturnType<typeof setTimeout> | null = null
-/** Track previous scrollTop to detect scroll direction in onScroll */
-let lastScrollTop = 0
-
-function doScrollToBottom() {
-  const el = messagesAreaRef.value
-  if (!el) return
-  programmaticScrolling = true
-  el.scrollTop = el.scrollHeight
-  lastScrollTop = el.scrollTop
-  // Clear flag after browser has processed the scroll event
-  if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer)
-  programmaticScrollTimer = setTimeout(() => { programmaticScrolling = false }, 50)
-}
-
-function scrollToBottom(force = false) {
-  if (force) userScrolled.value = false
-  if (userScrolled.value && !force) return
-  doScrollToBottom()
-}
-
 function scrollToBottomNow() {
-  void nextTick(() => scrollToBottom(true))
+  chatViewRef.value?.scrollToBottomNow()
 }
 
 function scrollIfAtBottom() {
-  scrollToBottom(false)
-}
-
-// ── Scroll observers ───────────────────────────────────────────────────────────
-
-let resizeObserver: ResizeObserver | null = null
-
-function setupAutoScroll() {
-  const el = messagesAreaRef.value
-  if (!el) return
-
-  // ResizeObserver fires when message content grows (streaming tokens).
-  resizeObserver = new ResizeObserver(() => {
-    if (!userScrolled.value) doScrollToBottom()
-  })
-  const inner = el.firstElementChild
-  if (inner) resizeObserver.observe(inner)
-  resizeObserver.observe(el)
-
-  el.addEventListener('scroll', onScroll, { passive: true })
-}
-
-function teardownAutoScroll() {
-  const el = messagesAreaRef.value
-  if (!el) return
-
-  if (resizeObserver) {
-    resizeObserver.disconnect()
-    resizeObserver = null
-  }
-
-  el.removeEventListener('scroll', onScroll)
-  if (programmaticScrollTimer) { clearTimeout(programmaticScrollTimer); programmaticScrollTimer = null }
-}
-
-function onScroll() {
-  // Ignore scroll events triggered by our own programmatic scrolling
-  if (programmaticScrolling) return
-  const el = messagesAreaRef.value
-  if (!el) return
-
-  const currentScrollTop = el.scrollTop
-  const distanceFromBottom = el.scrollHeight - currentScrollTop - el.clientHeight
-
-  if (distanceFromBottom <= BOTTOM_THRESHOLD) {
-    // User reached the bottom — resume auto-scroll
-    userScrolled.value = false
-  } else if (currentScrollTop < lastScrollTop) {
-    // User scrolled UP — pause auto-scroll
-    userScrolled.value = true
-  }
-  // Scrolling DOWN but not yet at bottom: keep current userScrolled state unchanged
-
-  lastScrollTop = currentScrollTop
+  chatViewRef.value?.doScrollToBottom()
 }
 
 // ── Composable ────────────────────────────────────────────────────────────────
@@ -629,12 +345,6 @@ const {
   (msg) => $q.notify({ color: 'positive', message: msg, icon: 'check' }),
   () => void nextTick(() => inputRef.value?.focus()),
 )
-
-watch(isLoading, (loading) => {
-  if (loading && !userScrolled.value) {
-    void nextTick(() => scrollToBottom(true))
-  }
-})
 
 // ── Computed ──────────────────────────────────────────────────────────────────
 
@@ -843,17 +553,6 @@ function isSessionActive(session: SessionItem): boolean {
   return currentParentSession.value?.id === session.id
 }
 
-function getToolChildSessionLabel(part: ToolPart): string | null {
-  if (part.tool !== 'task') return null
-
-  const metadata = (part.state as { metadata?: Record<string, unknown> }).metadata
-  const childSessionId = typeof metadata?.sessionId === 'string' ? metadata.sessionId : undefined
-  if (!childSessionId) return null
-
-  const childSession = getAllSessions().find((session) => session.id === childSessionId)
-  return childSession ? getSessionLabel(childSession) : null
-}
-
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
 function getUserMessageText(msg: DisplayMessage): string {
@@ -861,79 +560,6 @@ function getUserMessageText(msg: DisplayMessage): string {
     .filter((p): p is TextPart => p.type === 'text' && !p.synthetic)
     .map((p) => p.text)
     .join('')
-}
-
-function getUserAttachments(msg: DisplayMessage): FilePart[] {
-  return msg.parts.filter((part): part is FilePart => part.type === 'file' && part.url.startsWith('data:'))
-}
-
-function getUserContextFiles(msg: DisplayMessage): FilePart[] {
-  return msg.parts.filter((part): part is FilePart => part.type === 'file' && !part.url.startsWith('data:'))
-}
-
-function getUserComments(msg: DisplayMessage): UserComment[] {
-  return msg.parts.flatMap((part) => {
-    if (part.type !== 'text' || !part.synthetic) return []
-
-    const metadata = (part as TextPart & { metadata?: Record<string, unknown> }).metadata
-    const raw = metadata && typeof metadata === 'object'
-      ? (metadata as { opencodeComment?: unknown }).opencodeComment
-      : undefined
-
-    if (!raw || typeof raw !== 'object') return []
-
-    const path = typeof (raw as { path?: unknown }).path === 'string'
-      ? (raw as { path: string }).path
-      : undefined
-    const comment = typeof (raw as { comment?: unknown }).comment === 'string'
-      ? (raw as { comment: string }).comment.trim()
-      : ''
-    const preview = typeof (raw as { preview?: unknown }).preview === 'string'
-      ? (raw as { preview: string }).preview
-      : undefined
-
-    if (!comment) return []
-
-    return [{
-      id: part.id,
-      ...(path ? { path } : {}),
-      comment,
-      ...(preview ? { preview } : {}),
-    }]
-  })
-}
-
-function getUserAgentMentions(msg: DisplayMessage): AgentPart[] {
-  return msg.parts.filter((part): part is AgentPart => part.type === 'agent')
-}
-
-function getUserMetaLabel(msg: DisplayMessage): string {
-  const items = [
-    ...getUserAgentMentions(msg).map((part) => `@${part.name}`),
-    formatUserMessageTime(msg.time),
-  ].filter(Boolean)
-
-  return items.join(' · ')
-}
-
-function canRevertTurn(msg: DisplayMessage): boolean {
-  if (!currentSessionItem.value) return false
-  return currentSessionItem.value.revert?.messageID !== msg.id
-}
-
-function revertTurn(msg: DisplayMessage) {
-  void revertMessage(msg.id)
-}
-
-function copyTurn(msg: DisplayMessage) {
-  const parts = [
-    ...getUserComments(msg).map((comment) => comment.comment),
-    getUserMessageText(msg),
-  ].filter((value) => value.trim())
-
-  if (parts.length === 0) return
-
-  void navigator.clipboard.writeText(parts.join('\n\n'))
 }
 
 function formatSessionTime(date: Date): string {
@@ -997,139 +623,7 @@ function handleSelectResult(id: string) {
   selectedResultId.value = id
 }
 
-function formatUserMessageTime(date: Date): string {
-  return new Intl.DateTimeFormat(undefined, { timeStyle: 'short' }).format(date)
-}
 
-function formatRetryError(error: unknown): string {
-  if (typeof error === 'string') return error
-  if (error && typeof error === 'object') {
-    if ('message' in error && typeof error.message === 'string') return error.message
-    if ('name' in error && typeof error.name === 'string') return error.name
-    try {
-      return JSON.stringify(error)
-    } catch {
-      return '无法序列化'
-    }
-  }
-  if (error == null) return 'Unknown error'
-  if (typeof error === 'number' || typeof error === 'boolean' || typeof error === 'bigint') return String(error)
-  return 'Unknown error'
-}
-
-// ── Message rendering helpers ────────────────────────────────────────────────
-
-function getAssistantThinkingLabel(): string {
-  return 'Thinking...'
-}
-
-function getLastTextPartId(message: DisplayMessage): string | undefined {
-  for (let index = message.parts.length - 1; index >= 0; index -= 1) {
-    const part = message.parts[index]
-    if (part?.type === 'text') {
-      return part.id
-    }
-  }
-  return undefined
-}
-
-// ── Turn meta ─────────────────────────────────────────────────────────────────
-
-function formatTurnDuration(ms?: number): string {
-  if (typeof ms !== 'number' || ms < 0) return ''
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(1)}s`
-}
-
-function getTurnMetaLabel(turn: DisplayTurn): string {
-  const created = formatSessionTime(turn.user.time)
-  const assistantTime = turn.assistant?.info?.time
-  const completed = assistantTime && 'completed' in assistantTime ? (assistantTime as { completed?: number }).completed : undefined
-  const started = turn.user.info?.time?.created
-  const assistantInfo = turn.assistant?.info?.role === 'assistant' ? turn.assistant.info : undefined
-  const provider = assistantInfo?.providerID
-  const model = assistantInfo?.modelID
-  const agent = assistantInfo?.agent
-  const head = [agent, provider && model ? `${provider}/${model}` : model].filter(Boolean).join(' · ')
-
-  if (typeof completed === 'number' && typeof started === 'number' && completed >= started) {
-    const duration = formatTurnDuration(completed - started)
-    const items = [head, created, duration].filter(Boolean)
-    if (items.length > 0) return items.join(' · ')
-  }
-
-  return [head, created].filter(Boolean).join(' · ')
-}
-
-function getAssistantCopyText(message: DisplayMessage | null): string {
-  if (!message || message.role !== 'assistant') return ''
-
-  return message.parts
-    .flatMap((part) => {
-      if (part.type === 'text') {
-        return [partText.value.get(part.id) ?? (part as { text: string }).text ?? '']
-      }
-      if (part.type === 'reasoning' && (part as { text?: string }).text?.trim()) {
-        return [(part as { text: string }).text]
-      }
-      return []
-    })
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .join('\n\n')
-}
-
-function copyAssistantTurn(message: DisplayMessage | null) {
-  const text = getAssistantCopyText(message)
-  if (!text) return
-  void navigator.clipboard.writeText(text)
-}
-
-// ── Part visibility ───────────────────────────────────────────────────────────
-
-function shouldHideToolPart(part: ToolPart): boolean {
-  if (part.tool === 'todowrite') return true
-  return part.tool === 'question' && (part.state.status === 'pending' || part.state.status === 'running')
-}
-
-function isVisibleAssistantPart(part: DisplayMessage['parts'][number]): boolean {
-  if (part.type === 'compaction') return false
-  if (part.type === 'tool') return !shouldHideToolPart(part)
-  if (part.type === 'text' || part.type === 'reasoning') {
-    return !!(partText.value.get(part.id) ?? (part as { text?: string }).text ?? '').trim()
-  }
-  return true
-}
-
-function hasCompaction(turn: DisplayTurn): boolean {
-  return (turn.assistant?.parts ?? []).some((p) => p.type === 'compaction')
-}
-
-function getCompactionLabel(turn: DisplayTurn): string {
-  const compactPart = (turn.assistant?.parts ?? []).find((p) => p.type === 'compaction')
-  if (!compactPart) return ''
-  return (compactPart as { auto?: boolean }).auto ? 'Automatic compaction' : 'Manual compaction'
-}
-
-function visibleAssistantParts(message: DisplayMessage): DisplayMessage['parts'] {
-  return message.parts.filter((p) => p.type !== 'compaction')
-}
-
-function getVisibleAssistantPartCount(message: DisplayMessage | null): number {
-  if (!message || message.role !== 'assistant') return 0
-  return message.parts.filter((part) => isVisibleAssistantPart(part)).length
-}
-
-function shouldShowAssistantPlaceholder(turn: DisplayTurn): boolean {
-  if (!isActiveAssistantTurn(turn)) return false
-  if (!isLoading.value) return false
-  if (sessionStatus.value === 'retry') return false
-  return getVisibleAssistantPartCount(turn.assistant) === 0
-}
-
-function isActiveAssistantTurn(turn: DisplayTurn): boolean {
-  return displayTurns.value.at(-1)?.user.id === turn.user.id
-}
 
 // ── Infinite scroll ───────────────────────────────────────────────────────────
 
@@ -1181,13 +675,11 @@ onMounted(() => {
     // If landing directly on /sessions/:id, switch to that session
     const paramId = route.params.id
     if (paramId && typeof paramId === 'string' && paramId !== sessionId.value) {
-      void switchSession(paramId).finally(() => { initialLoading.value = false })
-    } else {
-      initialLoading.value = false
+      void switchSession(paramId)
     }
   })
   startEventSubscription()
-  void nextTick(() => { inputRef.value?.focus(); setupAutoScroll() })
+  void nextTick(() => { inputRef.value?.focus() })
 })
 
 // Sync session when user navigates via browser back/forward
@@ -1201,7 +693,6 @@ watch(
 )
 
 onUnmounted(() => {
-  teardownAutoScroll()
   stopEventSubscription()
 })
 </script>

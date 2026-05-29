@@ -35,8 +35,14 @@ const routes: RouteRecordRaw[] = [
       },
       {
         path: 'projects/:id',
-        name: 'project-detail',
-        component: () => import('pages/ProjectDetailPage.vue'),
+        name: 'project-workspace',
+        component: () => import('pages/ProjectWorkspacePage.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'projects/:id/sessions/:sessionId',
+        name: 'project-session',
+        component: () => import('pages/ProjectWorkspacePage.vue'),
         meta: { requiresAuth: true },
       },
       {

@@ -91,6 +91,34 @@ export interface PromptTemplate {
   updatedAt: string
 }
 
+// ── Workspace Generated Files (ADR 0002) ─────────────────────────────────────
+
+export interface WorkspaceFileAccessLocator {
+  href: string
+  expiresAt?: string
+}
+
+export interface WorkspaceFile {
+  workspaceFileId: string
+  kind: 'image' | 'video' | 'audio'
+  mime: string
+  filename?: string
+  width?: number
+  height?: number
+  duration?: number
+  access: {
+    preview: WorkspaceFileAccessLocator
+    download?: WorkspaceFileAccessLocator
+    thumbnail?: WorkspaceFileAccessLocator
+    poster?: WorkspaceFileAccessLocator
+  }
+  prompt?: string
+  provider?: string
+  model?: string
+  createdAt: string
+  metadata?: Record<string, unknown>
+}
+
 export const api = {
   // Auth — { token, user } / { id, username, ... }
   register: (data: { username: string; email: string; password: string }) =>
@@ -144,4 +172,16 @@ export const api = {
     request<{ users: OpenimagoUser[] }>('/api/admin/users').then((r) => r.users ?? []),
   updateUserRole: (id: string, role: string) =>
     request<{ user: OpenimagoUser }>(`/api/admin/users/${id}/role`, { method: 'PATCH', body: JSON.stringify({ role }) }).then((r) => r.user),
+
+  // Workspace Generated Files (ADR 0002)
+  sessionWorkspaceFiles: (sessionId: string) =>
+    request<{ workspaceFiles: WorkspaceFile[] }>(`/api/platform/sessions/${sessionId}/workspace-files?source=tool`).then((r) => r.workspaceFiles ?? []),
+
+  // Project outputs — aggregated media results across project sessions
+  projectOutputs: (projectId: string) =>
+    request<{ outputs: WorkspaceFile[] }>(`/api/platform/projects/${projectId}/outputs`).then((r) => r.outputs ?? []),
+
+  // Project files — flat file listing for a project
+  projectFiles: (projectId: string) =>
+    request<{ files: WorkspaceFile[] }>(`/api/platform/projects/${projectId}/files`).then((r) => r.files ?? []),
 }

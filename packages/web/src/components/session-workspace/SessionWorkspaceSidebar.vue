@@ -63,6 +63,7 @@ defineProps<{
   }>
   sessionCount: number
   collapsed: boolean
+  projectId?: string
 }>()
 
 defineEmits<{
