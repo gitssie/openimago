@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm"
 import { readdirSync, statSync, existsSync, mkdirSync, writeFileSync, readFileSync } from "fs"
 import { join, extname } from "path"
 import { db } from "../db/client"
+import { projects } from "../db/schema"
 import { SessionTable } from "../db/session-schema"
 
 const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"])
@@ -53,7 +54,6 @@ export class OutputsService {
     | { outputs: OutputEntry[]; status: 200 }
     | { error: { code: string; message: string }; status: 404 }
   > {
-    // Check session exists and belongs to user
     const rows = await db
       .select()
       .from(SessionTable)
@@ -64,15 +64,42 @@ export class OutputsService {
     }
 
     const session = rows[0]!
-
-    // Verify ownership via workspace
     if (workspaceId && session.workspace_id !== workspaceId) {
       return { error: { code: "NOT_FOUND", message: "Session not found" }, status: 404 }
     }
 
-    const directory = session.directory
+    return this.scanDirectory(session.directory, filter)
+  }
 
-    // Read directory
+  async listProjectOutputs(
+    projectId: string,
+    userId: string,
+    filter?: { type?: string; order?: string },
+  ): Promise<
+    | { outputs: OutputEntry[]; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const rows = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, projectId))
+
+    if (rows.length === 0) {
+      return { error: { code: "NOT_FOUND", message: "Project not found" }, status: 404 }
+    }
+
+    const project = rows[0]!
+    if (project.userId !== userId) {
+      return { error: { code: "FORBIDDEN", message: "Not project owner" }, status: 403 }
+    }
+
+    return this.scanDirectory(project.directory, filter)
+  }
+
+  private scanDirectory(
+    directory: string,
+    filter?: { type?: string; order?: string },
+  ): { outputs: OutputEntry[]; status: 200 } | { error: { code: string; message: string }; status: 404 } {
     let files: string[]
     try {
       files = readdirSync(directory)
@@ -80,10 +107,8 @@ export class OutputsService {
       return { error: { code: "NOT_FOUND", message: "Directory not accessible" }, status: 404 }
     }
 
-    // Filter out .thumbnails dir and hidden files
     files = files.filter((f) => f !== ".thumbnails" && !f.startsWith("."))
 
-    // Apply type filter
     if (filter?.type) {
       files = files.filter((f) => {
         const ext = extname(f).toLowerCase()
@@ -94,7 +119,6 @@ export class OutputsService {
       })
     }
 
-    // Build output entries
     const outputs: OutputEntry[] = files.map((name) => {
       const fullPath = join(directory, name)
       const stat = statSync(fullPath)
@@ -116,7 +140,6 @@ export class OutputsService {
       }
     })
 
-    // Sort by modified time
     const order = filter?.order ?? "desc"
     outputs.sort((a, b) => {
       const cmp = new Date(a.modifiedAt).getTime() - new Date(b.modifiedAt).getTime()

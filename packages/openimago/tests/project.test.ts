@@ -220,3 +220,92 @@ test("creating project with empty name returns 400", async () => {
   )
   expect(res.status).toBe(400)
 })
+
+// ---------------------------------------------------------------------------
+// 8. GET /projects/:id returns project info
+// ---------------------------------------------------------------------------
+test("GET /projects/:id returns project details", async () => {
+  const token = await registerUser("dev8", "dev8@example.com")
+
+  const create = await app.fetch(
+    new Request("http://localhost/api/platform/projects", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ name: "Detail Project", description: "A detailed project" }),
+    }),
+  )
+  const { project: created } = await create.json() as any
+
+  const res = await app.fetch(
+    new Request(`http://localhost/api/platform/projects/${created.id}`, {
+      headers: { authorization: `Bearer ${token}` },
+    }),
+  )
+  expect(res.status).toBe(200)
+  const body = await res.json() as Record<string, any>
+  expect(body.project.id).toBe(created.id)
+  expect(body.project.name).toBe("Detail Project")
+  expect(body.project.description).toBe("A detailed project")
+  expect(body.project.directory).toBeDefined()
+  expect(body.project.status).toBe("active")
+  expect(body.project.createdAt).toBeDefined()
+  expect(body.project.updatedAt).toBeDefined()
+})
+
+// ---------------------------------------------------------------------------
+// 9. GET /projects/:id not found → 404
+// ---------------------------------------------------------------------------
+test("GET /projects/:id non-existent project returns 404", async () => {
+  const token = await registerUser("dev9", "dev9@example.com")
+
+  const res = await app.fetch(
+    new Request("http://localhost/api/platform/projects/proj_nonexistent", {
+      headers: { authorization: `Bearer ${token}` },
+    }),
+  )
+  expect(res.status).toBe(404)
+  const body = await res.json() as Record<string, any>
+  expect(body.error.code).toBe("NOT_FOUND")
+})
+
+// ---------------------------------------------------------------------------
+// 10. GET /projects/:id another users project → 403
+// ---------------------------------------------------------------------------
+test("GET /projects/:id another users project returns 403", async () => {
+  const tokenA = await registerUser("dev10a", "dev10a@example.com")
+  const tokenB = await registerUser("dev10b", "dev10b@example.com")
+
+  const create = await app.fetch(
+    new Request("http://localhost/api/platform/projects", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${tokenA}`,
+      },
+      body: JSON.stringify({ name: "A's Private Project" }),
+    }),
+  )
+  const { project } = await create.json() as any
+
+  const res = await app.fetch(
+    new Request(`http://localhost/api/platform/projects/${project.id}`, {
+      headers: { authorization: `Bearer ${tokenB}` },
+    }),
+  )
+  expect(res.status).toBe(403)
+  const body = await res.json() as Record<string, any>
+  expect(body.error.code).toBe("FORBIDDEN")
+})
+
+// ---------------------------------------------------------------------------
+// 11. GET /projects/:id without auth → 401
+// ---------------------------------------------------------------------------
+test("GET /projects/:id without token returns 401", async () => {
+  const res = await app.fetch(
+    new Request("http://localhost/api/platform/projects/proj_xxx"),
+  )
+  expect(res.status).toBe(401)
+})

@@ -3,7 +3,6 @@ import { authMiddleware } from "../server/middleware"
 import { fileService } from "./service"
 
 export const filesRoutes = new Hono()
-
 filesRoutes.use("/*", authMiddleware)
 
 filesRoutes.post("/upload", async (c) => {
@@ -25,4 +24,20 @@ filesRoutes.post("/upload", async (c) => {
   }
 
   return c.json({ file: result.file }, 201)
+})
+
+export const projectFilesRoutes = new Hono()
+projectFilesRoutes.use("/*", authMiddleware)
+
+projectFilesRoutes.get("/:id/files", async (c) => {
+  const projectId = c.req.param("id")
+  const userId = c.get("userId") as string
+
+  const result = await fileService.listProjectFiles(projectId, userId)
+
+  if ("error" in result) {
+    return c.json({ error: result.error }, result.status as any)
+  }
+
+  return c.json({ files: result.files })
 })

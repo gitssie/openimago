@@ -1,11 +1,13 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Hono } from "hono"
-import { unlinkSync, existsSync, mkdirSync } from "fs"
+import { unlinkSync, existsSync, mkdirSync, mkdirSync as mkdirSync2, readdirSync, writeFileSync } from "fs"
+import { join } from "path"
 import { setup, teardown } from "./helper"
 import { signJwt } from "../src/auth/jwt"
 import { userId, projectId } from "../src/utils/ids"
 import { db } from "../src/db/client"
 import { users, projects } from "../src/db/schema"
+import { eq } from "drizzle-orm"
 
 const COS_BASE_PATH = process.env.COS_BASE_PATH ?? "/work"
 
@@ -335,6 +337,148 @@ test("upload without token returns 401", async () => {
       method: "POST",
       body: fd,
     }),
+  )
+  expect(res.status).toBe(401)
+})
+
+// ===========================================================================
+// Project files — GET /api/platform/projects/:id/files
+// ===========================================================================
+
+async function buildProjectFilesApp(): Promise<Hono> {
+  const { authRoutes } = await import("../src/auth/routes")
+  const { projectFilesRoutes } = await import("../src/files/routes")
+  const a = new Hono()
+  a.route("/auth", authRoutes)
+  a.route("/api/platform/projects", projectFilesRoutes)
+  return a
+}
+
+// 11. List project files returns file entries
+test("GET /projects/:id/files returns files in project directory", async () => {
+  const { token, id: userId } = await createUser("pfiles-user@example.com", "pfilesuser")
+  const projId = await createProject(userId, "Files Project")
+  const project = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, projId))
+  const projDir = project[0]!.directory
+
+  writeFileSync(join(projDir, "index.html"), "<html></html>")
+  writeFileSync(join(projDir, "styles.css"), "body {}")
+  writeFileSync(join(projDir, "README.md"), "# Hello")
+
+  const app = await buildProjectFilesApp()
+  const res = await app.fetch(
+    new Request(`http://localhost/api/platform/projects/${projId}/files`, {
+      headers: { authorization: `Bearer ${token}` },
+    }),
+  )
+  expect(res.status).toBe(200)
+  const body = await res.json() as Record<string, any>
+  expect(Array.isArray(body.files)).toBe(true)
+  expect(body.files.length).toBe(3)
+
+  const names = body.files.map((f: any) => f.name).sort()
+  expect(names).toEqual(["README.md", "index.html", "styles.css"])
+
+  for (const f of body.files) {
+    expect(typeof f.name).toBe("string")
+    expect(typeof f.path).toBe("string")
+    expect(typeof f.size).toBe("number")
+    expect(typeof f.type).toBe("string")
+    expect(typeof f.modifiedAt).toBe("string")
+  }
+
+  const htmlFile = body.files.find((f: any) => f.name === "index.html")
+  expect(htmlFile.type).toBe("text/html")
+  const cssFile = body.files.find((f: any) => f.name === "styles.css")
+  expect(cssFile.type).toBe("text/css")
+  const mdFile = body.files.find((f: any) => f.name === "README.md")
+  expect(mdFile.type).toBe("text/markdown")
+})
+
+// 12. Project not found → 404
+test("GET /projects/:id/files non-existent project returns 404", async () => {
+  const { token } = await createUser("pfiles-404@example.com", "pfiles404")
+
+  const app = await buildProjectFilesApp()
+  const res = await app.fetch(
+    new Request("http://localhost/api/platform/projects/proj_nonexistent/files", {
+      headers: { authorization: `Bearer ${token}` },
+    }),
+  )
+  expect(res.status).toBe(404)
+})
+
+// 13. Another user's project → 403
+test("GET /projects/:id/files another users project returns 403", async () => {
+  const { id: ownerId } = await createUser("pfiles-owner@example.com", "pfilesowner")
+  const projId = await createProject(ownerId, "Owner's Files Project")
+
+  const { token } = await createUser("pfiles-other@example.com", "pfilesother")
+
+  const app = await buildProjectFilesApp()
+  const res = await app.fetch(
+    new Request(`http://localhost/api/platform/projects/${projId}/files`, {
+      headers: { authorization: `Bearer ${token}` },
+    }),
+  )
+  expect(res.status).toBe(403)
+})
+
+// 14. Hidden files and .thumbnails are filtered
+test("GET /projects/:id/files filters hidden files and thumbnails", async () => {
+  const { token, id: userId } = await createUser("pfiles-filter@example.com", "pfilesfilter")
+  const projId = await createProject(userId, "Filter Files Project")
+  const project = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, projId))
+  const projDir = project[0]!.directory
+
+  writeFileSync(join(projDir, "visible.txt"), "hello")
+  writeFileSync(join(projDir, ".gitignore"), "node_modules")
+  writeFileSync(join(projDir, ".env"), "SECRET=1")
+  mkdirSync2(join(projDir, ".thumbnails"), { recursive: true })
+  writeFileSync(join(projDir, ".thumbnails", "thumb.png"), "thumb")
+
+  const app = await buildProjectFilesApp()
+  const res = await app.fetch(
+    new Request(`http://localhost/api/platform/projects/${projId}/files`, {
+      headers: { authorization: `Bearer ${token}` },
+    }),
+  )
+  expect(res.status).toBe(200)
+  const body = await res.json() as Record<string, any>
+  const names = body.files.map((f: any) => f.name)
+  expect(names).toContain("visible.txt")
+  expect(names).not.toContain(".gitignore")
+  expect(names).not.toContain(".env")
+  expect(names).not.toContain(".thumbnails")
+})
+
+// 15. Empty directory → empty array
+test("GET /projects/:id/files empty directory returns empty array", async () => {
+  const { token, id: userId } = await createUser("pfiles-empty@example.com", "pfilesempty")
+  const projId = await createProject(userId, "Empty Files Project")
+
+  const app = await buildProjectFilesApp()
+  const res = await app.fetch(
+    new Request(`http://localhost/api/platform/projects/${projId}/files`, {
+      headers: { authorization: `Bearer ${token}` },
+    }),
+  )
+  expect(res.status).toBe(200)
+  const body = await res.json() as Record<string, any>
+  expect(body.files).toEqual([])
+})
+
+// 16. No token → 401
+test("project files without token returns 401", async () => {
+  const app = await buildProjectFilesApp()
+  const res = await app.fetch(
+    new Request("http://localhost/api/platform/projects/proj_xxx/files"),
   )
   expect(res.status).toBe(401)
 })

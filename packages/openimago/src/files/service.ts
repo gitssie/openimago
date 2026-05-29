@@ -1,7 +1,7 @@
 import { eq, and } from "drizzle-orm"
-import { existsSync, mkdirSync } from "fs"
+import { existsSync, mkdirSync, readdirSync, statSync } from "fs"
+import { join, extname } from "path"
 import crypto from "crypto"
-import { dirname } from "path"
 import { db } from "../db/client"
 import { projects } from "../db/schema"
 import { logger } from "../server/logger"
@@ -30,7 +30,101 @@ export interface FileMeta {
   relativePath: string
 }
 
+export interface FileEntry {
+  name: string
+  path: string
+  size: number
+  type: string
+  modifiedAt: string
+}
+
+function extToMimeType(ext: string): string {
+  const map: Record<string, string> = {
+    ".html": "text/html",
+    ".js": "text/javascript",
+    ".css": "text/css",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".bmp": "image/bmp",
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
+    ".avi": "video/x-msvideo",
+    ".webm": "video/webm",
+    ".mkv": "video/x-matroska",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".json": "application/json",
+    ".ts": "application/typescript",
+    ".pdf": "application/pdf",
+    ".zip": "application/zip",
+    ".ico": "image/x-icon",
+    ".woff2": "font/woff2",
+  }
+  return map[ext.toLowerCase()] ?? "application/octet-stream"
+}
+
 export class FileService {
+  async listProjectFiles(
+    projectId: string,
+    userId: string,
+  ): Promise<
+    | { files: FileEntry[]; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const rows = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, projectId))
+
+    if (rows.length === 0) {
+      return { error: { code: "NOT_FOUND", message: "Project not found" }, status: 404 }
+    }
+
+    const project = rows[0]!
+
+    if (project.userId !== userId) {
+      logger.warn({ userId, projectId }, "files.listProjectFiles: forbidden — not owner")
+      return { error: { code: "FORBIDDEN", message: "Not project owner" }, status: 403 }
+    }
+
+    let entries: string[]
+    try {
+      entries = readdirSync(project.directory)
+    } catch {
+      return { error: { code: "NOT_FOUND", message: "Directory not accessible" }, status: 404 }
+    }
+
+    entries = entries.filter((f) => f !== ".thumbnails" && !f.startsWith("."))
+
+    const files: FileEntry[] = []
+    for (const name of entries) {
+      const fullPath = join(project.directory, name)
+      try {
+        const stat = statSync(fullPath)
+        if (!stat.isFile()) continue
+
+        const ext = extname(name).toLowerCase()
+        const type = extToMimeType(ext)
+
+        files.push({
+          name,
+          path: name,
+          size: stat.size,
+          type,
+          modifiedAt: stat.mtime.toISOString(),
+        })
+      } catch {
+        // Skip files that can't be stat'd
+      }
+    }
+
+    return { files, status: 200 }
+  }
+
   async upload(input: UploadInput): Promise<
     | { file: FileMeta; status: 201 }
     | { error: { code: string; message: string }; status: number }

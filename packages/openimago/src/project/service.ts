@@ -178,6 +178,37 @@ export class ProjectService {
     }
   }
 
+  async getById(projectId: string, userId: string) {
+    const rows = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, projectId))
+
+    if (rows.length === 0) {
+      return { error: { code: "NOT_FOUND", message: "Project not found" }, status: 404 } as const
+    }
+
+    const project = rows[0]!
+
+    if (project.userId !== userId) {
+      logger.warn({ userId, projectId }, "project.getById: forbidden — not owner")
+      return { error: { code: "FORBIDDEN", message: "Not project owner" }, status: 403 } as const
+    }
+
+    return {
+      project: {
+        id: project.id,
+        name: project.name,
+        description: project.description,
+        directory: project.directory,
+        status: project.status,
+        createdAt: project.createdAt.toISOString(),
+        updatedAt: project.updatedAt.toISOString(),
+      },
+      status: 200,
+    } as const
+  }
+
   async update(input: UpdateProjectInput) {
     const rows = await db
       .select()

@@ -6,8 +6,8 @@ import { projectRoutes } from "../project/routes"
 import { workDirRoutes } from "../workdir/routes"
 import { healthRoutes } from "../health/routes"
 import { adminRoutes } from "../admin/routes"
-import { filesRoutes } from "../files/routes"
-import { outputsRoutes } from "../outputs/routes"
+import { filesRoutes, projectFilesRoutes } from "../files/routes"
+import { outputsRoutes, projectOutputsRoutes } from "../outputs/routes"
 import { promptsRoutes } from "../prompts/routes"
 import { assetsRoutes } from "../assets/routes"
 import { authMiddleware, adminMiddleware } from "./middleware"
@@ -55,6 +55,8 @@ export function createApp() {
   app.route("/api/admin", adminApp)
 
   app.route("/api/platform/projects", projectRoutes)
+  app.route("/api/platform/projects", projectOutputsRoutes)
+  app.route("/api/platform/projects", projectFilesRoutes)
   app.route("/api/platform/sessions", workDirRoutes)
   app.route("/api/platform/work-dirs", workDirRoutes)
   app.route("/api/platform/files", filesRoutes)

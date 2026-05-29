@@ -42,6 +42,18 @@ projectRoutes.get("/:id/stats", async (c) => {
   return c.json({ stats: result.stats })
 })
 
+projectRoutes.get("/:id", async (c) => {
+  const userId = c.get("userId") as string
+  const projectId = c.req.param("id")
+  const result = await projectService.getById(projectId, userId)
+
+  if ("error" in result) {
+    return c.json({ error: result.error }, result.status as any)
+  }
+
+  return c.json({ project: result.project })
+})
+
 projectRoutes.patch("/:id", async (c) => {
   const userId = c.get("userId") as string
   const projectId = c.req.param("id")
