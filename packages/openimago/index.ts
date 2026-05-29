@@ -56,6 +56,9 @@ export default {
   port,
   hostname: host,
   fetch: app.fetch,
+  // Disable idle timeout for SSE long-lived connections.
+  // Default is 10s which kills SSE streams between heartbeats.
+  idleTimeout: 0,
 }
 
 logger.info({ host, port, frontendServed: distExists }, "openimago server started")

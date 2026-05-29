@@ -377,7 +377,6 @@ body::before {
   background: rgba(8, 8, 15, 0.95) !important;
   backdrop-filter: var(--imago-blur-panel);
   -webkit-backdrop-filter: var(--imago-blur-panel);
-  border-top: 1px solid var(--imago-border-subtle) !important;
 }
 
 // Fixed side strip (session sidebar, file panel)

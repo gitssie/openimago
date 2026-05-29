@@ -18,17 +18,23 @@ export interface WorkspaceResolverService {
 export function makeWorkspaceResolver(
   lookup: (workspaceId: string) => Promise<string | null>,
 ): WorkspaceResolverService {
-  // Only cache positive results (workspace → user is stable once created).
-  const cache = new Map<string, string>()
+  /** Positive hits: workspace → { userId, expiresAt }. TTL prevents stale entries after DB resets. */
+  const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+  const cache = new Map<string, { userId: string; expiresAt: number }>()
 
   return {
     ownerOf: (workspaceId: string) =>
       Effect.gen(function* () {
-        if (cache.has(workspaceId)) {
-          return cache.get(workspaceId)!
+        const now = Date.now()
+        const entry = cache.get(workspaceId)
+        if (entry && entry.expiresAt > now) {
+          return entry.userId
         }
+        // Evict stale entry if present
+        if (entry) cache.delete(workspaceId)
+
         const result = yield* Effect.promise(() => lookup(workspaceId))
-        if (result) cache.set(workspaceId, result)
+        if (result) cache.set(workspaceId, { userId: result, expiresAt: now + CACHE_TTL_MS })
         return result
       }),
   }

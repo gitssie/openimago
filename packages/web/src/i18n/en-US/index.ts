@@ -49,6 +49,7 @@ export default {
     followupPaused: 'Follow-ups paused',
     queueFollowup: 'Queue follow-up',
     loadingEarlier: 'Loading earlier messages',
+    scrollToBottom: 'Scroll to latest',
     sendNow: 'Send now',
     revertActive: 'Restorable message available',
     retrying: 'Retrying...',

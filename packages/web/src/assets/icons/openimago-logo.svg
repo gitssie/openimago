@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 155" fill="none" role="img" aria-label="openimago logo">
+  <defs>
+    <linearGradient id="gradC" x1="40" y1="110" x2="710" y2="110" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00E5FF"/>
+      <stop offset="0.46" stop-color="#7DD3FC"/>
+      <stop offset="0.78" stop-color="#A78BFA"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+
+    <filter id="glowC" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- icon -->
+  <ellipse
+    cx="108"
+    cy="110"
+    rx="54"
+    ry="34"
+    transform="rotate(-18 108 110)"
+    stroke="url(#gradC)"
+    stroke-width="6.4"
+    opacity=".95"
+    filter="url(#glowC)"
+  />
+  <circle
+    cx="108"
+    cy="110"
+    r="28"
+    stroke="url(#gradC)"
+    stroke-width="8"
+    filter="url(#glowC)"
+  />
+  <path
+    d="M108 82v56"
+    stroke="url(#gradC)"
+    stroke-width="8"
+    stroke-linecap="round"
+  />
+  <circle
+    cx="151"
+    cy="83"
+    r="5.3"
+    fill="#8B5CF6"
+    filter="url(#glowC)"
+  />
+
+  <!-- wordmark -->
+  <text
+    x="196"
+    y="124"
+    fill="url(#gradC)"
+    font-size="66"
+    font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif"
+    font-weight="820"
+    letter-spacing="-2"
+  >openimago</text>
+
+  <!-- decorative orbit line -->
+  <path
+    d="M338 72c46-22 130-28 196-12 34 8 69 25 104 54"
+    stroke="url(#gradC)"
+    stroke-width="3.2"
+    stroke-linecap="round"
+    opacity=".86"
+  />
+  <circle
+    cx="638"
+    cy="114"
+    r="4.5"
+    fill="#8B5CF6"
+    filter="url(#glowC)"
+  />
+
+  <!-- tagline removed -->
+</svg>

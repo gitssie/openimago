@@ -70,9 +70,12 @@ export const UILayoutDrawer = defineComponent({
       return () => null;
     }
 
-    const localShowing = ref(false);
+    const localShowing = ref(props.modelValue === true);
     const belowBreakpoint = ref(false);
-    const contentPosition = ref(0);
+    // Initialize to the correct position immediately so there is no opening animation on mount
+    const rightSideInit = props.side === 'right';
+    const directionInit = ($q.lang.rtl === true ? -1 : 1) * (rightSideInit ? 1 : -1);
+    const contentPosition = ref(props.modelValue === true ? 0 : props.width * directionInit);
     const backdropOpacity = ref(0);
 
     const rightSide = computed(() => props.side === 'right');

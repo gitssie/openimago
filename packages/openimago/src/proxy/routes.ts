@@ -378,9 +378,16 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
       const writer = writable.getWriter()
       const encoder = new TextEncoder()
 
-      // Subscribe: creates a per-user PubSub, returns stream + cleanup
+      // Subscribe: creates a per-user stream, returns stream + idempotent cleanup
       const subscription = await subscribe(userId)
-      const { stream: busStream, unsubscribe } = subscription
+      const { stream: busStream } = subscription
+      // Guard against double-call (abort signal + Effect.ensuring both trigger cleanup)
+      let _unsubscribed = false
+      const unsubscribe = () => {
+        if (_unsubscribed) return
+        _unsubscribed = true
+        subscription.unsubscribe()
+      }
 
       // Build SSE stream: connected event + bus events + heartbeat
       const heartbeat = Stream.repeatEffect(

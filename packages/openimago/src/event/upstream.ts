@@ -62,12 +62,23 @@ export function parseSseChunks(body: ReadableStream<Uint8Array>): Stream.Stream<
           }
         }
       } catch (err) {
-        logger.error({ err }, "parseSseChunks: reader error")
+        if (isExpectedSseDisconnect(err)) {
+          logger.info({ err }, "parseSseChunks: upstream SSE disconnected, retrying")
+        } else {
+          logger.error({ err }, "parseSseChunks: reader error")
+        }
       } finally {
         emit.end()
       }
     })()
   })
+}
+
+function isExpectedSseDisconnect(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false
+  const e = err as { code?: unknown; message?: unknown }
+  return e.code === "ECONNRESET"
+    || (typeof e.message === "string" && e.message.includes("socket connection was closed unexpectedly"))
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────

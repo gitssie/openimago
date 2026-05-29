@@ -111,11 +111,12 @@ export const opencodeClient = createOpencodeClient({
 // ── Session operations ─────────────────────────────────────────────────────────
 
 export const AgentService = {
-  mapSession(session: { id: string; title?: string; parentID?: string; time?: { created?: number }; revert?: Session['revert'] }): SessionItem {
+  mapSession(session: { id: string; title?: string; parentID?: string; time?: { created?: number }; time_created?: number; revert?: Session['revert'] }): SessionItem {
     return {
       id: session.id,
       title: session.title ?? '',
-      time: new Date(session.time?.created ?? Date.now()),
+      // Backend may return time_created (epoch ms) or time.created (opencode SDK format)
+      time: new Date(session.time?.created ?? session.time_created ?? Date.now()),
       ...(session.parentID ? { parentID: session.parentID } : {}),
       ...(session.revert ? { revert: session.revert } : {}),
     };
@@ -131,7 +132,7 @@ export const AgentService = {
 
   async listSessions(): Promise<SessionItem[]> {
     const res = await opencodeClient.session.list({ roots: true });
-    const list = (res.data ?? []) as { id: string; title?: string; time?: { created?: number } }[];
+    const list = (res.data ?? []) as { id: string; title?: string; time?: { created?: number }; time_created?: number }[];
     return list
       .map((s) => this.mapSession(s))
       .sort((a, b) => b.time.getTime() - a.time.getTime());

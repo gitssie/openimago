@@ -1,93 +1,67 @@
 <template>
-  <q-layout view="lHh Lpr lFf" class="main-shell">
-    <q-header class="imago-header main-header">
+  <q-layout view="hHh lpr fFf" class="main-shell">
+    <q-header class="main-header">
       <q-toolbar class="main-toolbar">
-        <q-btn flat dense round icon="menu" aria-label="Menu" class="menu-btn" @click="toggleLeftDrawer" />
-
-        <q-toolbar-title class="imago-text-cyan imago-page-title">{{ pageTitle }}</q-toolbar-title>
-
-        <q-btn flat no-caps class="imago-user-chip user-chip" aria-label="User">
-          <q-avatar size="46px" class="imago-user-avatar user-avatar">
-            <q-icon name="person" />
-          </q-avatar>
-          <span class="user-name">{{ auth.user?.username || auth.user?.email || 'Timmy' }}</span>
-          <q-icon name="expand_more" size="18px" />
-          <q-menu>
-            <q-list style="min-width: 160px">
-              <q-item clickable to="/settings">
-                <q-item-section avatar>
-                  <q-icon name="settings" />
-                </q-item-section>
-                <q-item-section>设置</q-item-section>
-              </q-item>
-              <q-separator />
-              <q-item clickable @click="handleLogout">
-                <q-item-section avatar>
-                  <q-icon name="logout" />
-                </q-item-section>
-                <q-item-section>退出登录</q-item-section>
-              </q-item>
-            </q-list>
-          </q-menu>
-        </q-btn>
+        <div class="brand">
+          <OiIcon name="openimago-logo" :size="36" style="width: auto; height: 36px;" class="brand-logo" />
+        </div>
+        <q-space />
+        <div class="topbar-actions">
+          <q-btn flat no-caps class="user-chip" aria-label="User">
+            <q-avatar size="28px" class="user-avatar">
+              <q-icon name="person" size="14px" />
+            </q-avatar>
+            <span class="user-name">{{ auth.user?.username || auth.user?.email || 'User' }}</span>
+            <q-icon name="expand_more" size="14px" class="q-ml-xs" />
+            <q-menu>
+              <q-list style="min-width: 160px">
+                <q-item clickable to="/settings">
+                  <q-item-section avatar><q-icon name="settings" /></q-item-section>
+                  <q-item-section>设置</q-item-section>
+                </q-item>
+                <q-separator />
+                <q-item clickable @click="handleLogout">
+                  <q-item-section avatar><q-icon name="logout" /></q-item-section>
+                  <q-item-section>退出登录</q-item-section>
+                </q-item>
+              </q-list>
+            </q-menu>
+          </q-btn>
+        </div>
       </q-toolbar>
     </q-header>
 
-    <q-drawer v-model="leftDrawerOpen" show-if-above bordered :mini="miniState" :width="160" :mini-width="160" class="imago-drawer main-drawer">
-      <div class="imago-text-cyan imago-brand imago-drawer-brand drawer-brand">openimago</div>
+    <q-drawer
+      v-model="railOpen"
+      side="left"
+      :width="64"
+      :breakpoint="0"
+      show-if-above
+      class="main-rail"
+    >
+      <div class="rail-inner">
+        <nav class="rail-nav">
+          <q-btn
+            v-for="item in navItems"
+            :key="item.to"
+            flat
+            :to="item.to"
+            :aria-label="item.label"
+            :class="['rail-btn', { 'rail-btn--active': isActive(item.to) }]"
+          >
+            <OiIcon :name="item.icon" :size="20" />
+            <q-tooltip anchor="center right" self="center left" :offset="[14, 0]">{{ item.label }}</q-tooltip>
+          </q-btn>
+        </nav>
 
-      <q-list class="nav-list">
-        <q-item clickable v-ripple to="/projects" class="imago-nav-item nav-item" active-class="imago-nav-active">
-          <q-item-section avatar>
-            <q-icon name="folder" />
-          </q-item-section>
-          <q-item-section class="imago-nav-label nav-label">项目</q-item-section>
-        </q-item>
-
-        <q-item clickable v-ripple to="/prompts" class="imago-nav-item nav-item" active-class="imago-nav-active">
-          <q-item-section avatar>
-            <q-icon name="grid_view" />
-          </q-item-section>
-          <q-item-section class="imago-nav-label nav-label">Prompt</q-item-section>
-        </q-item>
-
-        <q-item clickable v-ripple to="/sessions" class="imago-nav-item nav-item" active-class="imago-nav-active">
-          <q-item-section avatar>
-            <q-icon name="deployed_code" />
-          </q-item-section>
-          <q-item-section class="imago-nav-label nav-label">工作台</q-item-section>
-        </q-item>
-
-        <q-item clickable v-ripple to="/assets" class="imago-nav-item nav-item" active-class="imago-nav-active">
-          <q-item-section avatar>
-            <q-icon name="image" />
-          </q-item-section>
-          <q-item-section class="imago-nav-label nav-label">资产</q-item-section>
-        </q-item>
-
-        <q-item clickable v-ripple to="/admin/users" class="imago-nav-item nav-item" active-class="imago-nav-active">
-          <q-item-section avatar>
-            <q-icon name="group" />
-          </q-item-section>
-          <q-item-section class="imago-nav-label nav-label">用户</q-item-section>
-        </q-item>
-
-        <q-item clickable v-ripple class="imago-nav-item nav-item">
-          <q-item-section avatar>
-            <q-icon name="bar_chart" />
-          </q-item-section>
-          <q-item-section class="imago-nav-label nav-label">统计</q-item-section>
-        </q-item>
-      </q-list>
-
-      <q-item clickable v-ripple to="/settings" class="imago-nav-item nav-item nav-settings" active-class="imago-nav-active">
-        <q-item-section avatar>
-          <q-icon name="settings" />
-        </q-item-section>
-        <q-item-section class="imago-nav-label nav-label">设置</q-item-section>
-      </q-item>
-
-      <q-btn round flat icon="keyboard_double_arrow_right" class="imago-btn-glass drawer-collapse" @click="toggleLeftDrawer" />
+        <div class="rail-footer">
+          <div class="rail-credits">
+            <span class="rail-credits__label">电力</span>
+            <q-icon name="bolt" size="14px" color="cyan-4" />
+            <span class="rail-credits__value">8,742</span>
+          </div>
+        </div>
+      </div>
     </q-drawer>
 
     <q-page-container>
@@ -97,28 +71,25 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from 'src/stores/auth'
+import OiIcon, { type OiIconName } from 'src/components/ui/OiIcon.vue'
 
 const auth = useAuthStore()
-const route = useRoute() as ReturnType<typeof useRoute> | undefined
+const route = useRoute()
+const railOpen = ref(true)
 
-const leftDrawerOpen = ref(false)
-const miniState = ref(true)
+const navItems: { icon: OiIconName; label: string; to: string }[] = [
+  { icon: 'chat', label: '会话', to: '/sessions' },
+  { icon: 'project-folder', label: '项目', to: '/projects' },
+  { icon: 'asset-cube', label: '资产', to: '/assets' },
+  { icon: 'template-grid', label: 'Prompt', to: '/prompts' },
+  { icon: 'settings', label: '设置', to: '/settings' },
+]
 
-const pageTitle = computed(() => {
-  if (route?.name === 'projects') return '项目'
-  if (route?.name === 'assets') return '资产库'
-  if (route?.name === 'prompts') return 'Prompt 模板'
-  if (route?.name === 'sessions' || route?.name === 'session') return '工作台'
-  if (route?.name === 'settings') return '设置'
-  if (route?.name === 'admin-users') return '用户管理'
-  return '项目'
-})
-
-function toggleLeftDrawer() {
-  leftDrawerOpen.value = !leftDrawerOpen.value
+function isActive(to: string): boolean {
+  return route.path.startsWith(to)
 }
 
 function handleLogout() {
@@ -128,6 +99,7 @@ function handleLogout() {
 </script>
 
 <style scoped>
+/* ── Shell background ──────────────────────────────────────────────────────── */
 .main-shell {
   background:
     radial-gradient(circle at 14% 82%, rgb(0 101 255 / 20%), transparent 23%),
@@ -136,50 +108,144 @@ function handleLogout() {
     #030713;
 }
 
-.main-shell::before {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  content: '';
-  background:
-    radial-gradient(circle at 35% 30%, rgb(0 224 255 / 16%) 0 1px, transparent 2px),
-    radial-gradient(circle at 78% 58%, rgb(129 38 255 / 17%) 0 2px, transparent 3px);
-  background-size: 84px 84px, 132px 132px;
-}
-
+/* ── Header ────────────────────────────────────────────────────────────────── */
 .main-header {
-  height: 86px;
+  height: 52px;
+  background: rgba(3, 7, 19, 0.92) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(12px);
 }
 
 .main-toolbar {
-  height: 86px;
-  padding: 0 34px 0 26px;
+  height: 52px;
+  min-height: 52px;
+  padding: 0 20px 0 12px;
 }
 
-.menu-btn {
-  color: #edf7ff;
-  font-size: 20px;
-  margin-right: 22px;
+.brand {
+  display: flex;
+  align-items: center;
 }
 
-.nav-list {
-  padding: 46px 18px 0;
-  display: grid;
-  gap: 16px;
+.brand-logo {
+  width: auto;
+  height: 28px;
+  color: #00f0ff;
+  filter: drop-shadow(0 0 12px rgba(0, 240, 255, 0.35));
 }
 
-.nav-settings {
-  position: absolute;
-  right: 18px;
-  bottom: 350px;
-  left: 18px;
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.drawer-collapse {
-  position: absolute;
-  bottom: 34px;
-  left: 50px;
-  border-radius: 50%;
+.user-chip {
+  gap: 7px;
+  padding: 4px 10px;
+  color: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+}
+
+.user-chip:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.user-avatar {
+  background: rgba(0, 240, 255, 0.12);
+  color: #00f0ff;
+}
+
+.user-name {
+  font-size: 13px;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Rail drawer ───────────────────────────────────────────────────────────── */
+.main-rail :deep(.q-drawer__content) {
+  background: rgba(3, 7, 19, 0.92) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(12px);
+}
+
+.rail-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+}
+
+.rail-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-top: 12px;
+}
+
+.rail-btn {
+  width: 40px;
+  height: 40px;
+  min-height: unset !important;
+  min-width: unset !important;
+  padding: 0 !important;
+  color: rgba(255, 255, 255, 0.32);
+  border-radius: 10px;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.rail-btn :deep(.q-btn__content) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rail-btn:hover {
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.rail-btn--active {
+  color: #00e5ff;
+  background: rgba(0, 229, 255, 0.1);
+}
+
+.rail-btn--active :deep(svg) {
+  filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.7));
+}
+
+.rail-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-bottom: 12px;
+  gap: 8px;
+}
+
+.rail-credits {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: default;
+}
+
+.rail-credits__label {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.3);
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rail-credits__value {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  line-height: 1;
 }
 </style>

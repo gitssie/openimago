@@ -173,4 +173,30 @@ describe('SessionState', () => {
     expect(state.sessionList).toHaveLength(1)
     expect(state.sessionList[0]!.title).toBe('')
   })
+
+  test('child session is NOT in sessionList — only in childSessions', () => {
+    // Regression: sidebarSessions used getAllSessions() which merges sessionList
+    // and childSessions, causing child sessions created by agent sub-tasks to
+    // appear alongside root sessions in the sidebar (the "two items" bug).
+    state.handleEvent(makeSessionCreatedEvent({
+      id: 'ses_root',
+      title: 'My Chat',
+      time: { created: 1700000000000 },
+    }))
+    state.handleEvent(makeSessionCreatedEvent({
+      id: 'ses_child',
+      title: 'Sub task',
+      parentID: 'ses_root',
+      time: { created: 1700000000001 },
+    }))
+    // Root session only in sessionList
+    expect(state.sessionList).toHaveLength(1)
+    expect(state.sessionList[0]!.id).toBe('ses_root')
+    // Child session only in childSessions
+    expect(state.childSessions['ses_root']).toHaveLength(1)
+    expect(state.childSessions['ses_root']![0]!.id).toBe('ses_child')
+    // getAllSessions()-style merge would have 2 items — sidebar must NOT use this pattern
+    const mergedLen = state.sessionList.length + Object.values(state.childSessions).flat().length
+    expect(mergedLen).toBe(2) // proof: merging creates duplicates in sidebar
+  })
 })

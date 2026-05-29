@@ -18,6 +18,7 @@ import { AgentService } from 'src/services/agents';
 import type { DisplayPart, PromptPartInput, RawMessageEntry, SessionItem } from 'src/services/agents';
 import { idGenerator } from 'src/utils/id';
 import { SessionState } from 'src/composables/session-state';
+import { useSseConnection } from 'src/composables/useSseConnection';
 
 interface Dataset {
   id: string
@@ -65,7 +66,6 @@ export interface QueuedFollowup {
 const OPTIMISTIC_PART_ID_PREFIX = 'optimistic:';
 const INITIAL_MESSAGE_PAGE_SIZE = 80;
 const HISTORY_MESSAGE_PAGE_SIZE = 200;
-const RECENT_EVENT_ID_LIMIT = 500;
 const SESSION_MESSAGE_CACHE_LIMIT = 40;
 
 // ── Composable ────────────────────────────────────────────────────────────────
@@ -127,9 +127,7 @@ export function useAgentSession(
 
   // ── Internal bookkeeping ────────────────────────────────────────────────────
 
-  let sseAbort: AbortController | null = null;
-  const recentEventIds: string[] = [];
-  const recentEventIdSet = new Set<string>();
+  const sseConnection = useSseConnection();
   const cachedSessionIds: string[] = [];
   const cachedSessionIdSet = new Set<string>();
   const messageLoadInflight = new Map<string, Promise<void>>();
@@ -280,38 +278,6 @@ export function useAgentSession(
     const lastAssistant = lastAssistantEntry?.info.role === 'assistant' ? lastAssistantEntry.info : undefined;
 
     curAsstMessage.value = lastAssistant ?? null;
-  }
-
-  function rememberEventId(id: string | undefined): boolean {
-    if (!id) return false;
-    if (recentEventIdSet.has(id)) return true;
-
-    recentEventIdSet.add(id);
-    recentEventIds.push(id);
-    while (recentEventIds.length > RECENT_EVENT_ID_LIMIT) {
-      const stale = recentEventIds.shift();
-      if (stale) recentEventIdSet.delete(stale);
-    }
-    return false;
-  }
-
-  function normalizeEvent(raw: Record<string, unknown>): Event | null {
-    const syncEvent = raw.syncEvent as Record<string, unknown> | undefined;
-    const source = syncEvent ?? raw;
-    const id = typeof source.id === 'string' ? source.id : undefined;
-    if (rememberEventId(id)) return null;
-
-    const rawType = source.type;
-    const type = (typeof rawType === 'string' ? rawType : '').replace(/\.\d+$/, '');
-    if (!type) return null;
-
-    const properties = 'properties' in source ? source.properties : source.data;
-    return {
-      ...source,
-      id,
-      type,
-      properties,
-    } as Event;
   }
 
   function refreshDisplayMessages(sid: string | null = sessionId.value) {
@@ -865,6 +831,13 @@ export function useAgentSession(
    * discriminated union.  Each branch narrows the type via the `type` field.
    */
   function handleEvent(event: Event) {
+    // Handle non-SDK events (e.g. server.close sent by our backend) before the
+    // typed switch, since they are not part of the @opencode-ai/sdk/v2 union.
+    if ((event as { type: string }).type === 'server.close') {
+      isConnected.value = false;
+      return;
+    }
+
     // Delegate shared state to the pure SessionState machine, then sync Vue refs.
     const delegated = new Set<Event['type']>([
       'server.connected',
@@ -892,13 +865,40 @@ export function useAgentSession(
 
       case 'session.created':
       case 'session.updated': {
-        const info = event.properties.info;
+        // The opencode SDK wraps session data under properties.info,
+        // but our backend sends the session object directly as properties (no info wrapper).
+        // For versioned events (e.g. session.updated.1), the session ID is in
+        // props.sessionID and the changed fields are in props.info (partial update).
+        // Support all three shapes.
+        const props = event.properties as Record<string, unknown>
+        const rawInfo = (props.info as Record<string, unknown> | undefined) ?? props
+        const sessionId_ =
+          typeof rawInfo.id === 'string' ? rawInfo.id
+          : typeof props.sessionID === 'string' ? props.sessionID
+          : typeof props.aggregateID === 'string' ? props.aggregateID
+          : undefined
+        const info = {
+          id: sessionId_,
+          title: typeof rawInfo.title === 'string' ? rawInfo.title : undefined,
+          parentID: typeof rawInfo.parentID === 'string' ? rawInfo.parentID
+            : typeof rawInfo.parent_id === 'string' ? rawInfo.parent_id
+            : undefined,
+          time: typeof (rawInfo.time as Record<string,unknown>|undefined)?.created === 'number'
+            ? rawInfo.time as { created: number }
+            : undefined,
+          time_created: typeof rawInfo.time_created === 'number' ? rawInfo.time_created : undefined,
+          revert: rawInfo.revert,
+        }
+        if (!info.id) break  // malformed event — ignore
+        // For partial-update events (info has only changed fields), update only what's present
+        const existing = sessionList.value.find(s => s.id === info.id)
+          ?? Object.values(childSessions.value).flat().find(s => s.id === info.id)
         const item: SessionItem = {
           id: info.id,
-          title: info.title ?? '',
-          time: new Date(info.time?.created ?? Date.now()),
-          ...(info.parentID ? { parentID: info.parentID } : {}),
-          ...(info.revert ? { revert: info.revert } : {}),
+          title: info.title ?? existing?.title ?? '',
+          time: existing?.time ?? new Date(info.time?.created ?? info.time_created ?? Date.now()),
+          ...(info.parentID ? { parentID: info.parentID } : existing?.parentID ? { parentID: existing.parentID } : {}),
+          ...(info.revert ? { revert: info.revert as SessionItem['revert'] } : {}),
         };
 
         if (info.parentID) {
@@ -924,7 +924,7 @@ export function useAgentSession(
 
         if (eventSessionId === sessionId.value) {
           refreshDisplayMessages(eventSessionId);
-          scrollToBottomNow();
+          scrollIfAtBottom();
         }
         break;
       }
@@ -1041,34 +1041,22 @@ export function useAgentSession(
         break;
       }
 
-      default:
-        // All other events (lsp, pty, file, etc.) are intentionally ignored
+      default:        // All other events (lsp, pty, file, etc.) are intentionally ignored
         break;
     }
   }
 
-  function startEventSubscription() {
-    sseAbort = new AbortController();
-    void (async () => {
-      try {
-        const stream = await AgentService.subscribeToEvents();
-        for await (const raw of stream) {
-          if (sseAbort?.signal.aborted) break;
+  let _sseCleanup: (() => void) | null = null;
 
-          // Align with OpenCode event shape: unwrap sync envelope, map data → properties,
-          // strip version suffix, and ignore duplicate event IDs from dual raw/normalized delivery.
-          const event = normalizeEvent(raw);
-          if (event) handleEvent(event);
-        }
-      } catch {
-        // AbortError or connection closed — not fatal
-      }
-    })();
+  function startEventSubscription() {
+    _sseCleanup = sseConnection.onEvent(handleEvent);
+    sseConnection.connect();
   }
 
   function stopEventSubscription() {
-    sseAbort?.abort();
-    sseAbort = null;
+    _sseCleanup?.();
+    _sseCleanup = null;
+    sseConnection.disconnect();
   }
 
   // ── Message actions ───────────────────────────────────────────────────────
@@ -1326,6 +1314,12 @@ Usage: search(search_query="<your query>", search_type="GRAPH_COMPLETION", datas
 
     isLoading.value = true;
 
+    // Always scroll to bottom when user initiates a send, regardless of current scroll position.
+    scrollToBottomNow();
+
+    // Reconnect SSE if the server closed it (e.g. LRU eviction) so we can receive responses.
+    sseConnection.ensureConnected();
+
     try {
       const sid = await ensureSession();
       await dispatchDraft({
@@ -1492,6 +1486,7 @@ Usage: search(search_query="<your query>", search_type="GRAPH_COMPLETION", datas
     restoreRevert,
     startEventSubscription,
     stopEventSubscription,
+    sseState: sseConnection.state,
     ...followupBindings,
   };
 }

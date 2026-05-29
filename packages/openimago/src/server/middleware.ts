@@ -15,6 +15,14 @@ declare module "hono" {
   }
 }
 
+/**
+ * Short-lived in-memory cache for userId → workspaceId lookups.
+ * Prevents a DB round-trip on every SSE reconnect while still
+ * reflecting user deletion within USER_CACHE_TTL_MS.
+ */
+const USER_CACHE_TTL_MS = 60 * 1000 // 1 minute
+const userCache = new Map<string, { workspaceId: string | null; expiresAt: number }>()
+
 export async function authMiddleware(c: Context, next: Next) {
   const header = c.req.header("authorization")
   if (!header || !header.startsWith("Bearer ")) {
@@ -34,21 +42,35 @@ export async function authMiddleware(c: Context, next: Next) {
   // Look up workspace_id; may be null for users created before the migration.
   // A valid JWT can outlive a truncated/deleted user row, so reject it before
   // handlers try to insert rows that reference users(id).
-  const [user] = await db
-    .select({ workspaceId: users.workspaceId })
-    .from(users)
-    .where(eq(users.id, claims.userId))
-    .limit(1)
+  const now = Date.now()
+  let workspaceId: string | null
 
-  if (!user) {
-    logger.warn({ userId: claims.userId, path: new URL(c.req.url).pathname }, "auth: user not found")
-    return c.json({ error: { code: "UNAUTHORIZED", message: "User not found" } }, 401)
+  const cached = userCache.get(claims.userId)
+  if (cached && cached.expiresAt > now) {
+    workspaceId = cached.workspaceId
+  } else {
+    // Evict stale entry if present
+    if (cached) userCache.delete(claims.userId)
+
+    const [user] = await db
+      .select({ workspaceId: users.workspaceId })
+      .from(users)
+      .where(eq(users.id, claims.userId))
+      .limit(1)
+
+    if (!user) {
+      logger.warn({ userId: claims.userId, path: new URL(c.req.url).pathname }, "auth: user not found")
+      return c.json({ error: { code: "UNAUTHORIZED", message: "User not found" } }, 401)
+    }
+
+    workspaceId = user.workspaceId ?? null
+    userCache.set(claims.userId, { workspaceId, expiresAt: now + USER_CACHE_TTL_MS })
   }
 
   logger.debug({ userId: claims.userId, role: claims.role, path: new URL(c.req.url).pathname }, "auth: ok")
   c.set("userId", claims.userId)
   c.set("role", claims.role)
-  c.set("workspaceId", user.workspaceId ?? null)
+  c.set("workspaceId", workspaceId)
 
   await next()
 }

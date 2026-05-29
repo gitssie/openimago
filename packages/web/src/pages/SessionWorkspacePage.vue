@@ -1,60 +1,21 @@
 <template>
-  <div class="session-workspace">
-    <div class="workspace-layout">
-      <aside class="session-sidebar">
-        <div class="sidebar-brand">
-          <span class="brand-name">openimago</span>
-        </div>
+  <q-page :style-fn="pageHeightFn" class="session-workspace" style="padding: 0; overflow: hidden;">
+    <UILayout class="session-layout relative full-height" view="hhh lpr lfr" container>
+      <UILayoutDrawer :model-value="!sidebarCollapsed" side="left" :width="256" :breakpoint="1024" bordered show-if-above @update:model-value="sidebarCollapsed = !$event">
+        <SessionWorkspaceSidebar
+          :sessions="sidebarSessions"
+          :session-count="sidebarSessions.length"
+          :collapsed="sidebarCollapsed"
+          @create="createNewSession"
+          @select="handleSwitchSession"
+          @delete="deleteSession"
+          @toggle-collapse="sidebarCollapsed = !sidebarCollapsed"
+        />
+      </UILayoutDrawer>
 
-        <div class="session-shell">
-          <nav class="session-rail" aria-label="工作区导航">
-            <q-btn
-              v-for="item in railItems"
-              :key="item.icon"
-              round
-              flat
-              :icon="item.icon"
-              :aria-label="item.label"
-              :class="['rail-btn', { 'rail-btn--active': item.active }]"
-            />
-            <q-btn round flat icon="keyboard_double_arrow_right" aria-label="收起侧栏" class="rail-collapse" />
-          </nav>
-
-          <div class="session-list-panel">
-            <q-btn label="新建会话" icon="add" class="new-session-btn" @click="createNewSession" unelevated no-caps />
-
-            <div class="session-group">
-              <div class="session-group__title">
-                <span>会话流</span>
-                <q-icon name="expand_more" />
-              </div>
-              <q-list v-if="sessionList.length > 0" class="session-list">
-                <q-item
-                  v-for="s in sessionList"
-                  :key="s.id"
-                  clickable
-                  :active="isSessionActive(s)"
-                  active-class="session-item--active"
-                  class="session-item"
-                  @click="handleSwitchSession(s.id)"
-                >
-                  <q-item-section>
-                    <q-item-label class="session-title">{{ getSessionLabel(s) }}</q-item-label>
-                    <q-item-label caption class="session-preview">{{ formatSessionTime(s.time) }}</q-item-label>
-                  </q-item-section>
-                  <q-item-section side class="session-time">{{ formatClock(s.time) }}</q-item-section>
-                  <q-item-section side class="session-delete">
-                    <q-btn flat round dense icon="close" size="xs" color="grey-5" @click.stop="deleteSession(s.id)" />
-                  </q-item-section>
-                </q-item>
-              </q-list>
-              <div v-else class="session-list-empty">暂无会话，点击上方按钮创建。</div>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      <main class="chat-area">
+      <UILayoutPageContainer>
+        <UILayoutPage class="chat-page">
+          <main class="chat-area">
         <header class="session-topbar">
           <div class="col min-width-0">
             <div v-if="currentParentSession" class="text-caption text-grey-5 row items-center no-wrap breadcrumb-row">
@@ -81,29 +42,48 @@
               <q-spinner-dots size="16px" color="grey-5" />
               <span>{{ isLoading ? '生成中' : '切换会话' }}</span>
             </div>
-            <q-btn outline icon="light_mode" class="topbar-icon" aria-label="外观" round />
+            <button
+              type="button"
+              class="topbar-icon-btn"
+              :class="{ 'topbar-icon-btn--active': rightPanelVisible }"
+              :aria-label="'切换右侧面板'"
+              @click="rightPanelVisible = !rightPanelVisible"
+            >
+              <OiIcon name="sliders" :size="18" />
+              <q-tooltip anchor="bottom middle" self="top middle">{{ rightPanelVisible ? '关闭右侧面板' : '打开右侧面板' }}</q-tooltip>
+            </button>
+            <button type="button" class="topbar-icon-btn" aria-label="外观">
+              <OiIcon name="palette" :size="18" />
+              <q-tooltip anchor="bottom middle" self="top middle">外观</q-tooltip>
+            </button>
           </div>
         </header>
 
         <div ref="messagesAreaRef" class="messages-container">
           <q-inner-loading :showing="isSessionSwitching" color="grey-5" />
 
-          <div v-if="!isSessionSwitching && displayMessages.length === 0" class="empty-chat flex flex-center">
-            <div class="empty-chat__content imago-surface">
-              <q-icon name="chat_bubble_outline" size="48px" color="grey-6" class="q-mb-md" />
-              <div class="text-h6 text-grey-3 q-mb-xs">开始新会话</div>
-              <p class="text-body2 text-grey-6">输入 prompt，生成图像、变体与可复用参数会同步出现在右侧面板。</p>
+          <div v-if="!initialLoading && !isSessionSwitching && displayMessages.length === 0" class="empty-chat flex flex-center">
+            <div class="empty-chat__content">
+              <!-- Animated AI logo -->
+              <div class="empty-chat__logo-wrap">
+                <div class="empty-chat__logo-ring">
+                  <div class="empty-chat__logo-inner">
+                    <img src="/icons/favicon-96x96.png" alt="AI" class="empty-chat__logo-img" />
+                  </div>
+                </div>
+              </div>
+              <div class="empty-chat__title">描述你想要的画面，AI 即刻创作</div>
               <div class="suggestions">
-                <q-btn
+                <button
                   v-for="suggestion in suggestions"
-                  :key="suggestion"
-                   outline
-                   no-caps
-                   flat
-                   class="suggestion-chip imago-option--chip"
-                  :label="suggestion"
-                  @click="useSuggestion(suggestion)"
-                />
+                  :key="suggestion.label"
+                  type="button"
+                  class="suggestion-chip"
+                  @click="useSuggestion(suggestion.label)"
+                >
+                  <q-icon :name="suggestion.icon" size="16px" class="suggestion-chip__icon" />
+                  <span>{{ suggestion.label }}</span>
+                </button>
               </div>
             </div>
           </div>
@@ -125,12 +105,11 @@
 
             <div v-for="turn in displayTurns" :key="turn.user.id" class="message-turn">
               <div class="turn-container">
-                <!-- User message: right-aligned compact card -->
+                <!-- User message: minimal prompt flow -->
                 <div class="user-turn-content">
                   <div v-if="getUserComments(turn.user).length > 0" class="user-comments q-mb-sm">
                     <div v-for="comment in getUserComments(turn.user)" :key="comment.id" class="user-comment-card">
-                      <div class="row items-center q-gutter-xs text-caption text-blue-grey-2">
-                        <q-icon name="comment" size="14px" />
+                      <div class="row items-center q-gutter-xs text-caption user-comment-meta">
                         <span class="text-weight-medium">{{ t('agent.context') }}</span>
                         <span v-if="comment.path" class="ellipsis user-comment-path">{{ comment.path }}</span>
                       </div>
@@ -140,7 +119,7 @@
                   </div>
                   <div v-if="getUserContextFiles(turn.user).length > 0" class="user-context-files q-mb-sm">
                     <div class="text-caption text-blue-grey-2 q-mb-xs">上下文</div>
-                    <div class="row q-col-gutter-xs q-row-gutter-xs" style="justify-content: flex-end">
+                    <div class="row q-col-gutter-xs q-row-gutter-xs user-context-files__list">
                       <div v-for="attachment in getUserContextFiles(turn.user)" :key="attachment.id" class="col-auto">
                         <div class="user-context-chip">
                           <q-icon :name="attachment.mime.includes('image') ? 'image' : 'description'" size="14px" />
@@ -174,12 +153,12 @@
                   <div v-if="getUserMetaLabel(turn.user) || canRevertTurn(turn.user)" class="user-message-footer q-mt-sm row items-center justify-between q-gutter-sm">
                     <div v-if="getUserMetaLabel(turn.user)" class="user-message-meta">{{ getUserMetaLabel(turn.user) }}</div>
                     <div class="row items-center q-gutter-xs">
-                      <q-btn flat dense round size="sm" icon="content_copy" color="white" class="user-turn-action" @click="copyTurn(turn.user)">
-                        <q-tooltip>{{ t('shared.copy') }}</q-tooltip>
-                      </q-btn>
-                      <q-btn v-if="canRevertTurn(turn.user)" flat dense round size="sm" icon="history" color="white" class="user-turn-action" @click="revertTurn(turn.user)">
-                        <q-tooltip>{{ t('agent.restore') }}</q-tooltip>
-                      </q-btn>
+                      <button class="user-turn-action" type="button" :title="t('shared.copy')" @click="copyTurn(turn.user)">
+                        <OiIcon name="copy" size="13px" />
+                      </button>
+                      <button v-if="canRevertTurn(turn.user)" class="user-turn-action" type="button" :title="t('agent.restore')" @click="revertTurn(turn.user)">
+                        <OiIcon name="revert" size="13px" />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -200,7 +179,7 @@
                     <div v-if="shouldShowAssistantPlaceholder(turn)" class="row items-center q-gutter-xs thinking-indicator">
                       <q-spinner-dots size="16px" color="grey-5" />
                       <span class="text-caption text-grey-5">
-                        {{ sessionStatus === 'retry' ? '重试中...' : getAssistantThinkingLabel(turn) }}
+                        {{ sessionStatus === 'retry' ? '重试中...' : getAssistantThinkingLabel() }}
                       </span>
                     </div>
                     <template v-for="part in visibleAssistantParts(turn.assistant)" :key="part.id">
@@ -208,7 +187,7 @@
                         v-if="part.type === 'reasoning' && (partText.get(part.id) ?? part.text ?? '').trim()"
                         :part="part"
                         :text="partText.get(part.id) ?? part.text ?? ''"
-                        :turn-duration-ms="getTurnDurationMs(turn)"
+                        :turn-active="isLoading && isActiveAssistantTurn(turn)"
                       />
                       <AgentToolCall
                         v-else-if="part.type === 'tool' && !shouldHideToolPart(part)"
@@ -235,28 +214,24 @@
                       </div>
                     </template>
 
-                    <div v-if="getTurnMetaLabel(turn) || getAssistantCopyText(turn.assistant)" class="assistant-turn-footer row items-center justify-between q-gutter-sm q-mt-sm">
+                    <div v-if="getTurnMetaLabel(turn) || getAssistantCopyText(turn.assistant)" class="assistant-turn-footer row items-center justify-start q-gutter-xs q-mt-sm">
                       <div v-if="getTurnMetaLabel(turn)" class="turn-meta-label text-caption text-grey-5">
                         {{ getTurnMetaLabel(turn) }}
                       </div>
-                      <q-btn
+                      <button
                         v-if="getAssistantCopyText(turn.assistant)"
-                        flat
-                        dense
-                        round
-                        size="sm"
-                        icon="content_copy"
-                        color="grey-5"
-                        class="assistant-turn-action"
+                        class="assistant-copy-btn"
+                        type="button"
+                        :title="t('shared.copy')"
                         @click="copyAssistantTurn(turn.assistant)"
                       >
-                        <q-tooltip>{{ t('shared.copy') }}</q-tooltip>
-                      </q-btn>
+                        <OiIcon name="copy" size="13px" />
+                      </button>
                     </div>
                   </div>
                   <div v-else class="row items-center q-gutter-xs thinking-indicator">
                     <q-spinner-dots size="16px" color="grey-5" />
-                    <span class="text-caption text-grey-5">{{ sessionStatus === 'retry' ? '重试中...' : '正在思考...' }}</span>
+                    <span class="text-caption text-grey-5">{{ sessionStatus === 'retry' ? '重试中...' : 'Thinking...' }}</span>
                   </div>
                 </div>
               </div>
@@ -266,6 +241,22 @@
           </q-infinite-scroll>
         </div>
 
+          </main>
+        </UILayoutPage>
+      </UILayoutPageContainer>
+
+      <UILayoutFooter bordered>
+        <!-- Scroll-to-bottom affordance: floats above the footer, centered -->
+        <Transition name="scroll-btn-fade">
+          <button
+            v-if="userScrolled && displayMessages.length > 0"
+            class="scroll-to-bottom-btn"
+            :aria-label="t('agent.scrollToBottom')"
+            @click="scrollToBottomNow()"
+          >
+            <q-icon name="keyboard_arrow_down" size="18px" />
+          </button>
+        </Transition>
         <div class="input-area">
           <div class="input-container">
             <AgentQuestion
@@ -380,43 +371,34 @@
             </div>
           </div>
         </div>
-      </main>
+      </UILayoutFooter>
 
-      <aside class="side-panel">
-        <div class="side-panel__inner">
-          <q-tabs v-model="resultTab" dense no-caps active-color="grey-4" indicator-color="grey-7" class="side-tabs">
-            <q-tab name="result" label="生成结果" />
-            <q-tab name="canvas" label="画布" />
-            <q-tab name="prompt" label="提示词" />
-          </q-tabs>
-
-          <div class="side-panel__body">
-            <div v-if="resultTab === 'result'" class="side-panel__placeholder">
-              <q-icon name="image" size="28px" color="grey-7" class="q-mb-sm" />
-              <div class="text-caption text-grey-7">暂无生成结果</div>
-            </div>
-            <div v-else-if="resultTab === 'canvas'" class="side-panel__placeholder">
-              <q-icon name="brush" size="28px" color="grey-7" class="q-mb-sm" />
-              <div class="text-caption text-grey-7">画布编辑器</div>
-            </div>
-            <div v-else class="side-panel__placeholder">
-              <q-icon name="auto_awesome" size="28px" color="grey-7" class="q-mb-sm" />
-              <div class="text-caption text-grey-7">提示词优化</div>
-            </div>
-          </div>
-        </div>
-      </aside>
-    </div>
-  </div>
+      <UILayoutDrawer v-model="rightPanelVisible" side="right" :width="360" behavior="desktop" bordered>
+        <SessionWorkspaceResultsPanel
+          v-model="resultTab"
+          :current-session-label="currentSessionLabel"
+          :latest-prompt-text="latestPromptText"
+          :generated-results="resultsPanelItems"
+          :selected-result-id="selectedResultId"
+          :selected-result="selectedResultPanelItem"
+          :show-pending-result-tile="showPendingResultTile"
+          :side-panel-result-count="sidePanelResultCount"
+          @select-result="handleSelectResult"
+        />
+      </UILayoutDrawer>
+    </UILayout>
+  </q-page>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useQuasar, QInfiniteScroll } from 'quasar'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import type { AgentPart, FilePart, TextPart, ToolPart } from '@opencode-ai/sdk/v2'
 import { MarkdownRender } from 'markstream-vue'
 import 'markstream-vue/index.css'
+import OiIcon from 'src/components/ui/OiIcon.vue'
 import AgentReasoning from 'src/components/AgentReasoning.vue'
 import AgentToolCall from 'src/components/AgentToolCall.vue'
 import AgentFilePart from 'src/components/AgentFilePart.vue'
@@ -426,8 +408,10 @@ import AgentUserMessageBody from 'src/components/AgentUserMessageBody.vue'
 import AgentQuestion from 'src/components/AgentQuestion.vue'
 import AgentPermission from 'src/components/AgentPermission.vue'
 import AgentPromptInput from 'src/components/AgentPromptInput.vue'
+import SessionWorkspaceSidebar from 'src/components/session-workspace/SessionWorkspaceSidebar.vue'
+import SessionWorkspaceResultsPanel from 'src/components/session-workspace/SessionWorkspaceResultsPanel.vue'
+import { UILayout, UILayoutDrawer, UILayoutFooter, UILayoutPage, UILayoutPageContainer } from 'src/components/ui/layout'
 import { useAgentSession, type DisplayMessage } from 'src/composables/useAgentSession'
-import { extractHeading } from 'src/utils/heading'
 import type { SessionItem } from 'src/services/agents'
 
 type DisplayTurn = {
@@ -442,44 +426,94 @@ type UserComment = {
   preview?: string
 }
 
+type GeneratedResultItem = {
+  id: string
+  url: string
+  filename: string
+  time: Date
+  prompt: string
+}
+
+type SidebarSessionItem = {
+  id: string
+  title: string
+  preview: string
+  timeLabel: string
+  clockLabel: string
+  meta: string
+  active: boolean
+}
+
+type ResultPanelItem = {
+  id: string
+  url: string
+  filename: string
+  prompt: string
+  timeLabel: string
+}
+
 // ── UI refs ───────────────────────────────────────────────────────────────────
 
 const $q = useQuasar()
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 const followupCollapsed = ref(false)
 const isSessionSwitching = ref(false)
+// True while we're loading the session specified in the route param on initial mount
+const initialLoading = ref(typeof route.params.id === 'string' && !!route.params.id)
 const messagesAreaRef = ref<HTMLElement | null>(null)
 const infiniteScrollRef = ref<QInfiniteScroll | null>(null)
 const inputRef = ref<{ focus: () => void; setDraft: (value: string) => void } | null>(null)
 const draftInputMessage = ref('')
 const resultTab = ref('result')
+const selectedResultId = ref<string | null>(null)
+const sidebarCollapsed = ref(false)
+const rightPanelVisible = ref(false)
 
-const railItems = [
-  { icon: 'chat_bubble', label: '会话', active: true },
-  { icon: 'deployed_code', label: '模型', active: false },
-  { icon: 'image', label: '素材', active: false },
-  { icon: 'group', label: '团队', active: false },
-  { icon: 'bar_chart', label: '数据', active: false },
-  { icon: 'settings', label: '设置', active: false },
-] as const
+function pageHeightFn(offset: number) {
+  return { minHeight: `${window.innerHeight - offset}px`, height: `${window.innerHeight - offset}px` }
+}
 
 const suggestions = [
-  t('agent.askDocs'),
-  t('agent.summarizeBase'),
-  t('agent.mainTopics'),
+  { label: '赛博朋克街道', icon: 'location_city' },
+  { label: '东方水墨山水', icon: 'landscape' },
+  { label: '3D 产品渲染', icon: 'view_in_ar' },
+  { label: '未来感建筑', icon: 'domain' },
+  { label: '电影感人像', icon: 'person' },
+  { label: '极简品牌海报', icon: 'article' },
 ] as const
 
 // ── Auto-scroll ────────────────────────────────────────────────────────────────
 
 const userScrolled = ref(false)
-const BOTTOM_THRESHOLD = 10
+const BOTTOM_THRESHOLD = 120
 
-function scrollToBottom(force = false) {
+/**
+ * Flag to suppress scroll-event detection while WE are programmatically scrolling.
+ * Without this, our instant `scrollTop = scrollHeight` fires an `onScroll` event
+ * that immediately sets `userScrolled = true`, breaking further auto-scrolling.
+ */
+let programmaticScrolling = false
+let programmaticScrollTimer: ReturnType<typeof setTimeout> | null = null
+/** Track previous scrollTop to detect scroll direction in onScroll */
+let lastScrollTop = 0
+
+function doScrollToBottom() {
   const el = messagesAreaRef.value
   if (!el) return
+  programmaticScrolling = true
+  el.scrollTop = el.scrollHeight
+  lastScrollTop = el.scrollTop
+  // Clear flag after browser has processed the scroll event
+  if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer)
+  programmaticScrollTimer = setTimeout(() => { programmaticScrolling = false }, 50)
+}
+
+function scrollToBottom(force = false) {
   if (force) userScrolled.value = false
   if (userScrolled.value && !force) return
-  el.scrollTop = el.scrollHeight
+  doScrollToBottom()
 }
 
 function scrollToBottomNow() {
@@ -498,16 +532,14 @@ function setupAutoScroll() {
   const el = messagesAreaRef.value
   if (!el) return
 
+  // ResizeObserver fires when message content grows (streaming tokens).
   resizeObserver = new ResizeObserver(() => {
-    const area = messagesAreaRef.value
-    if (!area) return
-    if (isLoading.value && !userScrolled.value) {
-      area.scrollTop = area.scrollHeight
-    }
+    if (!userScrolled.value) doScrollToBottom()
   })
+  const inner = el.firstElementChild
+  if (inner) resizeObserver.observe(inner)
   resizeObserver.observe(el)
 
-  el.addEventListener('wheel', onWheel, { passive: true })
   el.addEventListener('scroll', onScroll, { passive: true })
 }
 
@@ -520,29 +552,29 @@ function teardownAutoScroll() {
     resizeObserver = null
   }
 
-  el.removeEventListener('wheel', onWheel)
   el.removeEventListener('scroll', onScroll)
-}
-
-function onWheel(e: WheelEvent) {
-  const target = e.target as HTMLElement | null
-  if (target?.closest('[data-scrollable]')) return
-
-  if (e.deltaY < 0) {
-    userScrolled.value = true
-  }
+  if (programmaticScrollTimer) { clearTimeout(programmaticScrollTimer); programmaticScrollTimer = null }
 }
 
 function onScroll() {
+  // Ignore scroll events triggered by our own programmatic scrolling
+  if (programmaticScrolling) return
   const el = messagesAreaRef.value
   if (!el) return
 
-  const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+  const currentScrollTop = el.scrollTop
+  const distanceFromBottom = el.scrollHeight - currentScrollTop - el.clientHeight
+
   if (distanceFromBottom <= BOTTOM_THRESHOLD) {
+    // User reached the bottom — resume auto-scroll
     userScrolled.value = false
-  } else {
+  } else if (currentScrollTop < lastScrollTop) {
+    // User scrolled UP — pause auto-scroll
     userScrolled.value = true
   }
+  // Scrolling DOWN but not yet at bottom: keep current userScrolled state unchanged
+
+  lastScrollTop = currentScrollTop
 }
 
 // ── Composable ────────────────────────────────────────────────────────────────
@@ -672,6 +704,94 @@ const displayTurns = computed<DisplayTurn[]>(() => {
   }
   return turns
 })
+
+const latestPromptText = computed(() => {
+  for (let index = displayTurns.value.length - 1; index >= 0; index -= 1) {
+    const text = getUserMessageText(displayTurns.value[index]!.user).trim()
+    if (text) return text
+  }
+  return ''
+})
+
+const generatedResults = computed<GeneratedResultItem[]>(() => {
+  const items: GeneratedResultItem[] = []
+
+  for (const turn of displayTurns.value) {
+    if (!turn.assistant) continue
+
+    const prompt = getUserMessageText(turn.user).trim()
+
+    for (const part of turn.assistant.parts) {
+      if (part.type !== 'file') continue
+      const mime = part.mime?.toLowerCase() ?? ''
+      const filename = part.filename || part.url.split('/').at(-1) || '生成结果'
+      const looksLikeImage = mime.includes('image') || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(filename)
+      if (!looksLikeImage) continue
+
+      items.push({
+        id: part.id,
+        url: part.url,
+        filename,
+        time: turn.assistant.time,
+        prompt,
+      })
+    }
+  }
+
+  return items.sort((left, right) => right.time.getTime() - left.time.getTime())
+})
+
+const sidebarSessions = computed<SidebarSessionItem[]>(() => sessionList.value
+  .slice()
+  .sort((left, right) => right.time.getTime() - left.time.getTime())
+  .map((session) => ({
+    id: session.id,
+    title: getSessionLabel(session),
+    preview: getSessionPreview(session),
+    timeLabel: formatSessionTime(session.time),
+    clockLabel: formatClock(session.time),
+    meta: getSessionMeta(session),
+    active: isSessionActive(session),
+  })))
+
+const showPendingResultTile = computed(() => isLoading.value && generatedResults.value.length > 0)
+
+const sidePanelResultCount = computed(() => generatedResults.value.length + (showPendingResultTile.value ? 1 : 0))
+
+const selectedGeneratedResult = computed<GeneratedResultItem | null>(() => {
+  const selected = generatedResults.value.find((item) => item.id === selectedResultId.value)
+  return selected ?? generatedResults.value[0] ?? null
+})
+
+const resultsPanelItems = computed<ResultPanelItem[]>(() => generatedResults.value.map((item) => ({
+  id: item.id,
+  url: item.url,
+  filename: item.filename,
+  prompt: item.prompt,
+  timeLabel: formatResultTime(item.time),
+})))
+
+const selectedResultPanelItem = computed<ResultPanelItem | null>(() => {
+  if (!selectedGeneratedResult.value) return null
+  return {
+    id: selectedGeneratedResult.value.id,
+    url: selectedGeneratedResult.value.url,
+    filename: selectedGeneratedResult.value.filename,
+    prompt: selectedGeneratedResult.value.prompt,
+    timeLabel: formatResultTime(selectedGeneratedResult.value.time),
+  }
+})
+
+watch(generatedResults, (items) => {
+  if (items.length === 0) {
+    selectedResultId.value = null
+    return
+  }
+
+  if (!selectedResultId.value || !items.some((item) => item.id === selectedResultId.value)) {
+    selectedResultId.value = items[0]!.id
+  }
+}, { immediate: true })
 
 // ── Session helpers ───────────────────────────────────────────────────────────
 
@@ -825,8 +945,56 @@ function formatSessionTime(date: Date): string {
   return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
 
+function getSessionPreview(session: SessionItem): string {
+  const entries = sessionMessages.value[session.id] ?? []
+
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]
+    if (!entry || entry.info.role !== 'user') continue
+
+    const preview = entry.parts
+      .filter((part): part is TextPart => part.type === 'text' && !part.synthetic)
+      .map((part) => part.text.trim())
+      .find(Boolean)
+
+    if (preview) return clipText(preview, 42)
+  }
+
+  return ''
+}
+
+function getSessionMeta(session: SessionItem): string {
+  const messages = sessionMessages.value[session.id] ?? []
+  const imageCount = messages.reduce((count, entry) => count + entry.parts.filter((part) => {
+    if (part.type !== 'file') return false
+    const mime = part.mime?.toLowerCase() ?? ''
+    const filename = part.filename || ''
+    return mime.includes('image') || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(filename)
+  }).length, 0)
+
+  return imageCount > 0 ? `${imageCount} 张结果` : '对话工作流'
+}
+
 function formatClock(date: Date): string {
   return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
+
+function formatResultTime(date: Date): string {
+  const diff = Date.now() - date.getTime()
+  if (diff < 60_000) return '刚刚'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`
+  return date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
+}
+
+function clipText(value: string, max = 48): string {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= max) return normalized
+  return `${normalized.slice(0, Math.max(0, max - 1))}…`
+}
+
+function handleSelectResult(id: string) {
+  selectedResultId.value = id
 }
 
 function formatUserMessageTime(date: Date): string {
@@ -851,24 +1019,8 @@ function formatRetryError(error: unknown): string {
 
 // ── Message rendering helpers ────────────────────────────────────────────────
 
-function getAssistantTurnHeading(message: DisplayMessage): string {
-  if (message.role !== 'assistant') return ''
-
-  const reasoningPart = message.parts.find((part) => (
-    part.type === 'reasoning' && (partText.value.get(part.id) ?? (part as { text?: string }).text ?? '').trim()
-  ))
-  if (reasoningPart?.type === 'reasoning') {
-    const heading = extractHeading(partText.value.get(reasoningPart.id) ?? (reasoningPart as { text: string }).text ?? '')
-    if (heading) return heading
-  }
-
-  return ''
-}
-
-function getAssistantThinkingLabel(turn: DisplayTurn): string {
-  const heading = turn.assistant ? getAssistantTurnHeading(turn.assistant) : ''
-  if (heading) return heading
-  return '正在思考...'
+function getAssistantThinkingLabel(): string {
+  return 'Thinking...'
 }
 
 function getLastTextPartId(message: DisplayMessage): string | undefined {
@@ -887,14 +1039,6 @@ function formatTurnDuration(ms?: number): string {
   if (typeof ms !== 'number' || ms < 0) return ''
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(1)}s`
-}
-
-function getTurnDurationMs(turn: DisplayTurn): number | undefined {
-  const started = turn.user.info?.time?.created;
-  const assistantTime = turn.assistant?.info?.time;
-  const completed = assistantTime && 'completed' in assistantTime ? (assistantTime as { completed?: number }).completed : undefined;
-  if (typeof started !== 'number' || typeof completed !== 'number' || completed < started) return undefined;
-  return completed - started;
 }
 
 function getTurnMetaLabel(turn: DisplayTurn): string {
@@ -1015,6 +1159,7 @@ async function handleSwitchSession(sid: string) {
   isSessionSwitching.value = true
   try {
     await switchSession(sid)
+    void router.push({ name: 'session', params: { id: sid } })
   } finally {
     isSessionSwitching.value = false
   }
@@ -1032,10 +1177,28 @@ function onFilesSelected(files: File[]) {
 onMounted(() => {
   void loadAgents()
   void loadCommands()
-  void loadSessionList()
+  void loadSessionList().then(() => {
+    // If landing directly on /sessions/:id, switch to that session
+    const paramId = route.params.id
+    if (paramId && typeof paramId === 'string' && paramId !== sessionId.value) {
+      void switchSession(paramId).finally(() => { initialLoading.value = false })
+    } else {
+      initialLoading.value = false
+    }
+  })
   startEventSubscription()
   void nextTick(() => { inputRef.value?.focus(); setupAutoScroll() })
 })
+
+// Sync session when user navigates via browser back/forward
+watch(
+  () => route.params.id,
+  (id) => {
+    const sid = typeof id === 'string' ? id : undefined
+    if (sid && sid !== sessionId.value) void switchSession(sid)
+    else if (!sid && sessionId.value) void switchSession('')
+  },
+)
 
 onUnmounted(() => {
   teardownAutoScroll()
@@ -1052,183 +1215,34 @@ onUnmounted(() => {
 
 .session-workspace {
   position: relative;
-  width: 100vw;
-  min-height: 100vh;
-  overflow: hidden;
-  color: var(--imago-text-primary);
-  background: var(--imago-bg-void);
-}
-
-.workspace-layout {
-  position: relative;
-  z-index: 1;
-  height: 100vh;
-  display: grid;
-  grid-template-columns: 260px minmax(480px, 1fr) 320px;
-}
-
-.session-sidebar,
-.chat-area,
-.side-panel {
-  min-width: 0;
-}
-
-/* ── Left sidebar ────────────────────────────────────────────────────────── */
-
-.session-sidebar {
-  border-right: 1px solid var(--imago-border-light);
-  background: var(--imago-bg-void);
-}
-
-.sidebar-brand {
-  height: 52px;
-  display: flex;
-  align-items: center;
-  padding: 0 18px;
-}
-
-.brand-name {
-  color: var(--imago-text-primary);
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.session-shell {
-  height: calc(100vh - 52px);
-  display: grid;
-  grid-template-columns: 64px 1fr;
-  border-top: 1px solid var(--imago-border-light);
-}
-
-.session-rail {
-  position: relative;
-  display: grid;
-  grid-auto-rows: 44px;
-  gap: 4px;
-  justify-items: center;
-  padding-top: 16px;
-  border-right: 1px solid var(--imago-border-light);
-  background: var(--imago-bg-void);
-}
-
-.rail-btn,
-.rail-collapse {
-  width: 40px;
-  height: 40px;
-  color: var(--imago-text-muted);
-  border: 1px solid transparent;
-  transition: color 120ms ease;
-}
-
-.rail-btn:hover,
-.rail-collapse:hover {
-  color: var(--imago-text-secondary);
-}
-
-.rail-btn--active {
-  color: var(--imago-text-primary);
-  background: var(--imago-border-light);
-}
-
-.rail-collapse {
-  position: absolute;
-  bottom: 20px;
-  color: var(--imago-text-dim);
-}
-
-/* ── Session list ────────────────────────────────────────────────────────── */
-
-.session-list-panel {
-  min-width: 0;
-  padding: 14px 12px 14px 16px;
-  overflow-y: auto;
-  background: var(--imago-bg-void);
-}
-
-.new-session-btn {
   width: 100%;
-  height: 36px;
+  height: 100%;
   color: var(--imago-text-primary);
-  background: var(--imago-border-soft);
-  border-radius: var(--imago-radius-md);
-  font-size: 14px;
-  font-weight: 500;
+  background: var(--imago-bg-void);
 }
 
-.new-session-btn:hover {
-  background: var(--imago-border-dim);
+.session-layout {
+  z-index: 1;
+  width: 100%;
 }
 
-.session-group {
-  margin-top: 20px;
+/* Override UILayoutDrawer default white bg with our dark creative theme */
+.session-layout :deep(.ui-layout__drawer) {
+  background: var(--imago-bg-void) !important;
+  color: var(--imago-text-primary);
+  border-color: var(--imago-border-light);
 }
 
-.session-group__title {
-  display: flex;
-  justify-content: space-between;
-  color: var(--imago-text-dim);
-  font-size: 12px;
-  font-weight: 500;
-  margin: 0 8px 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+.session-layout :deep(.ui-layout__drawer--left) {
+  border-right: 1px solid var(--imago-border-light);
 }
 
-.session-list {
-  display: grid;
-  gap: 2px;
+.session-layout :deep(.ui-layout__drawer--right) {
+  border-left: 1px solid var(--imago-border-light);
 }
 
-.session-list-empty {
-  margin-top: 12px;
-  color: var(--imago-text-faint);
-  font-size: 13px;
-  text-align: center;
-}
-
-.session-item {
-  min-height: 60px;
-  padding: 8px 10px 8px 10px;
-  color: var(--imago-text-muted);
-  border: 1px solid transparent;
-  border-radius: var(--imago-radius-md);
-  background: transparent;
-}
-
-.session-item:hover {
-  background: var(--imago-bg-raised);
-}
-
-.session-item--active {
-  background: var(--imago-border-light);
-  border-color: var(--imago-border-soft);
-}
-
-.session-title {
-  color: var(--imago-text-secondary);
-  font-size: 13px;
-  line-height: 1.3;
-}
-
-.session-preview {
-  margin-top: 4px;
-  color: var(--imago-text-dim) !important;
-  font-size: 12px;
-}
-
-.session-time {
-  color: var(--imago-text-dim);
-  font-size: 11px;
-}
-
-.session-delete {
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-
-.session-item:hover .session-delete {
-  opacity: 1;
+.chat-page {
+  min-width: 0;
 }
 
 /* ── Chat area ───────────────────────────────────────────────────────────── */
@@ -1236,7 +1250,8 @@ onUnmounted(() => {
 .chat-area {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  flex: 1;
+  min-height: 0;
   background: var(--imago-bg-void);
 }
 
@@ -1301,13 +1316,30 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
-.topbar-icon {
+.topbar-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 32px;
   height: 32px;
-  color: var(--imago-text-muted);
-  border-color: var(--imago-border-light);
+  padding: 0;
+  border: 1px solid var(--imago-border-light);
   border-radius: var(--imago-radius-md);
   background: transparent;
+  cursor: pointer;
+  color: var(--imago-text-muted);
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.topbar-icon-btn:hover {
+  color: var(--imago-text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.topbar-icon-btn--active {
+  color: var(--imago-neon-cyan);
+  border-color: rgba(0, 240, 255, 0.2);
+  background: rgba(0, 240, 255, 0.06);
 }
 
 /* ── Messages ────────────────────────────────────────────────────────────── */
@@ -1317,7 +1349,43 @@ onUnmounted(() => {
   min-height: 0;
   overflow-y: auto;
   padding: 20px 24px 12px;
-  scroll-behavior: smooth;
+  position: relative;
+}
+
+/* Scroll-to-bottom floating button — sits above the footer, centered */
+.scroll-to-bottom-btn {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, calc(-100% - 10px));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--imago-border-light);
+  background: var(--imago-bg-raised);
+  color: var(--imago-text-secondary);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: background var(--imago-ease-fast), border-color var(--imago-ease-fast);
+  z-index: 1002;
+
+  &:hover {
+    background: var(--imago-bg-float);
+    border-color: var(--imago-border-soft);
+  }
+}
+
+.scroll-btn-fade-enter-active,
+.scroll-btn-fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.scroll-btn-fade-enter-from,
+.scroll-btn-fade-leave-to {
+  opacity: 0;
+  transform: translate(-50%, calc(-100% - 4px));
 }
 
 .empty-chat {
@@ -1326,35 +1394,142 @@ onUnmounted(() => {
 }
 
 .empty-chat__content {
-  width: min(420px, 84%);
-  padding: 32px 28px;
+  width: min(560px, 90%);
+  padding: 0 16px;
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ── AI Logo ── */
+.empty-chat__logo-wrap {
+  margin-bottom: 32px;
+  position: relative;
+  width: 160px;
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-chat__logo-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: linear-gradient(135deg, rgba(0, 240, 255, 0.6), rgba(140, 80, 255, 0.6)) border-box;
+  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: destination-out;
+  mask-composite: exclude;
+  animation: logo-spin 6s linear infinite;
+  box-shadow: 0 0 32px rgba(0, 240, 255, 0.15), 0 0 80px rgba(140, 80, 255, 0.08);
+}
+
+.empty-chat__logo-ring::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 240, 255, 0.15);
+}
+
+.empty-chat__logo-ring::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--imago-neon-cyan);
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 0 8px var(--imago-neon-cyan);
+}
+
+.empty-chat__logo-inner {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #1a1a2e 0%, #0d0d1a 100%);
+  border: 1.5px solid rgba(140, 80, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 20px rgba(140, 80, 255, 0.1);
+}
+
+.empty-chat__logo-img {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 8px rgba(140, 80, 255, 0.5));
+}
+
+@keyframes logo-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.empty-chat__title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--imago-text-primary);
+  margin-bottom: 28px;
+  letter-spacing: 0.01em;
 }
 
 .suggestions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: 100%;
+}
+
+.suggestion-chip {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+  align-items: center;
   gap: 8px;
-  margin-top: 16px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--imago-border-light);
+  border-radius: var(--imago-radius-md);
+  color: var(--imago-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.suggestion-chip__icon {
+  color: var(--imago-neon-cyan);
+  opacity: 0.75;
+  flex-shrink: 0;
 }
 
 .suggestion-chip:hover {
-  border-color: var(--imago-border-dim);
-  background: var(--imago-bg-raised);
+  color: var(--imago-text-primary);
+  border-color: rgba(0, 240, 255, 0.25);
+  background: rgba(0, 240, 255, 0.05);
+}
+
+.suggestion-chip:hover .suggestion-chip__icon {
+  opacity: 1;
 }
 
 .message-turn + .message-turn {
-  margin-top: 24px;
+  margin-top: 30px;
 }
 
 .turn-container {
-  max-width: 800px;
+  max-width: 760px;
   margin: 0 auto;
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 2px;
 }
 
 .user-turn-content {
@@ -1363,25 +1538,25 @@ onUnmounted(() => {
   align-items: flex-end;
   width: 100%;
   max-width: 100%;
-  margin-bottom: 12px;
+  gap: 4px;
+  margin-bottom: 10px;
 }
 
 .user-message-body {
-  width: fit-content;
-  max-width: min(82%, 64ch);
+  max-width: min(100%, 62ch);
   margin-left: auto;
-  background: var(--imago-border-light);
-  border: 1px solid var(--imago-border-soft);
-  padding: 8px 12px;
-  border-radius: var(--imago-radius-sm);
-  display: inline-block;
+  padding: 10px 14px;
+  color: var(--imago-text-primary);
+  border-radius: var(--imago-radius-md);
+  border: 1px solid var(--imago-border-light);
+  background: var(--imago-bg-raised);
 }
 
 .assistant-turn-content {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .compaction-divider {
@@ -1405,13 +1580,13 @@ onUnmounted(() => {
 }
 
 .assistant-content {
-  max-width: 100%;
+  max-width: min(100%, 72ch);
   word-break: break-word;
   overflow-wrap: break-word;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 12px;
+  gap: 10px;
 }
 
 .user-attachments {
@@ -1420,7 +1595,7 @@ onUnmounted(() => {
   justify-content: flex-end;
   gap: 8px;
   width: fit-content;
-  max-width: min(82%, 64ch);
+  max-width: min(100%, 62ch);
   margin-left: auto;
 }
 
@@ -1430,10 +1605,10 @@ onUnmounted(() => {
   gap: 6px;
   max-width: min(100%, 220px);
   height: 48px;
-  padding: 0 10px;
-  border-radius: var(--imago-radius-sm);
-  background: var(--imago-border-soft);
-  border: 1px solid var(--imago-border-dim);
+  padding: 0 8px;
+  border-radius: 10px;
+  background: rgba(255 255 255 / 0.015);
+  border: 1px solid rgba(255 255 255 / 0.05);
   font-size: 12px;
   line-height: 1.3;
   min-width: 0;
@@ -1463,17 +1638,21 @@ onUnmounted(() => {
   gap: 8px;
   align-items: flex-end;
   width: 100%;
-  max-width: min(82%, 64ch);
+  max-width: min(100%, 62ch);
   margin-bottom: 8px;
 }
 
 .user-comment-card {
   width: 100%;
-  max-width: min(100%, 520px);
-  padding: 10px 12px;
-  border-radius: var(--imago-radius-sm);
-  background: var(--imago-border-light);
-  border: 1px solid var(--imago-border-soft);
+  max-width: 100%;
+  padding: 4px 0 4px 12px;
+  border-radius: 0;
+  background: transparent;
+  border-left: 1px solid rgba(0 229 255 / 0.24);
+}
+
+.user-comment-meta {
+  color: rgba(148 163 184 / 0.9);
 }
 
 .user-comment-path {
@@ -1481,18 +1660,22 @@ onUnmounted(() => {
 }
 
 .user-comment-preview {
-  padding: 6px 8px;
-  border-radius: var(--imago-radius-sm);
-  background: var(--imago-bg-raised);
-  color: rgba(255, 255, 255, 0.72);
+  padding: 4px 0 0;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.56);
   white-space: pre-wrap;
 }
 
 .user-context-files {
   width: fit-content;
-  max-width: min(82%, 64ch);
+  max-width: min(100%, 62ch);
   margin-left: auto;
   margin-bottom: 8px;
+}
+
+.user-context-files__list {
+  justify-content: flex-end;
 }
 
 .user-context-chip {
@@ -1500,18 +1683,19 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   max-width: 280px;
-  padding: 5px 10px;
-  border-radius: var(--imago-radius-pill);
-  background: var(--imago-border-light);
-  border: 1px solid var(--imago-border-soft);
+  padding: 3px 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
   font-size: 12px;
   line-height: 1.3;
+  color: rgba(255 255 255 / 0.62);
 }
 
 .user-message-footer {
   min-height: 24px;
   width: 100%;
-  max-width: min(82%, 64ch);
+  max-width: min(100%, 62ch);
 }
 
 .user-message-meta {
@@ -1521,9 +1705,24 @@ onUnmounted(() => {
 }
 
 .user-turn-action {
-  background: var(--imago-border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: rgba(255 255 255 / 0.08);
+  color: rgba(255 255 255 / 0.6);
+  cursor: pointer;
+  border-radius: 4px;
   opacity: 0;
-  transition: opacity 150ms ease;
+  transition: opacity 150ms ease, background var(--imago-ease-fast);
+  padding: 0;
+
+  &:hover {
+    background: rgba(255 255 255 / 0.15);
+    color: rgba(255 255 255 / 0.9);
+  }
 }
 
 .user-turn-content:hover .user-turn-action,
@@ -1533,22 +1732,53 @@ onUnmounted(() => {
 
 .assistant-turn-footer {
   min-height: 24px;
+  width: min(100%, 72ch);
+  opacity: 0;
+  transition: opacity 0.15s ease;
 }
 
-.assistant-turn-action {
-  background: rgba(148 163 184 / 0.06);
+.assistant-content:hover .assistant-turn-footer {
+  opacity: 1;
+}
+
+.assistant-copy-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  color: var(--imago-text-dim);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color var(--imago-ease-fast), background var(--imago-ease-fast);
+  padding: 0;
+
+  &:hover {
+    color: var(--imago-text-secondary);
+    background: rgba(148 163 184 / 0.1);
+  }
 }
 
 .thinking-indicator {
-  padding: 2px 0 6px;
+  padding: 0 0 4px;
+  color: var(--imago-text-dim);
 }
 
 .text-part {
-  margin-top: 24px;
+  width: min(100%, 72ch);
+  margin-top: 16px;
   white-space: pre-wrap;
   line-height: 1.65;
   word-break: break-word;
   overflow-wrap: break-word;
+}
+
+.assistant-content :deep(.reasoning-container),
+.assistant-content :deep(.tool-call-item),
+.assistant-content :deep(.part-meta-item) {
+  width: min(100%, 72ch);
 }
 
 .text-part :deep(p) {
@@ -1637,16 +1867,29 @@ onUnmounted(() => {
   background: var(--imago-border-subtle);
 }
 
+.text-part :deep(img) {
+  width: min(100%, 440px);
+  max-width: 100%;
+  max-height: 248px;
+  height: auto;
+  aspect-ratio: auto;
+  object-fit: contain;
+  border-radius: var(--imago-radius-sm);
+  display: block;
+  border: 1px solid rgba(255 255 255 / 0.06);
+  background: rgba(255 255 255 / 0.02);
+}
+
 /* ── Input / composer region ─────────────────────────────────────────────── */
 
 .input-area {
   padding: 12px 20px 16px;
   background: var(--imago-bg-panel);
-  border-top: 1px solid var(--imago-border-light);
+
 }
 
 .input-container {
-  max-width: 800px;
+  max-width: 760px;
   margin: 0 auto;
 }
 
@@ -1716,64 +1959,15 @@ onUnmounted(() => {
   padding: 14px 16px;
 }
 
-/* ── Right side panel ────────────────────────────────────────────────────── */
-
-.side-panel {
-  height: 100vh;
-  overflow: hidden;
-  background: var(--imago-bg-panel);
-  border-left: 1px solid var(--imago-border-light);
-}
-
-.side-panel__inner {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.side-tabs {
-  flex-shrink: 0;
-  color: var(--imago-text-dim);
-}
-
-.side-panel__body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-
-.side-panel__placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 4px;
-}
-
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 
 @media (max-width: 1280px) {
-  .workspace-layout {
-    grid-template-columns: 260px minmax(480px, 1fr);
-  }
-
-  .side-panel {
-    display: none;
+  .messages-container {
+    padding-inline: 20px;
   }
 }
 
 @media (max-width: 900px) {
-  .workspace-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .session-sidebar {
-    display: none;
-  }
-
   .messages-container {
     padding-inline: 16px;
   }
