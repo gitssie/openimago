@@ -13,6 +13,7 @@ Standalone Java Debezium CDC worker that captures PostgreSQL row-level changes t
 | **Offset Storage** | JDBC (production) / File (dev) | JDBC ensures restarts are not tied to local filesystem; file available for local dev |
 | **Schema History** | JDBC (production) / File (dev) | Same rationale as offset storage |
 | **JSON Parsing** | Jackson | Industry standard JSON library |
+| **Connection Pool** | HikariCP | High-performance JDBC connection pool for billing write operations |
 | **Logging** | SLF4J + Logback | Standard Java logging stack |
 | **Testing** | JUnit 5 + AssertJ | Modern testing framework with fluent assertions |
 
@@ -109,6 +110,16 @@ If NOT set, file-based storage is used (OK for development).
 | `CDC_SNAPSHOT_MODE` | `never` | Debezium snapshot mode (`never`, `initial`, etc.) |
 | `CDC_OFFSET_FLUSH_INTERVAL_MS` | `60000` | Offset flush interval in ms |
 
+### Optional — Billing Write Connection
+
+These control the JDBC connection used for writing billing ledger entries and CDC processed events. If NOT set, the worker defaults to the same connection as the CDC database.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BILLING_DB_URL` | `jdbc:postgresql://<CDC_DB_HOST>:<CDC_DB_PORT>/<CDC_DB_NAME>` | JDBC URL for billing write operations |
+| `BILLING_DB_USER` | Same as `CDC_DB_USER` | JDBC user for billing writes |
+| `BILLING_DB_PASSWORD` | Same as `CDC_DB_PASSWORD` | JDBC password for billing writes |
+
 ## Build & Run
 
 ### Build
@@ -157,46 +168,68 @@ com.openimago.billingcdc/
 ├── config/
 │   └── AppConfig.java         # Env-based config loader (no hardcoded secrets)
 ├── engine/
-│   ├── CdcEngine.java         # Builds DebeziumEngine with PG connector
+│   ├── CdcEngine.java         # Builds DebeziumEngine with PG connector + schemaless JSON
 │   └── DebeziumRunner.java    # Async lifecycle management
-└── handler/
-    ├── ChangeEventHandler.java # Functional interface for event processing
-    ├── SessionChangeHandler.java # Handles public.session CDC events (PLACEHOLDER)
-    └── models/
-        └── BillingEvent.java   # Parsed CDC event data model
+├── handler/
+│   ├── ChangeEventHandler.java # Functional interface for event processing
+│   ├── SessionChangeHandler.java # Parses CDC events, skips non-charge updates,
+│   │                              resolves billing accounts, delegates to repository
+│   └── models/
+│       └── BillingEvent.java   # Parsed CDC event data model with delta calculation
+└── repository/
+    └── BillingRepository.java  # JDBC operations: account resolution, atomic ledger writes,
+                                  CDC processed-event deduplication
 ```
 
 ### Data Flow
 
 ```
 PostgreSQL WAL → pgoutput logical decoding → Debezium PG Connector
-    → AsyncEmbeddedEngine → JSON ChangeEvent → SessionChangeHandler
-    → (FUTURE) billing_ledger + billing_cdc_processed_events
+    → AsyncEmbeddedEngine → schemaless JSON ChangeEvent → SessionChangeHandler
+    → [parse + skip filter] → [resolve user account via workspace] → BillingRepository
+    → (billing_cdc_processed_events INSERT → on conflict skip, else
+       FOR UPDATE lock account → UPDATE balance → INSERT billing_ledger)
+    all in one JDBC transaction
 ```
 
-## Intentionally Not Implemented
+### CDC Processing Rules
 
-The following items are **not yet implemented** and will be filled in from user-provided reference code:
+For each captured `public.session` UPDATE event:
 
-1. **Billing ledger writing logic** — comparing `before.cost` vs `after.cost` and inserting ledger entries
-2. **CDC processed events deduplication** — writing to `billing_cdc_processed_events` with uniqueness key (`source_lsn + txid + table_name + operation + primary_key`)
-3. **Database transaction handling** — atomic write of ledger + processed-events rows
-4. **Database connection management** — HikariCP or similar connection pool for the billing database
-5. **Error retry and DLQ** — handling transient DB failures
-6. **Metrics and health checks** — Prometheus metrics, readiness/liveness probes
-7. **Multi-table support** — currently only `public.session` is captured
-8. **Initial snapshot handling** — `snapshot.mode` is set to `never` by default
+1. **Parse** the schemaless JSON payload: `source.schema`, `source.table`, `source.lsn`, `source.txId`, `op`, `before`, `after`, `ts_ms`
+2. **Skip** if: not `public.session`, not UPDATE (`u`), snapshot/read (`r`), insert (`c`), delete (`d`), missing before/after, `after.cost <= before.cost`, zero/negative delta micros
+3. **Compute** cost delta: `deltaMicros = round((after.cost - before.cost) * 1_000_000)`, charge amount = `-deltaMicros` (negative)
+4. **Resolve** user account: `workspace.user_id` → fallback `users.workspace_id` → get-or-create `billing_accounts` with `owner_type='user'`
+5. **Write** atomically in one JDBC transaction:
+   - INSERT `billing_cdc_processed_events` with uniqueness key (`source_lsn + txid + table_name + primary_key + operation`)
+   - If unique constraint violation → **skip** (event already processed)
+   - `SELECT ... FOR UPDATE` on `billing_accounts`
+   - UPDATE `billing_accounts.balance_micros`
+   - INSERT `billing_ledger` with `entry_type='charge'`, `source_type='session_token'`, `source_status='completed'`, `pricing_snapshot` (before/after costs + tokens), `metadata` (CDC source metadata)
 
-## CDC Processing Contract
+Errors during database write propagate to the Debezium engine — offsets are NOT advanced for failed events.
 
-When the full implementation is added, the processing rule is:
+## Implemented
 
-> If `after.cost > before.cost` for a `public.session` UPDATE event, write:
-> 1. One **negative** `billing_ledger` charge row
-> 2. One `billing_cdc_processed_events` row
->
-> Both in a single database transaction. Processed event uniqueness uses:
-> `source_lsn :: txid :: table_name :: operation :: primary_key`
+- [x] Parsing schemaless JSON Debezium events for `public.session` UPDATE
+- [x] Cost delta calculation (`after.cost - before.cost`) with integer micros rounding
+- [x] Skip logic: non-session, non-update, unchanged/decreased cost, zero/negative deltas
+- [x] User account resolution via `workspace.user_id` → `users.workspace_id` fallback
+- [x] Get-or-create `billing_accounts` with `owner_type='user'`
+- [x] Atomic JDBC transaction: processed-event dedup + account lock + ledger write
+- [x] Duplicate CDC event detection via `billing_cdc_processed_events` unique constraint
+- [x] Connection pooling (HikariCP) for billing write operations
+- [x] JDBC offset/schema history storage for production
+- [x] 11 passing unit tests covering event parsing, delta calculation, skip logic, and config
+
+## Not Yet Implemented
+
+| Feature | Status |
+|---------|--------|
+| Multi-table support (only `public.session` currently) | Not planned for v0.1 |
+| Prometheus metrics and health check endpoints | Deferred |
+| Dead letter queue for failed events | Deferred |
+| Initial snapshot handling (`snapshot.mode` is `never` by default) | Configurable |
 
 ## Cleanup
 

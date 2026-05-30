@@ -33,6 +33,9 @@ import java.util.Objects;
  * @param topicPrefix        Debezium topic/servername prefix (default: {@code openimago_billing})
  * @param snapshotMode       Debezium snapshot mode (default: {@code never})
  * @param offsetFlushIntervalMs Offset flush interval in ms (default: {@code 60000})
+ * @param billingDbUrl         JDBC URL for billing write operations (defaults to same as CDC DB if not set)
+ * @param billingDbUser        JDBC user for billing write operations
+ * @param billingDbPassword    JDBC password for billing write operations
  */
 public record AppConfig(
         String dbHost,
@@ -51,7 +54,10 @@ public record AppConfig(
         String slotName,
         String topicPrefix,
         String snapshotMode,
-        long offsetFlushIntervalMs
+        long offsetFlushIntervalMs,
+        String billingDbUrl,
+        String billingDbUser,
+        String billingDbPassword
 ) {
 
     private static final String DEFAULT_TABLE_INCLUDE_LIST = "public.session";
@@ -91,12 +97,19 @@ public record AppConfig(
                 envOrDefault("CDC_OFFSET_FLUSH_INTERVAL_MS", String.valueOf(DEFAULT_OFFSET_FLUSH_INTERVAL_MS))
         );
 
+        // Billing write connection — defaults to same as CDC DB if not explicitly set
+        String billingDbUrl = envOrDefault("BILLING_DB_URL",
+                "jdbc:postgresql://" + dbHost + ":" + dbPort + "/" + dbName);
+        String billingDbUser = envOrDefault("BILLING_DB_USER", dbUser);
+        String billingDbPassword = envOrDefault("BILLING_DB_PASSWORD", dbPassword);
+
         return new AppConfig(
                 dbHost, dbPort, dbName, dbUser, dbPassword,
                 offsetJdbcUrl, offsetJdbcUser, offsetJdbcPassword,
                 schemaHistoryJdbcUrl, schemaHistoryJdbcUser, schemaHistoryJdbcPassword,
                 tableIncludeList, publicationName, slotName, topicPrefix,
-                snapshotMode, offsetFlushIntervalMs
+                snapshotMode, offsetFlushIntervalMs,
+                billingDbUrl, billingDbUser, billingDbPassword
         );
     }
 

@@ -4,6 +4,7 @@ import com.openimago.billingcdc.config.AppConfig;
 import com.openimago.billingcdc.engine.CdcEngine;
 import com.openimago.billingcdc.engine.DebeziumRunner;
 import com.openimago.billingcdc.handler.SessionChangeHandler;
+import com.openimago.billingcdc.repository.BillingRepository;
 
 import io.debezium.engine.ChangeEvent;
 
@@ -67,9 +68,13 @@ public final class Main {
         log.info("  Slot: {}", config.slotName());
         log.info("  Offset storage: {}", config.usesJdbcOffsetStorage() ? "JDBC" : "file");
         log.info("  Schema history: {}", config.usesJdbcSchemaHistory() ? "JDBC" : "file");
+        log.info("  Billing DB: {}", config.billingDbUrl());
+
+        // --- Create billing repository ---
+        BillingRepository billingRepo = new BillingRepository(config);
 
         // --- Create event handler ---
-        Consumer<ChangeEvent<String, String>> eventConsumer = new SessionChangeHandler()::handle;
+        Consumer<ChangeEvent<String, String>> eventConsumer = new SessionChangeHandler(billingRepo)::handle;
 
         // --- Build engine ---
         CdcEngine cdcEngine = new CdcEngine(config, eventConsumer);
@@ -81,6 +86,7 @@ public final class Main {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             log.info("Shutdown signal received");
             runner.stop(30);
+            billingRepo.close();
         }, "shutdown-hook"));
 
         runner.start();

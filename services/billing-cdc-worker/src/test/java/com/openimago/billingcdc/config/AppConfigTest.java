@@ -34,6 +34,9 @@ class AppConfigTest {
         System.clearProperty("CDC_TOPIC_PREFIX");
         System.clearProperty("CDC_SNAPSHOT_MODE");
         System.clearProperty("CDC_OFFSET_FLUSH_INTERVAL_MS");
+        System.clearProperty("BILLING_DB_URL");
+        System.clearProperty("BILLING_DB_USER");
+        System.clearProperty("BILLING_DB_PASSWORD");
     }
 
     @Test
@@ -53,7 +56,8 @@ class AppConfigTest {
                 "openimago_billing_slot",
                 "openimago_billing",
                 "never",
-                60_000L
+                60_000L,
+                "jdbc:postgresql://localhost:5432/openimago", "user", "pass"
         );
 
         assertThat(config.dbHost()).isEqualTo("localhost");
@@ -83,7 +87,8 @@ class AppConfigTest {
                 "openimago_billing_slot",
                 "openimago_billing",
                 "never",
-                60_000L
+                60_000L,
+                "jdbc:postgresql://localhost:5432/openimago", "user", "pass"
         );
 
         assertThat(config.usesJdbcOffsetStorage()).isTrue();
@@ -104,7 +109,8 @@ class AppConfigTest {
                 "openimago_billing_slot",
                 "openimago_billing",
                 "never",
-                60_000L
+                60_000L,
+                "jdbc:postgresql://localhost:5432/openimago", "user", "pass"
         );
 
         assertThat(config.usesJdbcOffsetStorage()).isFalse();

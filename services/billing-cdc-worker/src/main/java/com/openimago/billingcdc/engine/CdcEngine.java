@@ -128,6 +128,12 @@ public class CdcEngine {
         props.setProperty("offset.flush.interval.ms",
                 String.valueOf(config.offsetFlushIntervalMs()));
 
+        // --- JSON converter with schemas disabled for clean payload output ---
+        props.setProperty("key.converter", "org.apache.kafka.connect.json.JsonConverter");
+        props.setProperty("value.converter", "org.apache.kafka.connect.json.JsonConverter");
+        props.setProperty("key.converter.schemas.enable", "false");
+        props.setProperty("value.converter.schemas.enable", "false");
+
         return props;
     }
 
