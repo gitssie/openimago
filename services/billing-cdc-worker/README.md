@@ -8,7 +8,7 @@ Standalone Java Debezium CDC worker that captures PostgreSQL row-level changes t
 |-----------|--------|-----------|
 | **Language** | Java 21 | Debezium 3.4.x requires JDK 21 for development and embedded engine |
 | **Build** | Maven (with wrapper) | Debezium docs and Java ecosystem examples are Maven-first |
-| **CDC Engine** | Debezium Embedded Engine 3.4.3.Final (`AsyncEmbeddedEngine`) | No Kafka required; runs as a standalone service |
+| **CDC Engine** | Debezium Embedded Engine 3.4.3.Final (`AsyncEmbeddedEngine`) | No Kafka required; runs as a standalone service. Chosen over reference's 2.7.4.Final for: AsyncEmbeddedEngine default, native JDBC offset/schema history, active PostgreSQL 14-18 testing, pgoutput multibyte fix |
 | **Connector** | PostgreSQL connector with pgoutput | pgoutput is PostgreSQL-native (10+), no extra plugins needed |
 | **Offset Storage** | JDBC (production) / File (dev) | JDBC ensures restarts are not tied to local filesystem; file available for local dev |
 | **Schema History** | JDBC (production) / File (dev) | Same rationale as offset storage |

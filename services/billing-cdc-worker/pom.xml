@@ -18,6 +18,15 @@
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
+        <!--
+          Debezium 3.4.3.Final (latest stable as of May 2026).
+          Chosen over reference's 2.7.4.Final because:
+          - AsyncEmbeddedEngine is the default (better performance, no EmbeddedEngine deprecation)
+          - Native JDBC offset/schema history support via debezium-storage-jdbc
+          - Active upstream testing against PostgreSQL 14-18
+          - pgoutput fix for multibyte UTF-8 table/column names (3.4.3)
+          - No Spring Boot dependency; Debezium 3.x works fine standalone
+        -->
         <version.debezium>3.4.3.Final</version.debezium>
         <version.postgresql>42.7.7</version.postgresql>
         <version.logback>1.5.18</version.logback>
@@ -106,15 +115,59 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Kafka Connect API (required by Debezium embedded engine) -->
+        <!--
+            Kafka Connect and Kafka Client dependencies required by Debezium Embedded Engine.
+            connect-runtime provides FileOffsetBackingStore for dev-mode file offset storage.
+            connect-file provides FileStreamSinkConnector needed at runtime.
+            All SLF4J-reload4j bindings excluded to prevent conflict with logback.
+        -->
         <dependency>
             <groupId>org.apache.kafka</groupId>
             <artifactId>connect-api</artifactId>
             <version>3.9.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-reload4j</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>connect-runtime</artifactId>
+            <version>3.9.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-reload4j</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>connect-file</artifactId>
+            <version>3.9.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-reload4j</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.kafka</groupId>
             <artifactId>connect-json</artifactId>
+            <version>3.9.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-reload4j</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
             <version>3.9.0</version>
         </dependency>
     </dependencies>
