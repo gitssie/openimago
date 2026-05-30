@@ -12,6 +12,7 @@ import { WorkspaceTable } from "../db/workspace-schema"
 import { logger } from "../server/logger"
 import { Effect, Stream } from "effect"
 import type { BusEvent } from "../event/types"
+import { billingService } from "../billing/service"
 
 /**
  * Legacy callback (kept for compatibility).
@@ -247,9 +248,23 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
   // /api/session/:id/prompt → opencode POST /session/:id/message
   // Converts {prompt: string} → {parts: [{type:"text", text}]}
   routes.post("/api/session/:id/prompt", async (c) => {
+    const userId = c.get("userId") as string
     const workspaceId = c.get("workspaceId") as string
     const directory = c.get("directory") as string
     const id = c.req.param("id")
+
+    // Check billing balance before forwarding
+    const balanceCheck = await billingService.checkBalance(userId)
+    if (!balanceCheck.allowed) {
+      return c.json({
+        error: {
+          code: "INSUFFICIENT_BALANCE",
+          message: "Insufficient balance. Please recharge your account.",
+          balanceMicros: balanceCheck.account?.balanceMicros ?? 0,
+          minimumBalanceMicros: balanceCheck.account?.minimumBalanceMicros ?? 0,
+        },
+      }, 402 as any)
+    }
 
     let body: Record<string, unknown>
     try {
@@ -326,16 +341,44 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
   })
 
   // ── Session: prompt_async (SDK primary send path) ─────────────
-  routes.post("/api/session/:id/prompt_async", (c) => {
+  routes.post("/api/session/:id/prompt_async", async (c) => {
+    const userId = c.get("userId") as string
     const workspaceId = c.get("workspaceId") as string
     const directory = c.get("directory") as string
+
+    const balanceCheck = await billingService.checkBalance(userId)
+    if (!balanceCheck.allowed) {
+      return c.json({
+        error: {
+          code: "INSUFFICIENT_BALANCE",
+          message: "Insufficient balance. Please recharge your account.",
+          balanceMicros: balanceCheck.account?.balanceMicros ?? 0,
+          minimumBalanceMicros: balanceCheck.account?.minimumBalanceMicros ?? 0,
+        },
+      }, 402 as any)
+    }
+
     return proxyRequest(config, c.req.url, "POST", c.req.raw.headers, rawBody(c), directory, workspaceId)
   })
 
   // ── Session: slash command ─────────────────────────────────────
-  routes.post("/api/session/:id/command", (c) => {
+  routes.post("/api/session/:id/command", async (c) => {
+    const userId = c.get("userId") as string
     const workspaceId = c.get("workspaceId") as string
     const directory = c.get("directory") as string
+
+    const balanceCheck = await billingService.checkBalance(userId)
+    if (!balanceCheck.allowed) {
+      return c.json({
+        error: {
+          code: "INSUFFICIENT_BALANCE",
+          message: "Insufficient balance. Please recharge your account.",
+          balanceMicros: balanceCheck.account?.balanceMicros ?? 0,
+          minimumBalanceMicros: balanceCheck.account?.minimumBalanceMicros ?? 0,
+        },
+      }, 402 as any)
+    }
+
     return proxyRequest(config, c.req.url, "POST", c.req.raw.headers, rawBody(c), directory, workspaceId)
   })
 

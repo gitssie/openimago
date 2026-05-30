@@ -2,17 +2,17 @@
   <q-page class="prompts-page">
     <div class="prompts-header row items-start no-wrap">
       <div>
-        <h1 class="prompts-title">提示词模板 <OiIcon name="star" size="22px" class="title-star" /></h1>
-        <p class="prompts-subtitle">探索、复用与分享优秀的提示词模板，激发无限创意</p>
+        <h1 class="prompts-title">技能与风格 <OiIcon name="star" size="22px" class="title-star" /></h1>
+        <p class="prompts-subtitle">创意技能、风格系统与可复用工作流，服务于图像/视频/音频生成</p>
       </div>
       <q-space />
-      <q-input v-model="searchQuery" placeholder="搜索模板、关键词或风格..." outlined dense dark class="prompts-search">
+      <q-input v-model="searchQuery" placeholder="搜索技能、风格或工作流..." outlined dense dark class="prompts-search">
         <template #prepend><OiIcon name="search" size="22px" class="search-icon" /></template>
         <template #append><OiIcon name="search" size="20px" class="search-icon" /></template>
       </q-input>
       <q-btn class="create-btn q-ml-md" @click="openCreate" unelevated no-caps>
         <OiIcon name="plus" size="18px" class="btn-icon" />
-        <span>新建模板</span>
+        <span>新建技能</span>
       </q-btn>
     </div>
 
@@ -23,7 +23,7 @@
     <div v-else-if="filteredTemplates.length === 0" class="empty-state flex flex-center">
       <div class="text-center empty-content">
         <q-icon name="auto_awesome" size="4em" color="grey-7" />
-        <p>{{ store.templates.length === 0 ? '还没有 Prompt 模板' : '没有找到匹配的模板' }}</p>
+        <p>{{ store.templates.length === 0 ? '还没有技能与风格' : '没有找到匹配的技能与风格' }}</p>
       </div>
     </div>
 
@@ -53,7 +53,7 @@
             <q-space />
             <q-btn flat dense no-caps class="copy-btn" @click.stop="copyPrompt(t.content)">
               <OiIcon name="copy" size="14px" class="btn-icon" />
-              <span>复制 Prompt</span>
+              <span>复制内容</span>
             </q-btn>
           </div>
         </div>
@@ -62,10 +62,10 @@
 
     <q-dialog v-model="showCreate">
       <q-card class="prompt-dialog">
-        <q-card-section><div class="text-h6">新建模板</div></q-card-section>
+        <q-card-section><div class="text-h6">新建技能与风格</div></q-card-section>
         <q-card-section class="q-gutter-y-md">
           <q-input v-model="form.title" label="标题" outlined dark dense :rules="[(v: string) => !!v || '必填']" />
-          <q-input v-model="form.content" label="Prompt 内容" outlined dark dense type="textarea" rows="5" :rules="[(v: string) => !!v || '必填']" />
+          <q-input v-model="form.content" label="内容" outlined dark dense type="textarea" rows="5" :rules="[(v: string) => !!v || '必填']" />
           <q-input v-model="form.tagsStr" label="标签（逗号分隔）" outlined dark dense />
         </q-card-section>
         <q-card-actions align="right">
@@ -140,7 +140,7 @@ function normalizedTags(tags: string[] | undefined, index: number): string[] {
 
 function promptDescription(content: string): string {
   const clean = content.replace(/--\S+(\s+\S+)?/g, '').replace(/[,，]/g, '，').trim()
-  return clean.length > 36 ? `${clean.slice(0, 36)}…` : clean || '精选提示词模板，适合快速生成高质量视觉方向'
+  return clean.length > 36 ? `${clean.slice(0, 36)}…` : clean || '精选技能与风格，适用于快速生成高质量视觉方向'
 }
 
 function previewPrompt(content: string): string {

@@ -6,15 +6,29 @@ const routes: RouteRecordRaw[] = [
     name: 'auth',
     component: () => import('pages/AuthPage.vue'),
   },
+
+  // ── Home (standalone — uses UILayout directly, no MainLayout nav rail) ──
+  {
+    path: '/',
+    name: 'home',
+    component: () => import('pages/HomePage.vue'),
+    meta: { requiresAuth: true },
+  },
+
+  // ── Gallery Detail (standalone — full-screen immersive viewer) ──
+  {
+    path: '/gallery/:slug',
+    name: 'gallery-detail',
+    component: () => import('pages/GalleryDetailPage.vue'),
+    meta: { requiresAuth: true },
+  },
+
+  // ── Main Layout (wraps existing pages with nav rail) ──
   {
     path: '/',
     component: () => import('layouts/MainLayout.vue'),
     meta: { requiresAuth: true },
     children: [
-      {
-        path: '',
-        redirect: '/projects',
-      },
       {
         path: 'sessions',
         name: 'sessions',
@@ -61,6 +75,12 @@ const routes: RouteRecordRaw[] = [
         path: 'settings',
         name: 'settings',
         component: () => import('pages/SettingsPage.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'billing',
+        name: 'billing',
+        component: () => import('pages/BillingPage.vue'),
         meta: { requiresAuth: true },
       },
       {

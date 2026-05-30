@@ -10,8 +10,11 @@ import { filesRoutes, projectFilesRoutes } from "../files/routes"
 import { outputsRoutes, projectOutputsRoutes } from "../outputs/routes"
 import { promptsRoutes } from "../prompts/routes"
 import { assetsRoutes } from "../assets/routes"
+import { galleryRoutes, galleryFilesRoutes } from "../gallery/routes"
 import { authMiddleware, adminMiddleware } from "./middleware"
 import { createProxyRoutes, type SubscribeFn } from "../proxy/routes"
+import { billingRoutes } from "../billing/routes"
+import { billingAdminRoutes } from "../billing/admin-routes"
 import { EventLayer } from "../event/layer"
 import { UserEventBus, type UserEventBusService } from "../event/bus"
 import { logger } from "./logger"
@@ -52,6 +55,7 @@ export function createApp() {
   adminApp.use("*", authMiddleware)
   adminApp.use("*", adminMiddleware)
   adminApp.route("/", adminRoutes)
+  adminApp.route("/billing", billingAdminRoutes)
   app.route("/api/admin", adminApp)
 
   app.route("/api/platform/projects", projectRoutes)
@@ -63,6 +67,9 @@ export function createApp() {
   app.route("/api/platform/sessions", outputsRoutes)
   app.route("/api/platform/prompts", promptsRoutes)
   app.route("/api/platform/assets", assetsRoutes)
+  app.route("/api/platform/gallery", galleryRoutes)
+  app.route("/api/platform/gallery/files", galleryFilesRoutes)
+  app.route("/api/platform/billing", billingRoutes)
   app.route("/", healthRoutes)
   app.route("/", createProxyRoutes(undefined, subscribe))
 

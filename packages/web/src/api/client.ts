@@ -119,6 +119,86 @@ export interface WorkspaceFile {
   metadata?: Record<string, unknown>
 }
 
+// ── Billing ──────────────────────────────────────────────────────────────────
+
+export interface BillingAccount {
+  id: string
+  ownerType: string
+  ownerId: string
+  currency: string
+  balanceMicros: number
+  minimumBalanceMicros: number
+  creditLimitMicros: number
+  status: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BillingLedgerEntry {
+  id: string
+  accountId: string
+  userId: string
+  workspaceId: string | null
+  projectId: string | null
+  sessionId: string | null
+  entryType: string
+  sourceType: string
+  sourceId: string
+  sourceStatus: string
+  provider: string | null
+  model: string | null
+  toolName: string | null
+  mediaKind: string | null
+  quantity: number | null
+  unit: string | null
+  amountMicros: number
+  balanceAfterMicros: number
+  currency: string
+  pricingSnapshot: unknown
+  metadata: unknown
+  createdAt: string
+}
+
+export interface BillingPaymentOrder {
+  id: string
+  accountId: string
+  userId: string
+  provider: string
+  providerOrderId: string | null
+  status: string
+  amountMicros: number
+  currency: string
+  checkoutUrl: string | null
+  paidAt: string | null
+  expiresAt: string | null
+  metadata: unknown
+  createdAt: string
+  updatedAt: string
+}
+
+// ── Gallery ──────────────────────────────────────────────────────────────────
+
+export interface GalleryCard {
+  slug: string
+  title: string
+  category: string
+  tags: string[] | null
+  thumbnailUrl: string | null
+}
+
+export interface GalleryDetail {
+  slug: string
+  title: string
+  category: string
+  tags: string[] | null
+  prompt: string
+  imageUrl: string | null
+  navigation: {
+    prevSlug: string | null
+    nextSlug: string | null
+  }
+}
+
 export const api = {
   // Auth — { token, user } / { id, username, ... }
   register: (data: { username: string; email: string; password: string }) =>
@@ -144,8 +224,11 @@ export const api = {
     request<SessionInfo>('/api/session', { method: 'POST', body: JSON.stringify(data) }),
   sessionMessages: (id: string) =>
     request<{ items?: Record<string, unknown>[] } | Record<string, unknown>[]>(`/api/session/${id}/message`).then(normalizeMessageResponse),
-  sendPrompt: (id: string, prompt: string) =>
-    request<{ content?: string; message?: string }>(`/api/session/${id}/prompt`, { method: 'POST', body: JSON.stringify({ prompt }) }),
+  sendPrompt: (id: string, prompt: string, meta?: Record<string, string>) => {
+    const body: Record<string, unknown> = { prompt }
+    if (meta) body.metadata = meta
+    return request<{ content?: string; message?: string }>(`/api/session/${id}/prompt`, { method: 'POST', body: JSON.stringify(body) })
+  },
   abortSession: (id: string) =>
     request<void>(`/api/session/${id}/abort`, { method: 'POST' }),
   deleteSession: (id: string) =>
@@ -184,4 +267,34 @@ export const api = {
   // Project files — flat file listing for a project
   projectFiles: (projectId: string) =>
     request<{ files: WorkspaceFile[] }>(`/api/platform/projects/${projectId}/files`).then((r) => r.files ?? []),
+
+  // ── Gallery ──────────────────────────────────────────────────────────────────
+
+  listGallery: (params?: { category?: string; cursor?: string; limit?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.category) qs.set('category', params.category)
+    if (params?.cursor) qs.set('cursor', params.cursor)
+    if (params?.limit) qs.set('limit', String(params.limit))
+    const query = qs.toString()
+    return request<{ items: GalleryCard[]; nextCursor: string | null; hasMore: boolean }>(`/api/platform/gallery${query ? `?${query}` : ''}`)
+  },
+  getGalleryItem: (slug: string) =>
+    request<{ item: GalleryDetail }>(`/api/platform/gallery/${slug}`).then((r) => r.item),
+
+  // ── Billing ────────────────────────────────────────────────────────────────
+
+  billingAccount: () =>
+    request<{ account: BillingAccount }>('/api/platform/billing/account').then((r) => r.account),
+  billingLedger: (params?: { limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.limit) qs.set('limit', String(params.limit))
+    if (params?.offset) qs.set('offset', String(params.offset))
+    const query = qs.toString()
+    return request<{ entries: BillingLedgerEntry[]; total: number }>(`/api/platform/billing/ledger${query ? `?${query}` : ''}`)
+  },
+  billingLedgerEntry: (id: string) =>
+    request<{ entry: BillingLedgerEntry }>(`/api/platform/billing/ledger/${id}`).then((r) => r.entry),
+  billingPaymentOrders: () =>
+    request<{ orders: BillingPaymentOrder[]; total: number }>('/api/platform/billing/payment-orders'),
+
 }

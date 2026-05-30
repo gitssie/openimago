@@ -55,10 +55,10 @@
         </nav>
 
         <div class="rail-footer">
-          <div class="rail-credits">
-            <span class="rail-credits__label">电力</span>
+          <div class="rail-credits" @click="$router.push('/billing')" style="cursor: pointer">
+            <span class="rail-credits__label">余额</span>
             <q-icon name="bolt" size="14px" color="cyan-4" />
-            <span class="rail-credits__value">8,742</span>
+            <span class="rail-credits__value">{{ balanceDisplay }}</span>
           </div>
         </div>
       </div>
@@ -71,20 +71,47 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from 'src/stores/auth'
 import OiIcon, { type OiIconName } from 'src/components/ui/OiIcon.vue'
+import { api } from 'src/api/client'
 
 const auth = useAuthStore()
 const route = useRoute()
 const railOpen = ref(true)
+const balanceMicros = ref<number | null>(null)
+const balanceLoading = ref(false)
+
+const balanceDisplay = computed(() => {
+  if (balanceMicros.value === null) return '--'
+  const yuan = balanceMicros.value / 1_000_000
+  if (Math.abs(yuan) >= 10) return `¥${yuan.toFixed(0)}`
+  return `¥${yuan.toFixed(2)}`
+})
+
+async function loadBalance() {
+  balanceLoading.value = true
+  try {
+    const account = await api.billingAccount()
+    balanceMicros.value = account.balanceMicros
+  } catch {
+    balanceMicros.value = null
+  } finally {
+    balanceLoading.value = false
+  }
+}
+
+onMounted(() => {
+  if (auth.token) void loadBalance()
+})
 
 const navItems: { icon: OiIconName; label: string; to: string }[] = [
   { icon: 'chat', label: '会话', to: '/sessions' },
   { icon: 'project-folder', label: '项目', to: '/projects' },
   { icon: 'asset-cube', label: '资产', to: '/assets' },
-  { icon: 'template-grid', label: 'Prompt', to: '/prompts' },
+  { icon: 'template-grid', label: '技能与风格', to: '/prompts' },
+  { icon: 'clock', label: '计费', to: '/billing' },
   { icon: 'settings', label: '设置', to: '/settings' },
 ]
 

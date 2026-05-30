@@ -26,7 +26,7 @@
       <q-input
         ref="inputRef"
         :model-value="localDraft"
-        :placeholder="t('agent.askAnythingPlaceholder')"
+        :placeholder="props.placeholder ?? t('agent.askAnythingPlaceholder')"
         borderless
         autogrow
         :maxlength="4000"
@@ -77,8 +77,8 @@
       </div>
     </div>
 
-    <div class="composer-hint">
-      {{ t('agent.inputHint') }}
+    <div v-if="props.hint ?? true" class="composer-hint">
+      {{ props.hint ?? t('agent.inputHint') }}
     </div>
   </div>
 </template>
@@ -87,14 +87,22 @@
 import { computed, ref, watch } from 'vue';
 import { QInput } from 'quasar';
 import { useI18n } from 'vue-i18n';
-import type { PendingAttachment } from 'src/composables/useAgentSession';
+
+/** Lightweight attachment type used for display-only chip rendering.
+ *  Structurally compatible with PendingAttachment from useAgentSession. */
+export interface ComposerAttachment {
+  id: string;
+  name: string;
+}
 
 const props = defineProps<{
   draft: string;
   loading: boolean;
   connected: boolean;
   disabled: boolean;
-  attachments: PendingAttachment[];
+  attachments: ComposerAttachment[];
+  placeholder?: string;
+  hint?: string;
 }>();
 
 const emit = defineEmits<{
