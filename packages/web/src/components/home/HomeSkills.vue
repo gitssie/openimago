@@ -41,11 +41,11 @@ interface Skill {
 }
 
 const skills: Skill[] = [
-  { id: 'script',     name: '脚本生成', desc: '将想法转化为视频脚本', icon: 'enhance-wave',  hue: '168 85 247' },
-  { id: 'shot',       name: '镜头设计', desc: '生成专业镜头语言',     icon: 'tool-cube',     hue: '37 99 235'  },
+  { id: 'script',     name: '脚本生成', desc: '将想法转化为视频脚本', icon: 'star',         hue: '168 85 247' },
+  { id: 'shot',       name: '镜头设计', desc: '生成专业镜头语言',     icon: 'image-placeholder', hue: '37 99 235'  },
   { id: 'storyboard', name: '分镜生成', desc: '生成分镜脚本与画面',   icon: 'template-grid', hue: '6 182 212'  },
   { id: 'video',      name: '视频生成', desc: '一键生成高质量视频',   icon: 'grid',          hue: '14 165 233' },
-  { id: 'editing',    name: '智能剪辑', desc: 'AI 自动剪辑与配乐',     icon: 'palette',       hue: '244 63 94'  },
+  { id: 'editing',    name: '智能剪辑', desc: 'AI 自动剪辑与配乐',     icon: 'template-grid', hue: '244 63 94'  },
 ]
 </script>
 

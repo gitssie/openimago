@@ -24,6 +24,10 @@ const { t } = useI18n()
 
 .home-hero__title {
   margin: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.3em;
   font-size: clamp(40px, 5.4vw, 56px);
   font-weight: 700;
   line-height: 1.05;
