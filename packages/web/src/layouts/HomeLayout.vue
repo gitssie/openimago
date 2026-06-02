@@ -268,8 +268,11 @@ function goSettings() {
 
 .home-sidebar__nav-item.is-active {
   color: var(--imago-neon-cyan);
-  background: rgba(0, 240, 255, 0.08);
-  box-shadow: inset 2px 0 0 var(--imago-neon-cyan);
+  background:
+    linear-gradient(90deg, rgba(0, 240, 255, 0.14) 0%, rgba(0, 240, 255, 0.04) 100%);
+  box-shadow:
+    inset 2px 0 0 var(--imago-neon-cyan),
+    0 0 18px rgba(0, 240, 255, 0.08);
 }
 
 .home-sidebar__nav-icon {
