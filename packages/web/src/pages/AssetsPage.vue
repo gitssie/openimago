@@ -1,25 +1,19 @@
 <template>
-  <q-page class="assets-page">
-    <div class="assets-header row items-center no-wrap">
-      <h1 class="assets-title">资产库</h1>
-      <q-space />
+  <PageShell>
+    <PageHeader
+      title="资产库"
+      subtitle="管理你上传的图片、视频和音频资产"
+      v-model:search="searchQuery"
+      search-placeholder="搜索资产名称或标签"
+      create-label="上传"
+      @create="openFilePicker"
+    />
 
-      <q-input v-model="searchQuery" placeholder="搜索资产名称或标签" outlined dense dark class="assets-search">
-        <template #prepend>
-          <OiIcon name="search" size="22px" class="search-icon" />
-        </template>
-      </q-input>
+    <input ref="fileInput" type="file" class="hidden-input" multiple @change="handleFileChange" />
 
-      <q-btn class="upload-btn q-ml-md" :loading="uploading" unelevated no-caps @click="openFilePicker">
-        <OiIcon name="plus" size="18px" class="btn-icon" />
-        <span>上传</span>
-      </q-btn>
-      <input ref="fileInput" type="file" class="hidden-input" multiple @change="handleFileChange" />
-
-      <div class="view-toggle row items-center q-ml-lg">
-        <q-btn flat dense square class="view-toggle__btn view-toggle__btn--active"><OiIcon name="grid" size="19px" /></q-btn>
-        <q-btn flat dense square class="view-toggle__btn"><OiIcon name="list" size="19px" /></q-btn>
-      </div>
+    <div class="view-toggle row items-center q-mb-md">
+      <q-btn flat dense square class="view-toggle__btn view-toggle__btn--active"><OiIcon name="grid" size="19px" /></q-btn>
+      <q-btn flat dense square class="view-toggle__btn"><OiIcon name="list" size="19px" /></q-btn>
     </div>
 
     <div class="filters-bar row items-center no-wrap">
@@ -34,16 +28,14 @@
       </q-btn>
     </div>
 
-    <div v-if="store.loading" class="assets-loading flex flex-center">
-      <q-spinner color="primary" size="3em" />
-    </div>
+    <PageLoading v-if="store.loading" />
 
-    <div v-else-if="filteredAssets.length === 0" class="empty-state flex flex-center">
-      <div class="empty-content text-center">
-        <q-icon name="image" size="4em" color="grey-7" />
-        <p>{{ store.assets.length === 0 ? '还没有上传资产' : '没有找到匹配的资产' }}</p>
-      </div>
-    </div>
+    <PageEmpty
+      v-else-if="filteredAssets.length === 0"
+      :icon="store.assets.length === 0 ? 'image' : 'search_off'"
+      :title="store.assets.length === 0 ? '还没有上传资产' : '没有找到匹配的资产'"
+      :description="store.assets.length === 0 ? '点击上传按钮开始添加你的第一个资产' : '尝试其他关键词'"
+    />
 
     <div v-else class="assets-grid">
       <div v-for="(asset, index) in filteredAssets" :key="asset.id" class="asset-card" :class="{ 'asset-card--active': index === 7 }">
@@ -79,7 +71,7 @@
         </div>
       </div>
     </div>
-  </q-page>
+  </PageShell>
 </template>
 
 <script setup lang="ts">
@@ -87,6 +79,10 @@ import { computed, onMounted, ref } from 'vue'
 import { useAssetsStore } from 'src/stores/assets'
 import { useAuthStore } from 'src/stores/auth'
 import OiIcon from 'src/components/ui/OiIcon.vue'
+import PageShell from 'src/components/page/PageShell.vue'
+import PageHeader from 'src/components/page/PageHeader.vue'
+import PageEmpty from 'src/components/page/PageEmpty.vue'
+import PageLoading from 'src/components/page/PageLoading.vue'
 import type { OpenimagoAsset } from 'src/api/client'
 
 const store = useAssetsStore()
@@ -233,78 +229,12 @@ function downloadAsset(asset: OpenimagoAsset) {
 </script>
 
 <style scoped>
-.assets-page {
-  position: relative;
-  min-height: calc(100vh - 86px);
-  padding: 24px 32px 48px;
-  overflow: hidden;
-  background: var(--imago-bg-void);
-}
-
-.assets-page::before {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  content: '';
-  background:
-    radial-gradient(ellipse 80% 60% at 30% 20%, var(--imago-cyan-04) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 80% at 70% 80%, rgba(168, 85, 247, 0.04) 0%, transparent 60%),
-    radial-gradient(ellipse 40% 40% at 50% 50%, rgba(255, 45, 149, 0.02) 0%, transparent 70%);
-}
-
-.assets-header,
 .filters-bar,
-.assets-grid,
-.assets-loading,
-.empty-state {
+.assets-grid {
   position: relative;
   z-index: 1;
 }
 
-.assets-header {
-  margin-bottom: 20px;
-  gap: 16px;
-}
-
-.assets-title {
-  margin: 0;
-  color: var(--imago-text-primary);
-  font-size: 28px;
-  line-height: 1;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-}
-
-.assets-search {
-  width: 360px;
-}
-
-.assets-search :deep(.q-field__control) {
-  height: 48px;
-  padding: 0 14px;
-  border-radius: 9px;
-  background: var(--imago-bg-void);
-  border: 1px solid var(--imago-border-dim);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 1%);
-}
-
-.assets-search :deep(.q-field__marginal) { height: 48px; }
-.assets-search :deep(.q-field__native) { color: var(--imago-text-secondary); font-size: 14px; }
-.assets-search :deep(.q-field__native::placeholder) { color: var(--imago-text-dim); opacity: 1; }
-.search-icon { color: var(--imago-text-muted); }
-
-.upload-btn {
-  height: 40px;
-  min-width: 118px;
-  border-radius: var(--imago-radius-md);
-  color: var(--imago-text-secondary);
-  background: linear-gradient(180deg, rgb(0 240 255 / 20%), rgb(0 174 215 / 13%));
-  border: 1px solid var(--imago-neon-cyan);
-  box-shadow: 0 0 18px rgb(0 221 255 / 34%), inset 0 0 16px rgb(0 221 255 / 10%);
-  font-weight: 700;
-}
-
-.upload-btn :deep(.q-btn__content),
 .filter-action :deep(.q-btn__content) {
   gap: 8px;
 }

@@ -861,6 +861,25 @@ input:-webkit-autofill {
   letter-spacing: 0.03em;
 }
 
+// Neon cyan text — used by inline page titles, table headers, etc.
+.neon-text-cyan {
+  color: var(--imago-neon-cyan) !important;
+  text-shadow: 0 0 12px rgba(0, 240, 255, 0.30);
+}
+
+// Neon card — dark bordered surface with subtle cyan edge
+.neon-card {
+  background: var(--imago-bg-glass) !important;
+  border: 1px solid var(--imago-border-light) !important;
+  border-radius: var(--imago-radius-md) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.neon-card:hover {
+  border-color: var(--imago-border-cyan) !important;
+}
+
 // User chip — header user display button
 .imago-user-chip {
   color: var(--imago-text-secondary);

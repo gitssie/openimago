@@ -59,7 +59,7 @@ describe('PromptsPage — 技能与风格', () => {
     await flushPromises()
 
     // Open create dialog
-    await wrapper.find('.create-btn').trigger('click')
+    await wrapper.find('.page-header__create').trigger('click')
     await wrapper.vm.$nextTick()
 
     // QDialog teleports, check document

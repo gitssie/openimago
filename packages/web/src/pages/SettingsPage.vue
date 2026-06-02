@@ -1,6 +1,9 @@
 <template>
-  <q-page padding>
-    <h4 class="neon-text-cyan">设置</h4>
+  <PageShell>
+    <PageHeader
+      title="设置"
+      subtitle="个人资料与工作空间偏好"
+    />
 
     <q-card class="neon-card q-pa-md" style="max-width: 600px">
       <q-card-section>
@@ -17,13 +20,15 @@
         <q-btn label="保存" color="primary" @click="handleSave" :loading="saving" unelevated />
       </q-card-actions>
     </q-card>
-  </q-page>
+  </PageShell>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useAuthStore } from 'src/stores/auth'
 import { api } from 'src/api/client'
+import PageShell from 'src/components/page/PageShell.vue'
+import PageHeader from 'src/components/page/PageHeader.vue'
 
 const auth = useAuthStore()
 const saving = ref(false)

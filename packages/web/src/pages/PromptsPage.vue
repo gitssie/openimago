@@ -1,31 +1,22 @@
 <template>
-  <q-page class="prompts-page">
-    <div class="prompts-header row items-start no-wrap">
-      <div>
-        <h1 class="prompts-title">技能与风格 <OiIcon name="star" size="22px" class="title-star" /></h1>
-        <p class="prompts-subtitle">创意技能、风格系统与可复用工作流，服务于图像/视频/音频生成</p>
-      </div>
-      <q-space />
-      <q-input v-model="searchQuery" placeholder="搜索技能、风格或工作流..." outlined dense dark class="prompts-search">
-        <template #prepend><OiIcon name="search" size="22px" class="search-icon" /></template>
-        <template #append><OiIcon name="search" size="20px" class="search-icon" /></template>
-      </q-input>
-      <q-btn class="create-btn q-ml-md" @click="openCreate" unelevated no-caps>
-        <OiIcon name="plus" size="18px" class="btn-icon" />
-        <span>新建技能</span>
-      </q-btn>
-    </div>
+  <PageShell>
+    <PageHeader
+      title="技能与风格"
+      subtitle="创意技能、风格系统与可复用工作流，服务于图像/视频/音频生成"
+      v-model:search="searchQuery"
+      search-placeholder="搜索技能、风格或工作流..."
+      create-label="新建技能"
+      @create="openCreate"
+    />
 
-    <div v-if="store.loading" class="prompts-loading flex flex-center">
-      <q-spinner color="primary" size="3em" />
-    </div>
+    <PageLoading v-if="store.loading" />
 
-    <div v-else-if="filteredTemplates.length === 0" class="empty-state flex flex-center">
-      <div class="text-center empty-content">
-        <q-icon name="auto_awesome" size="4em" color="grey-7" />
-        <p>{{ store.templates.length === 0 ? '还没有技能与风格' : '没有找到匹配的技能与风格' }}</p>
-      </div>
-    </div>
+    <PageEmpty
+      v-else-if="filteredTemplates.length === 0"
+      :icon="store.templates.length === 0 ? 'auto_awesome' : 'search_off'"
+      :title="store.templates.length === 0 ? '还没有技能与风格' : '没有找到匹配的技能与风格'"
+      :description="store.templates.length === 0 ? '点击下面的按钮开始创建第一个技能' : '尝试其他关键词'"
+    />
 
     <div v-else class="prompts-grid">
       <article v-for="(t, index) in filteredTemplates" :key="t.id" class="prompt-card" :class="{ 'prompt-card--featured': index === 0 }">
@@ -77,13 +68,17 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
-  </q-page>
+  </PageShell>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue'
 import { usePromptsStore } from 'src/stores/prompts'
 import OiIcon from 'src/components/ui/OiIcon.vue'
+import PageShell from 'src/components/page/PageShell.vue'
+import PageHeader from 'src/components/page/PageHeader.vue'
+import PageEmpty from 'src/components/page/PageEmpty.vue'
+import PageLoading from 'src/components/page/PageLoading.vue'
 
 const store = usePromptsStore()
 const showCreate = ref(false)

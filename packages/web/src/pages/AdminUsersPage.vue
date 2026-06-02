@@ -1,6 +1,9 @@
 <template>
-  <q-page padding>
-    <h4 class="neon-text-cyan">用户管理</h4>
+  <PageShell>
+    <PageHeader
+      title="用户管理"
+      subtitle="查看与调整系统用户的角色权限"
+    />
 
     <q-table :rows="users" :columns="columns" row-key="id" :loading="loading" dark flat bordered
       :pagination="{ rowsPerPage: 20 }">
@@ -11,13 +14,15 @@
         </q-td>
       </template>
     </q-table>
-  </q-page>
+  </PageShell>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { api } from 'src/api/client'
 import type { OpenimagoUser } from 'src/api/client'
+import PageShell from 'src/components/page/PageShell.vue'
+import PageHeader from 'src/components/page/PageHeader.vue'
 
 const users = ref<OpenimagoUser[]>([])
 const loading = ref(false)

@@ -111,7 +111,7 @@ describe('ProjectsPage', () => {
     // Wait for onMounted to fire
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.find('.projects-loading').exists()).toBe(true)
+    expect(wrapper.find('.page-loading').exists()).toBe(true)
   })
 
   it('hides loading spinner once projects load', async () => {
@@ -120,7 +120,7 @@ describe('ProjectsPage', () => {
     const wrapper = mountPage(ProjectsPage, { global: { plugins: [makeRouter()] } })
     await flushPromises()
 
-    expect(wrapper.find('.projects-loading').exists()).toBe(false)
+    expect(wrapper.find('.page-loading').exists()).toBe(false)
   })
 
   // ── Empty state ───────────────────────────────────────────────────────────
@@ -156,7 +156,7 @@ describe('ProjectsPage', () => {
     await flushPromises()
 
     // Type search query — use the native input element inside QInput
-    const nativeInput = wrapper.find('.projects-search').find('input')
+    const nativeInput = wrapper.find('.page-header__search-input')
     await nativeInput.setValue('后端')
 
     // Should only show matching project
@@ -172,7 +172,7 @@ describe('ProjectsPage', () => {
     const wrapper = mountPage(ProjectsPage, { global: { plugins: [makeRouter()] } })
     await flushPromises()
 
-    const nativeInput = wrapper.find('.projects-search').find('input')
+    const nativeInput = wrapper.find('.page-header__search-input')
     await nativeInput.setValue('不存在')
 
     expect(wrapper.text()).toContain('没有找到匹配的项目')
@@ -187,7 +187,7 @@ describe('ProjectsPage', () => {
     const wrapper = mountPage(ProjectsPage, { global: { plugins: [makeRouter()] } })
     await flushPromises()
 
-    const nativeInput = wrapper.find('.projects-search').find('input')
+    const nativeInput = wrapper.find('.page-header__search-input')
     await nativeInput.setValue('一')
     expect(wrapper.text()).toContain('项目一')
     expect(wrapper.text()).not.toContain('项目二')
@@ -223,7 +223,7 @@ describe('ProjectsPage', () => {
     const wrapper = mountPage(ProjectsPage, { global: { plugins: [makeRouter()] } })
     await flushPromises()
 
-    await wrapper.find('.create-btn').trigger('click')
+    await wrapper.find('.page-header__create').trigger('click')
     await wrapper.vm.$nextTick()
 
     // QDialog teleports content to body
@@ -237,7 +237,7 @@ describe('ProjectsPage', () => {
     await flushPromises()
 
     // Open dialog
-    await wrapper.find('.create-btn').trigger('click')
+    await wrapper.find('.page-header__create').trigger('click')
     await wrapper.vm.$nextTick()
 
     const dialogEl = document.querySelector('.project-dialog')
