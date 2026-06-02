@@ -24,10 +24,6 @@ const { t } = useI18n()
 
 .home-hero__title {
   margin: 0;
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 0.3em;
   font-size: clamp(40px, 5.4vw, 56px);
   font-weight: 700;
   line-height: 1.05;
@@ -44,6 +40,10 @@ const { t } = useI18n()
 }
 
 .home-hero__title-accent {
+  // Explicit margin instead of flex/gap — the gradient text-clip + letter-spacing
+  // combination collapses whitespace nodes unpredictably, so the space between
+  // "OpenImago" and "1.0" needs to be a real, declared value.
+  margin-left: 0.45em;
   background: linear-gradient(90deg, #00f0ff 0%, #5cc6ff 60%, #ffffff 100%);
   -webkit-background-clip: text;
   background-clip: text;

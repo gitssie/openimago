@@ -14,8 +14,8 @@
         <RouterLink to="/" class="home-sidebar__brand">
           <OiIcon
             name="openimago-logo"
-            :size="120"
-            style="width: auto; height: 28px;"
+            :size="140"
+            style="width: auto; height: 32px;"
             class="home-sidebar__brand-logo"
           />
         </RouterLink>
@@ -226,14 +226,14 @@ function goSettings() {
 .home-sidebar__brand {
   display: flex;
   align-items: center;
-  padding: 6px 8px 18px;
+  padding: 6px 8px 22px;
   color: var(--imago-text-primary);
   text-decoration: none;
 }
 
 .home-sidebar__brand-logo {
   display: block;
-  filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.18));
+  filter: drop-shadow(0 0 10px rgba(0, 240, 255, 0.22));
 }
 
 // ── Nav items ──────────────────────────────────────────────────────────
