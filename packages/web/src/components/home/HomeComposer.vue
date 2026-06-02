@@ -13,10 +13,10 @@
     <div class="home-composer__bar">
       <div class="home-composer__bar-left">
         <button type="button" class="home-composer__icon-btn" :aria-label="t('gallery.composerAttach')">
-          <q-icon name="add" size="20px" />
+          <OiIcon name="plus" :size="14" />
         </button>
         <button type="button" class="home-composer__select">
-          <q-icon name="auto_awesome" size="14px" />
+          <OiIcon name="sliders" :size="14" />
           <span>{{ t('gallery.composerMode') }}</span>
           <q-icon name="expand_more" size="14px" class="home-composer__select-caret" />
         </button>
@@ -25,7 +25,7 @@
           <span>{{ t('gallery.composerAspect') }}</span>
         </button>
         <button type="button" class="home-composer__select">
-          <q-icon name="timer" size="14px" />
+          <OiIcon name="clock" :size="14" />
           <span>{{ t('gallery.composerDuration') }}</span>
         </button>
       </div>
@@ -38,7 +38,7 @@
         :aria-label="t('gallery.composerSend')"
         @click="handleSend"
       >
-        <q-icon name="north" size="20px" />
+        <OiIcon name="send" :size="16" />
       </button>
     </div>
   </div>
@@ -47,6 +47,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import OiIcon from 'src/components/ui/OiIcon.vue'
 
 const { t } = useI18n()
 

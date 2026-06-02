@@ -28,7 +28,7 @@
             :to="item.to"
             :class="['home-sidebar__nav-item', { 'is-active': isActive(item.to) }]"
           >
-            <q-icon :name="item.icon" size="18px" class="home-sidebar__nav-icon" />
+            <OiIcon :name="item.icon" :size="18" class="home-sidebar__nav-icon" />
             <span class="home-sidebar__nav-label">{{ item.label }}</span>
             <q-icon
               v-if="item.to === '/'"
@@ -50,7 +50,7 @@
             :to="item.to"
             class="home-sidebar__util-item"
           >
-            <q-icon :name="item.icon" size="14px" />
+            <OiIcon :name="item.icon" :size="14" />
             <span>{{ item.label }}</span>
           </RouterLink>
         </div>
@@ -137,7 +137,7 @@ import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from 'src/stores/auth'
 import { api } from 'src/api/client'
-import OiIcon from 'src/components/ui/OiIcon.vue'
+import OiIcon, { type OiIconName } from 'src/components/ui/OiIcon.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -168,18 +168,18 @@ onMounted(() => {
 })
 
 // ── Nav ─────────────────────────────────────────────────────────────────
-const navItems: { icon: string; label: string; to: string }[] = [
-  { icon: 'home', label: t('gallery.navWorkbench'), to: '/' },
-  { icon: 'folder', label: t('gallery.navProjects'), to: '/projects' },
-  { icon: 'image', label: t('gallery.navAssets'), to: '/assets' },
-  { icon: 'description', label: t('gallery.navPrompts'), to: '/prompts' },
-  { icon: 'settings', label: t('gallery.navSettings'), to: '/settings' },
+const navItems: { icon: OiIconName; label: string; to: string }[] = [
+  { icon: 'canvas',         label: t('gallery.navWorkbench'), to: '/' },
+  { icon: 'project-folder', label: t('gallery.navProjects'), to: '/projects' },
+  { icon: 'asset-cube',     label: t('gallery.navAssets'), to: '/assets' },
+  { icon: 'prompt-doc',     label: t('gallery.navPrompts'), to: '/prompts' },
+  { icon: 'settings',       label: t('gallery.navSettings'), to: '/settings' },
 ]
 
-const utilItems: { icon: string; label: string; to: string }[] = [
-  { icon: 'help_outline', label: '帮助中心', to: '/help' },
-  { icon: 'keyboard', label: '快捷键', to: '/shortcuts' },
-  { icon: 'code', label: 'API 文档', to: '/api-docs' },
+const utilItems: { icon: OiIconName; label: string; to: string }[] = [
+  { icon: 'thinking',       label: '帮助中心', to: '/help' },
+  { icon: 'command-slash',  label: '快捷键', to: '/shortcuts' },
+  { icon: 'tool-cube',      label: 'API 文档', to: '/api-docs' },
 ]
 
 function isActive(to: string) {

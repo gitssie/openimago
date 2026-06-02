@@ -11,7 +11,7 @@
         @click="emit('select', skill.id)"
       >
         <div class="home-skills__icon">
-          <q-icon :name="skill.icon" size="22px" />
+          <OiIcon :name="skill.icon" :size="22" />
         </div>
         <div class="home-skills__text">
           <div class="home-skills__name">{{ skill.name }}</div>
@@ -24,6 +24,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import OiIcon, { type OiIconName } from 'src/components/ui/OiIcon.vue'
 
 const { t } = useI18n()
 
@@ -35,16 +36,16 @@ interface Skill {
   id: string
   name: string
   desc: string
-  icon: string
+  icon: OiIconName
   hue: string
 }
 
 const skills: Skill[] = [
-  { id: 'script',     name: '脚本生成', desc: '将想法转化为视频脚本', icon: 'auto_awesome', hue: '168 85 247' },
-  { id: 'shot',       name: '镜头设计', desc: '生成专业镜头语言',     icon: 'videocam',     hue: '37 99 235'  },
-  { id: 'storyboard', name: '分镜生成', desc: '生成分镜脚本与画面',   icon: 'dashboard',    hue: '6 182 212'  },
-  { id: 'video',      name: '视频生成', desc: '一键生成高质量视频',   icon: 'apps',         hue: '14 165 233' },
-  { id: 'editing',    name: '智能剪辑', desc: 'AI 自动剪辑与配乐',     icon: 'grid_view',    hue: '244 63 94'  },
+  { id: 'script',     name: '脚本生成', desc: '将想法转化为视频脚本', icon: 'enhance-wave',  hue: '168 85 247' },
+  { id: 'shot',       name: '镜头设计', desc: '生成专业镜头语言',     icon: 'tool-cube',     hue: '37 99 235'  },
+  { id: 'storyboard', name: '分镜生成', desc: '生成分镜脚本与画面',   icon: 'template-grid', hue: '6 182 212'  },
+  { id: 'video',      name: '视频生成', desc: '一键生成高质量视频',   icon: 'grid',          hue: '14 165 233' },
+  { id: 'editing',    name: '智能剪辑', desc: 'AI 自动剪辑与配乐',     icon: 'palette',       hue: '244 63 94'  },
 ]
 </script>
 
