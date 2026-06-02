@@ -169,10 +169,10 @@ onMounted(() => {
 
 // ── Nav ─────────────────────────────────────────────────────────────────
 const navItems: { icon: string; label: string; to: string }[] = [
-  { icon: 'space_dashboard', label: t('gallery.navWorkbench'), to: '/' },
+  { icon: 'home', label: t('gallery.navWorkbench'), to: '/' },
   { icon: 'folder', label: t('gallery.navProjects'), to: '/projects' },
-  { icon: 'perm_media', label: t('gallery.navAssets'), to: '/assets' },
-  { icon: 'chat_bubble_outline', label: t('gallery.navPrompts'), to: '/prompts' },
+  { icon: 'image', label: t('gallery.navAssets'), to: '/assets' },
+  { icon: 'description', label: t('gallery.navPrompts'), to: '/prompts' },
   { icon: 'settings', label: t('gallery.navSettings'), to: '/settings' },
 ]
 

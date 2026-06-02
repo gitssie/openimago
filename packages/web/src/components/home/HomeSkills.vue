@@ -40,11 +40,11 @@ interface Skill {
 }
 
 const skills: Skill[] = [
-  { id: 'script',     name: '脚本生成', desc: '将想法转化为视频脚本', icon: 'edit_note',    hue: '168 85 247' },
-  { id: 'shot',       name: '镜头设计', desc: '生成专业镜头语言',     icon: 'movie_filter', hue: '37 99 235'  },
+  { id: 'script',     name: '脚本生成', desc: '将想法转化为视频脚本', icon: 'auto_awesome', hue: '168 85 247' },
+  { id: 'shot',       name: '镜头设计', desc: '生成专业镜头语言',     icon: 'videocam',     hue: '37 99 235'  },
   { id: 'storyboard', name: '分镜生成', desc: '生成分镜脚本与画面',   icon: 'dashboard',    hue: '6 182 212'  },
   { id: 'video',      name: '视频生成', desc: '一键生成高质量视频',   icon: 'play_circle',  hue: '14 165 233' },
-  { id: 'editing',    name: '智能剪辑', desc: 'AI 自动剪辑与配乐',     icon: 'auto_awesome', hue: '244 63 94'  },
+  { id: 'editing',    name: '智能剪辑', desc: 'AI 自动剪辑与配乐',     icon: 'content_cut',  hue: '244 63 94'  },
 ]
 </script>
 
@@ -106,10 +106,10 @@ const skills: Skill[] = [
   display: grid;
   place-items: center;
   border-radius: 10px;
-  background: rgb(var(--skill-hue) / 0.16);
-  color: rgb(var(--skill-hue) / 0.95);
-  border: 1px solid rgb(var(--skill-hue) / 0.45);
-  box-shadow: inset 0 0 14px rgb(var(--skill-hue) / 0.18);
+  background: rgb(var(--skill-hue) / 0.22);
+  color: rgb(var(--skill-hue) / 1);
+  border: 1px solid rgb(var(--skill-hue) / 0.55);
+  box-shadow: inset 0 0 18px rgb(var(--skill-hue) / 0.24);
   flex-shrink: 0;
 }
 

@@ -161,10 +161,10 @@ defineExpose({ focus: () => textareaRef.value?.focus() })
 .home-composer__icon-btn {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border: 1px solid var(--imago-border-light);
-  border-radius: 10px;
+  border-radius: 50%;
   background: var(--imago-bg-raised);
   color: var(--imago-text-muted);
   cursor: pointer;
