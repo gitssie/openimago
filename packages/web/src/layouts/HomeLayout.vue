@@ -13,11 +13,11 @@
         <!-- Brand -->
         <RouterLink to="/" class="home-sidebar__brand">
           <OiIcon
-            name="openimago-logo"
-            :size="140"
-            style="width: auto; height: 32px;"
-            class="home-sidebar__brand-logo"
+            name="oi-logomark"
+            :size="26"
+            class="home-sidebar__brand-icon"
           />
+          <span class="home-sidebar__brand-name">openimago</span>
         </RouterLink>
 
         <!-- Primary nav -->
@@ -28,7 +28,18 @@
             :to="item.to"
             :class="['home-sidebar__nav-item', { 'is-active': isActive(item.to) }]"
           >
-            <OiIcon :name="item.icon" :size="18" class="home-sidebar__nav-icon" />
+            <q-icon
+              v-if="item.iconKind === 'material'"
+              :name="item.icon"
+              size="18px"
+              class="home-sidebar__nav-icon"
+            />
+            <OiIcon
+              v-else
+              :name="oiIcon(item.icon)"
+              :size="18"
+              class="home-sidebar__nav-icon"
+            />
             <span class="home-sidebar__nav-label">{{ item.label }}</span>
             <q-icon
               v-if="item.to === '/'"
@@ -50,7 +61,7 @@
             :to="item.to"
             class="home-sidebar__util-item"
           >
-            <OiIcon :name="item.icon" :size="14" />
+            <OiIcon :name="oiIcon(item.icon)" :size="14" />
             <span>{{ item.label }}</span>
           </RouterLink>
         </div>
@@ -168,19 +179,35 @@ onMounted(() => {
 })
 
 // ── Nav ─────────────────────────────────────────────────────────────────
-const navItems: { icon: OiIconName; label: string; to: string }[] = [
-  { icon: 'canvas',         label: t('gallery.navWorkbench'), to: '/' },
-  { icon: 'project-folder', label: t('gallery.navProjects'), to: '/projects' },
-  { icon: 'asset-cube',     label: t('gallery.navAssets'), to: '/assets' },
-  { icon: 'prompt-doc',     label: t('gallery.navPrompts'), to: '/prompts' },
-  { icon: 'settings',       label: t('gallery.navSettings'), to: '/settings' },
+interface NavItem {
+  icon: string
+  iconKind: 'oi' | 'material'
+  label: string
+  to: string
+}
+
+const navItems: NavItem[] = [
+  // 工作台: house icon — no project SVG matches a house, use Material
+  { icon: 'home',           iconKind: 'material', label: t('gallery.navWorkbench'), to: '/' },
+  { icon: 'project-folder', iconKind: 'oi',       label: t('gallery.navProjects'), to: '/projects' },
+  // 资产: image icon — image-placeholder is the closest visual metaphor
+  { icon: 'image-placeholder', iconKind: 'oi',    label: t('gallery.navAssets'), to: '/assets' },
+  { icon: 'prompt-doc',     iconKind: 'oi',       label: t('gallery.navPrompts'), to: '/prompts' },
+  { icon: 'settings',       iconKind: 'oi',       label: t('gallery.navSettings'), to: '/settings' },
 ]
 
-const utilItems: { icon: OiIconName; label: string; to: string }[] = [
-  { icon: 'thinking',       label: '帮助中心', to: '/help' },
-  { icon: 'command-slash',  label: '快捷键', to: '/shortcuts' },
-  { icon: 'tool-cube',      label: 'API 文档', to: '/api-docs' },
+const utilItems: NavItem[] = [
+  // 帮助中心: lightbulb (thinking) — represents "ideas/help"
+  { icon: 'thinking',       iconKind: 'oi',       label: '帮助中心', to: '/help' },
+  // 快捷键: slash — keyboard shortcut
+  { icon: 'command-slash',  iconKind: 'oi',       label: '快捷键', to: '/shortcuts' },
+  // API 文档: tool box
+  { icon: 'tool-cube',      iconKind: 'oi',       label: 'API 文档', to: '/api-docs' },
 ]
+
+// Type-cast helper: OiIcon's `name` prop is a strict union, but NavItem.icon
+// is a free string so we can also store Material icon names in the same list.
+const oiIcon = (name: string): OiIconName => name as OiIconName
 
 function isActive(to: string) {
   if (to === '/') return route.path === '/' || route.path === ''
@@ -226,14 +253,28 @@ function goSettings() {
 .home-sidebar__brand {
   display: flex;
   align-items: center;
-  padding: 6px 8px 22px;
+  gap: 9px;
+  padding: 6px 8px 24px;
   color: var(--imago-text-primary);
   text-decoration: none;
 }
 
-.home-sidebar__brand-logo {
+.home-sidebar__brand-icon {
   display: block;
-  filter: drop-shadow(0 0 10px rgba(0, 240, 255, 0.22));
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.45));
+}
+
+.home-sidebar__brand-name {
+  font-family: 'Trebuchet MS', 'Segoe UI', 'PingFang SC', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: linear-gradient(90deg, #e8e8ec 0%, #a0e9ff 55%, #c39bff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  line-height: 1;
 }
 
 // ── Nav items ──────────────────────────────────────────────────────────
