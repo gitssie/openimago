@@ -96,10 +96,13 @@ export default {
   gallery: {
     // Sidebar / topbar
     navWorkbench: '工作台',
+    navSessions: '会话',
     navProjects: '项目',
     navAssets: '资产',
-    navPrompts: 'Prompt',
+    navPrompts: '技能与风格',
+    navBilling: '计费',
     navSettings: '设置',
+    navAdmin: '管理',
     balanceLabel: '算力余额',
     rechargeCenter: '充值中心',
     userPlan: 'Pro',

@@ -23,7 +23,7 @@
         <!-- Primary nav -->
         <nav class="home-sidebar__nav" :aria-label="t('nav.workbench')">
           <RouterLink
-            v-for="item in navItems"
+            v-for="item in visibleNavItems"
             :key="item.to"
             :to="item.to"
             :class="['home-sidebar__nav-item', { 'is-active': isActive(item.to) }]"
@@ -184,17 +184,30 @@ interface NavItem {
   iconKind: 'oi' | 'material'
   label: string
   to: string
+  requiresAdmin?: boolean
 }
 
 const navItems: NavItem[] = [
   // 工作台: house icon — no project SVG matches a house, use Material
   { icon: 'home',           iconKind: 'material', label: t('gallery.navWorkbench'), to: '/' },
+  // 会话: chat bubble — matches the MainLayout's existing icon
+  { icon: 'chat',           iconKind: 'oi',       label: t('gallery.navSessions'), to: '/sessions' },
   { icon: 'project-folder', iconKind: 'oi',       label: t('gallery.navProjects'), to: '/projects' },
   // 资产: image icon — image-placeholder is the closest visual metaphor
   { icon: 'image-placeholder', iconKind: 'oi',    label: t('gallery.navAssets'), to: '/assets' },
-  { icon: 'prompt-doc',     iconKind: 'oi',       label: t('gallery.navPrompts'), to: '/prompts' },
+  // 技能与风格: 4-grid template (matches reference's 4-grid look)
+  { icon: 'template-grid',  iconKind: 'oi',       label: t('gallery.navPrompts'), to: '/prompts' },
+  // 计费: clock (timer / billing time)
+  { icon: 'clock',          iconKind: 'oi',       label: t('gallery.navBilling'), to: '/billing' },
   { icon: 'settings',       iconKind: 'oi',       label: t('gallery.navSettings'), to: '/settings' },
+  // Admin-only entry — hidden for non-admins
+  { icon: 'tool-cube',      iconKind: 'oi',       label: t('gallery.navAdmin'), to: '/admin/users', requiresAdmin: true },
 ]
+
+const visibleNavItems = computed<NavItem[]>(() => {
+  if (!auth.isAdmin) return navItems.filter((item) => !item.requiresAdmin)
+  return navItems
+})
 
 const utilItems: NavItem[] = [
   // 帮助中心: lightbulb (thinking) — represents "ideas/help"

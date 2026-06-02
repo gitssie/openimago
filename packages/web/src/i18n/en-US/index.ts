@@ -96,10 +96,13 @@ export default {
   gallery: {
     // Sidebar / topbar
     navWorkbench: 'Workbench',
+    navSessions: 'Sessions',
     navProjects: 'Projects',
     navAssets: 'Assets',
-    navPrompts: 'Prompts',
+    navPrompts: 'Skills & styles',
+    navBilling: 'Billing',
     navSettings: 'Settings',
+    navAdmin: 'Admin',
     balanceLabel: 'Credit balance',
     rechargeCenter: 'Top up',
     userPlan: 'Pro',

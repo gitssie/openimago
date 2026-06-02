@@ -7,7 +7,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('pages/AuthPage.vue'),
   },
 
-  // ── Home (HomeLayout: 200px sidebar + top actions, per design spec) ──
+  // ── Authenticated app (unified 208px sidebar layout, per design spec) ──
   {
     path: '/',
     component: () => import('layouts/HomeLayout.vue'),
@@ -19,23 +19,6 @@ const routes: RouteRecordRaw[] = [
         component: () => import('pages/HomePage.vue'),
         meta: { requiresAuth: true },
       },
-    ],
-  },
-
-  // ── Gallery Detail (standalone — full-screen immersive viewer) ──
-  {
-    path: '/gallery/:slug',
-    name: 'gallery-detail',
-    component: () => import('pages/GalleryDetailPage.vue'),
-    meta: { requiresAuth: true },
-  },
-
-  // ── Main Layout (wraps existing pages with nav rail) ──
-  {
-    path: '/',
-    component: () => import('layouts/MainLayout.vue'),
-    meta: { requiresAuth: true },
-    children: [
       {
         path: 'sessions',
         name: 'sessions',
@@ -97,6 +80,14 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, requiresAdmin: true },
       },
     ],
+  },
+
+  // ── Gallery Detail (standalone — full-screen immersive viewer) ──
+  {
+    path: '/gallery/:slug',
+    name: 'gallery-detail',
+    component: () => import('pages/GalleryDetailPage.vue'),
+    meta: { requiresAuth: true },
   },
 
   // Always leave this as last one
