@@ -184,6 +184,17 @@ export interface GalleryCard {
   category: string
   tags: string[] | null
   thumbnailUrl: string | null
+  // Optional rich fields for the home TV/Recommended layouts.
+  // Backend may omit any of these; UI degrades gracefully.
+  subtitle?: string | null         // English subtitle, e.g. "Echoes of Memory"
+  subtitleZh?: string | null       // Chinese subtitle, e.g. "记忆回声"
+  duration?: string | null         // e.g. "2:15"
+  resolution?: string | null       // e.g. "4K"
+  creator?: string | null          // creator handle/name
+  categoryLabel?: string | null    // Display label, e.g. "短片"
+  isFeatured?: boolean
+  // Aspect ratio hint, used for masonry layout
+  aspect?: 'wide' | 'square' | 'tall' | null
 }
 
 export interface GalleryDetail {

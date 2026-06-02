@@ -7,12 +7,19 @@ const routes: RouteRecordRaw[] = [
     component: () => import('pages/AuthPage.vue'),
   },
 
-  // ── Home (standalone — uses UILayout directly, no MainLayout nav rail) ──
+  // ── Home (HomeLayout: 200px sidebar + top actions, per design spec) ──
   {
     path: '/',
-    name: 'home',
-    component: () => import('pages/HomePage.vue'),
+    component: () => import('layouts/HomeLayout.vue'),
     meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: 'home',
+        component: () => import('pages/HomePage.vue'),
+        meta: { requiresAuth: true },
+      },
+    ],
   },
 
   // ── Gallery Detail (standalone — full-screen immersive viewer) ──

@@ -1,6 +1,10 @@
 # dependencies (bun install)
 node_modules
 
+# turbo cache
+**/.turbo
+.turbo
+
 # output
 out
 dist

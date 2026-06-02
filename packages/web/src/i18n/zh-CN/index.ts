@@ -93,4 +93,102 @@ export default {
   shared: {
     copy: '复制',
   },
+  gallery: {
+    // Sidebar / topbar
+    navWorkbench: '工作台',
+    navProjects: '项目',
+    navAssets: '资产',
+    navPrompts: 'Prompt',
+    navSettings: '设置',
+    balanceLabel: '算力余额',
+    rechargeCenter: '充值中心',
+    userPlan: 'Pro',
+    groupLabel: 'OpenImago 交流群',
+    upgradePro: '升级到 Pro',
+    notifications: '通知',
+    userMenu: '用户菜单',
+    logout: '退出登录',
+
+    // Hero
+    heroTitlePrefix: 'OpenImago',
+    heroTitleAccent: '1.0',
+    heroSubtitle: '你的专属 AI 视频创作 Agent',
+    heroTagline: '从灵感到视频，让 AI 理解你的想法，帮你创造惊艳的视觉故事',
+
+    // Composer
+    composerPlaceholder: '输入一个想法，或粘贴脚本、描述你想要的视频...',
+    composerAttach: '附加',
+    composerMode: '智能模式',
+    composerAspect: '16:9',
+    composerDuration: '5s',
+    composerSend: '创作',
+    composerHint: 'Enter 发送 · Shift+Enter 换行',
+    composerRequired: '请输入创作想法',
+    sessionCreateFailed: '创建会话失败',
+    promptSendFailed: '发送提示词失败',
+
+    // Sections
+    skillsTitle: '热门 Skills',
+    tvTitle: 'OpenImago TV',
+    recommendedTitle: '为你推荐',
+    more: '更多',
+    featuredBadge: '精选',
+
+    // TV category tabs
+    tvTabAll: '全部',
+    tvTabShort: '短片',
+    tvTabTutorial: '教程',
+    tvTabCase: '案例',
+    tvTabMv: 'MV',
+    tvTabTvc: 'TVC',
+    tvPrev: '上一组',
+    tvNext: '下一组',
+
+    // Card metadata
+    cardCategory: '短片',
+    cardResolution: '4K',
+    cardPlay: '播放',
+
+    // Empty / errors
+    homeEmpty: '暂无内容',
+    homeEmptyDesc: '试试上方输入框开始你的第一次创作',
+    homeLoadingFailed: '加载失败',
+
+    // Detail page (legacy)
+    heroTitle: 'Start creating from inspiration',
+    heroTitleLine1: 'From inspiration to',
+    heroTitleLine2: 'worlds of your own',
+    eyebrow: 'Creative Workshop',
+    heroTitleLine1Sub: 'Start creating from inspiration',
+    heroSubtitleEn: 'Browse official curated works and kickstart your AI creation journey.',
+    tryOneOf: 'Or try one of these',
+    statWorks: 'Curated works',
+    statCategories: 'Categories',
+    statModels: 'Models online',
+    featured: 'Featured',
+    categoriesAria: 'Filter works by category',
+    homePlaceholder: 'Describe what you want to create...',
+    homeHint: 'Enter at least a brief description. Attachments are optional.',
+    allLoaded: '已展示全部 {count} 件作品',
+    loadingMore: '加载更多作品',
+    empty: '该分类暂无作品',
+    emptyDesc: '试试切换分类，或直接开始你的创作',
+    retry: '重试',
+    viewPrompt: '查看提示词',
+    expandPrompt: '展开提示词',
+    collapsePrompt: '收起',
+    createFromThis: '用此作品创作',
+    referenceWork: '参考作品',
+    quickChips: {
+      useStyle: '使用此风格',
+      similarComposition: '生成相似构图',
+      tryPalette: '试试此色板',
+      changeScheme: '换一种配色',
+      addDetails: '添加更多细节',
+    },
+    composerPlaceholderEn: 'Describe the effect you want...',
+    submitCreate: '提交',
+    prevWork: '上一组',
+    nextWork: '下一组',
+  },
 }

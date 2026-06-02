@@ -3,41 +3,59 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
 import { createI18n } from 'vue-i18n'
-import { defineComponent, type Plugin } from 'vue'
-import { QLayout, QPageContainer, QPage, QChip, QBtn, QIcon, QSpinnerDots, QTooltip, QInput } from 'quasar'
-import HomePage from '../../pages/HomePage.vue'
+import { defineComponent, h, type Plugin, type Component } from 'vue'
+import { QLayout, QPageContainer, QPage, QBtn, QIcon, QTooltip } from 'quasar'
 
-// ── Stubs ───────────────────────────────────────────────────────────────────
+// ── Mock home section components BEFORE importing HomePage (which imports them). ──
+// Each stub is inlined inside the factory so vi.mock's hoisting doesn't trip on
+// the const declarations.
 
-const StubAgentPromptInput = defineComponent({
-  name: 'AgentPromptInput',
-  props: { draft: String, loading: Boolean, connected: Boolean, disabled: Boolean, attachments: Array, placeholder: String, hint: String },
-  emits: ['update:draft', 'submit', 'abort', 'remove-attachment', 'attach-files'],
-  template: '<div class="stub-input"><input :value="draft" @input="$emit(\'update:draft\', ($event.target as HTMLInputElement).value)" /><button @click="$emit(\'submit\', draft)">submit</button></div>',
-})
+vi.mock('../../components/home/HomeHero.vue', () => ({
+  default: { name: 'HomeHero', template: '<div class="stub-hero" />' },
+}))
 
-const StubUILayout = defineComponent({
-  name: 'UILayout',
-  props: { view: String },
-  template: '<div class="stub-uilayout"><slot /></div>',
-})
+vi.mock('../../components/home/HomeComposer.vue', () => ({
+  default: {
+    name: 'HomeComposer',
+    props: ['modelValue', 'loading'],
+    emits: ['update:modelValue', 'submit'],
+    template: `<div class="stub-composer">
+      <input :value="modelValue" @input="$emit('update:modelValue', $event.target.value)" />
+      <button :disabled="!modelValue" @click="$emit('submit', modelValue)">send</button>
+    </div>`,
+  },
+}))
 
-const StubUILayoutHeader = defineComponent({
-  name: 'UILayoutHeader',
-  props: { bordered: Boolean },
-  template: '<div class="stub-header"><slot /></div>',
-})
+vi.mock('../../components/home/HomeSkills.vue', () => ({
+  default: { name: 'HomeSkills', template: '<div class="stub-skills" />' },
+}))
 
-const StubUILayoutPageContainer = defineComponent({
-  name: 'UILayoutPageContainer',
-  template: '<div class="stub-page-container"><slot /></div>',
-})
+vi.mock('../../components/home/HomeTV.vue', () => ({
+  default: {
+    name: 'HomeTV',
+    props: ['works', 'loading'],
+    emits: ['play'],
+    template: `<div class="stub-tv">
+      <div v-for="w in works" :key="w.slug" class="stub-tv__card">{{ w.title }}</div>
+    </div>`,
+  },
+}))
 
-const StubUILayoutPage = defineComponent({
-  name: 'UILayoutPage',
-  template: '<div class="stub-page" @scroll.passive="$emit(\'scroll\', $event)"><slot /></div>',
-  emits: ['scroll'],
-})
+vi.mock('../../components/home/HomeRecommended.vue', () => ({
+  default: {
+    name: 'HomeRecommended',
+    props: ['works', 'loading'],
+    emits: ['play'],
+    template: `<div class="stub-recommended">
+      <div v-for="w in works" :key="w.slug" class="stub-recommended__card">{{ w.title }}</div>
+    </div>`,
+  },
+}))
+
+// Import AFTER the mocks are registered so the SFC gets the stubs.
+const HomePage = (await import('../../pages/HomePage.vue')).default
+
+// ── i18n ───────────────────────────────────────────────────────────────────
 
 function makeI18n() {
   return createI18n({
@@ -47,13 +65,10 @@ function makeI18n() {
       'en-US': {
         common: { retry: 'Retry' },
         gallery: {
-          heroTitle: 'Start Creating from Inspiration',
-          heroSubtitle: 'Browse curated works.',
-          homePlaceholder: 'Describe what you want...',
-          homeHint: 'Text required.',
-          allLoaded: 'All works loaded',
-          empty: 'No works yet.',
-          retry: 'Retry',
+          homeLoadingFailed: 'Failed to load',
+          composerRequired: 'Please enter your idea',
+          sessionCreateFailed: 'Failed to create session',
+          promptSendFailed: 'Failed to send prompt',
         },
       },
     },
@@ -64,7 +79,7 @@ function makeI18n() {
 
 const mockListGallery = vi.fn()
 
-vi.mock('src/api/client', () => ({
+vi.mock('../../api/client', () => ({
   api: {
     listGallery: (...args: unknown[]) => mockListGallery(...args),
     createSession: vi.fn().mockResolvedValue({ id: 'ses_test' }),
@@ -72,6 +87,8 @@ vi.mock('src/api/client', () => ({
   },
   GalleryCard: {} as never,
 }))
+
+// ── Mount helper ───────────────────────────────────────────────────────────
 
 async function mountPage() {
   const pinia = createPinia()
@@ -84,16 +101,23 @@ async function mountPage() {
   await router.push('/')
   await router.isReady()
 
-  return mount(HomePage, {    global: {
+  /**
+   * QPage requires QLayout as an ancestor; without it Quasar renders nothing.
+   * Wrap HomePage in QLayout + QPageContainer so the page renders.
+   */
+  const Wrapper = defineComponent({
+    components: { QLayout, QPageContainer },
+    setup() {
+      return () => h(QLayout, { view: 'hHh Lpr fFf' }, () =>
+        h(QPageContainer, () => h(HomePage as Component)),
+      )
+    },
+  })
+
+  return mount(Wrapper, {
+    global: {
       plugins: [pinia, i18n, router] as Plugin[],
-      components: {
-        QLayout, QPageContainer, QPage, QChip, QBtn, QIcon, QSpinnerDots, QTooltip, QInput,
-        UILayout: StubUILayout,
-        UILayoutHeader: StubUILayoutHeader,
-        UILayoutPageContainer: StubUILayoutPageContainer,
-        UILayoutPage: StubUILayoutPage,
-        AgentPromptInput: StubAgentPromptInput,
-      },
+      components: { QLayout, QPageContainer, QPage, QBtn, QIcon, QTooltip },
     },
   })
 }
@@ -109,50 +133,17 @@ describe('HomePage', () => {
     vi.restoreAllMocks()
   })
 
-  it('mounts and shows hero text', async () => {
+  it('mounts and shows all section stubs', async () => {
     const wrapper = await mountPage()
     await flushPromises()
-    expect(wrapper.find('.home-page__hero-title').exists()).toBe(true)
-    expect(wrapper.find('.home-page__hero-title').text()).toBe('Start Creating from Inspiration')
+    expect(wrapper.find('.stub-hero').exists()).toBe(true)
+    expect(wrapper.find('.stub-composer').exists()).toBe(true)
+    expect(wrapper.find('.stub-skills').exists()).toBe(true)
+    expect(wrapper.find('.stub-tv').exists()).toBe(true)
+    expect(wrapper.find('.stub-recommended').exists()).toBe(true)
   })
 
-  it('renders category chips', async () => {
-    const wrapper = await mountPage()
-    // Chips are in .home-page__chips inside the UILayoutHeader
-    const chipsContainer = wrapper.find('.home-page__chips')
-    expect(chipsContainer.exists()).toBe(true)
-    // Should contain the 7 category chip elements
-    const chipsHtml = chipsContainer.html()
-    expect(chipsHtml).toContain('全部')
-    expect(chipsHtml).toContain('海报')
-    expect(chipsHtml).toContain('品牌')
-  })
-
-  it('shows loading skeleton initially', async () => {
-    mockListGallery.mockReturnValue(new Promise(() => { /* never resolves */ }))
-    const wrapper = await mountPage()
-    await flushPromises()
-    const skeletons = wrapper.findAll('.home-page__skeleton-card')
-    expect(skeletons.length).toBeGreaterThan(0)
-  })
-
-  it('shows empty state when no works', async () => {
-    mockListGallery.mockResolvedValue({ items: [], nextCursor: null, hasMore: false })
-    const wrapper = await mountPage()
-    await flushPromises()
-    await flushPromises()
-    expect(wrapper.find('.home-page__empty').exists()).toBe(true)
-  })
-
-  it('shows error state on API failure', async () => {
-    mockListGallery.mockRejectedValue(new Error('Network error'))
-    const wrapper = await mountPage()
-    await flushPromises()
-    await flushPromises()
-    expect(wrapper.find('.home-page__error').exists()).toBe(true)
-  })
-
-  it('populates waterfall with cards', async () => {
+  it('passes works from API to TV section', async () => {
     mockListGallery.mockResolvedValue({
       items: [
         { slug: 'w1', title: 'Work One', category: 'poster', tags: ['test'], thumbnailUrl: '/img.png' },
@@ -164,26 +155,17 @@ describe('HomePage', () => {
     const wrapper = await mountPage()
     await flushPromises()
     await flushPromises()
-    const cards = wrapper.findAll('.home-page__card')
+    const cards = wrapper.findAll('.stub-tv__card')
     expect(cards.length).toBe(2)
-    expect(cards[0]!.text()).toContain('Work One')
-    expect(cards[1]!.text()).toContain('Work Two')
+    expect(cards[0]!.text()).toBe('Work One')
+    expect(cards[1]!.text()).toBe('Work Two')
   })
 
-  it('does not show prompt on cards', async () => {
-    mockListGallery.mockResolvedValue({
-      items: [
-        { slug: 'w1', title: 'No Prompt', category: 'poster', tags: ['test'], thumbnailUrl: '/img.png' },
-      ],
-      nextCursor: null,
-      hasMore: false,
-    })
+  it('shows error state on API failure', async () => {
+    mockListGallery.mockRejectedValue(new Error('Network error'))
     const wrapper = await mountPage()
     await flushPromises()
     await flushPromises()
-    const card = wrapper.find('.home-page__card')
-    // GalleryCard type doesn't include prompt — verified by structure
-    expect(card.exists()).toBe(true)
-    expect(card.text()).not.toContain('prompt')
+    expect(wrapper.find('.home-page__error').exists()).toBe(true)
   })
 })
