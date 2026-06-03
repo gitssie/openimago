@@ -69,6 +69,7 @@ export default {
     unserializable: '无法序列化',
   },
   agentQuestion: {
+    questionCount: '第 {current} / {total} 个问题',
     enterCustomAnswer: '输入自定义答案',
     typeOwnAnswer: '自定义回答',
     submit: '提交',

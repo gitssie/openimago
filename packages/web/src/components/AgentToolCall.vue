@@ -177,7 +177,7 @@ const titleText = computed(() => {
 const isAttention = computed(() => props.attentionCallId === props.part.callID);
 
 watch(isAttention, (next) => {
-  if (next) {
+  if (next && props.part.tool !== 'question' && props.part.tool !== 'ask_question') {
     open.value = true;
   }
 }, { immediate: true });
