@@ -135,14 +135,18 @@
 
     <!-- ── Page ────────────────────────────────────────────────────────── -->
     <q-page-container class="home-page-container">
-      <router-view />
+      <router-view v-slot="{ Component, route }">
+        <transition :name="getTransitionName(route)" mode="out-in">
+          <component :is="Component" :key="route.path" />
+        </transition>
+      </router-view>
     </q-page-container>
   </q-layout>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRoute, useRouter, RouterLink } from 'vue-router'
+import { useRoute, useRouter, RouterLink, type RouteLocationNormalized } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from 'src/stores/auth'
 import { api } from 'src/api/client'
@@ -231,6 +235,15 @@ function goBilling() {
 
 function goSettings() {
   void router.push('/settings')
+}
+
+// ── Routing Transitions ──────────────────────────────────────────────────
+function getTransitionName(route: RouteLocationNormalized) {
+  // Use a seamless spatial transition for Home -> Session
+  if (route.name === 'session' || route.path.startsWith('/sessions/')) {
+    return 'imago-session-flow'
+  }
+  return 'imago-page-fade'
 }
 </script>
 
@@ -602,7 +615,53 @@ function goSettings() {
   background: transparent;
 }
 
+// ── Transitions ───────────────────────────────────────────────────────
+/* Seamless transition for Home -> SessionWorkspace */
+.imago-session-flow-enter-active,
+.imago-session-flow-leave-active {
+  transition: opacity 0.4s cubic-bezier(0.25, 1, 0.5, 1),
+              transform 0.4s cubic-bezier(0.25, 1, 0.5, 1),
+              filter 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+  will-change: opacity, transform, filter;
+}
+
+.imago-session-flow-enter-from {
+  opacity: 0;
+  transform: scale(0.98) translateY(10px);
+  filter: blur(4px);
+}
+
+.imago-session-flow-leave-to {
+  opacity: 0;
+  transform: scale(1.02) translateY(-10px);
+  filter: blur(4px);
+}
+
+/* Fallback page fade */
+.imago-page-fade-enter-active,
+.imago-page-fade-leave-active {
+  transition: opacity 0.25s var(--imago-ease-out);
+}
+
+.imago-page-fade-enter-from,
+.imago-page-fade-leave-to {
+  opacity: 0;
+}
+
+/* Accessibility: prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .imago-session-flow-enter-active,
+  .imago-session-flow-leave-active,
+  .imago-page-fade-enter-active,
+  .imago-page-fade-leave-active {
+    transition: opacity 0.3s ease !important;
+    transform: none !important;
+    filter: none !important;
+  }
+}
+
 // ── Responsive ────────────────────────────────────────────────────────
+
 @media (max-width: 900px) {
   .home-sidebar :deep(.q-drawer__content) {
     width: 200px !important;
