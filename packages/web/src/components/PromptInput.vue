@@ -40,8 +40,10 @@
             </q-btn>
           </slot>
 
-          <div
+          <TransitionGroup
             v-if="attachments && attachments.length > 0"
+            name="list-chip"
+            tag="div"
             class="attachment-chip-row"
           >
             <div
@@ -62,11 +64,11 @@
               
               <!-- Thumbnail / Icon -->
               <div class="imago-attachment-chip__icon-wrap">
-                <q-spinner-puff v-if="attachment.status === 'uploading'" color="cyan" size="14px" />
+                <q-spinner-puff v-if="attachment.status === 'uploading'" size="14px" :style="{ color: 'var(--imago-neon-cyan)' }" />
                 <q-icon v-else-if="attachment.status === 'error'" name="error" color="negative" size="14px" />
-                <q-icon v-else-if="attachment.mime?.startsWith('image/')" name="image" size="14px" color="cyan-3" />
-                <q-icon v-else-if="attachment.mime?.startsWith('audio/')" name="graphic_eq" size="14px" color="purple-3" />
-                <q-icon v-else-if="attachment.mime?.startsWith('video/')" name="videocam" size="14px" color="blue-3" />
+                <q-icon v-else-if="attachment.mime?.startsWith('image/')" name="image" size="14px" :style="{ color: 'var(--imago-neon-cyan)' }" />
+                <q-icon v-else-if="attachment.mime?.startsWith('audio/')" name="graphic_eq" size="14px" :style="{ color: 'var(--imago-neon-purple)' }" />
+                <q-icon v-else-if="attachment.mime?.startsWith('video/')" name="videocam" size="14px" :style="{ color: 'var(--imago-neon-pink)' }" />
                 <q-icon v-else name="description" size="14px" color="grey-4" />
               </div>
 
@@ -100,7 +102,7 @@
                 <q-icon name="refresh" size="12px" />
               </button>
             </div>
-          </div>
+          </TransitionGroup>
         </div>
 
         <q-space />
@@ -363,14 +365,30 @@ defineExpose({
   overflow: hidden;
   transition: all var(--imago-ease-fast);
 
+  &:hover:not(&--uploading):not(&--error) {
+    border-color: var(--imago-border-cyan);
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: var(--imago-glow-cyan-soft);
+  }
+
   &--uploading {
-    border-color: rgba(0, 240, 255, 0.2);
-    box-shadow: inset 0 0 10px rgba(0, 240, 255, 0.05);
+    border-color: rgba(0, 240, 255, 0.25);
+    box-shadow: 
+      inset 0 0 10px rgba(0, 240, 255, 0.05),
+      0 0 8px rgba(0, 240, 255, 0.1);
+    animation: chip-pulse 2s infinite ease-in-out;
   }
 
   &--error {
     border-color: rgba(239, 68, 68, 0.4);
     background: rgba(239, 68, 68, 0.05);
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.1);
+
+    &:hover {
+      border-color: rgba(239, 68, 68, 0.6);
+      background: rgba(239, 68, 68, 0.08);
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.15);
+    }
   }
 
   &__progress-bg {
@@ -378,8 +396,9 @@ defineExpose({
     top: 0;
     left: 0;
     height: 100%;
-    background: rgba(0, 240, 255, 0.1);
-    border-right: 1px solid rgba(0, 240, 255, 0.3);
+    background: linear-gradient(90deg, rgba(0, 240, 255, 0.05), rgba(0, 240, 255, 0.15));
+    border-right: 1px solid var(--imago-neon-cyan);
+    box-shadow: 0 0 8px rgba(0, 240, 255, 0.4);
     z-index: 0;
     transition: width 0.2s ease-out;
   }
@@ -468,6 +487,33 @@ defineExpose({
     }
   }
 }
+
+@keyframes chip-pulse {
+  0%, 100% {
+    border-color: rgba(0, 240, 255, 0.25);
+  }
+  50% {
+    border-color: rgba(0, 240, 255, 0.5);
+    box-shadow: 
+      inset 0 0 12px rgba(0, 240, 255, 0.08),
+      0 0 12px rgba(0, 240, 255, 0.2);
+  }
+}
+
+/* Transitions */
+.list-chip-enter-active,
+.list-chip-leave-active {
+  transition: all var(--imago-ease-default);
+}
+.list-chip-enter-from,
+.list-chip-leave-to {
+  opacity: 0;
+  transform: scale(0.9) translateY(4px);
+}
+.list-chip-leave-active {
+  position: absolute;
+}
+
 
 .chat-input {
   :deep(.q-field__control) {
