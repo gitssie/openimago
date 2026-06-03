@@ -32,7 +32,7 @@
             />
             <span class="home-sidebar__nav-label">{{ item.label }}</span>
             <q-icon
-              v-if="item.to === '/'"
+              v-if="isActive(item.to)"
               name="chevron_right"
               size="14px"
               class="home-sidebar__nav-arrow"
