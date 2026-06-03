@@ -61,14 +61,17 @@ function handleSelect(type: string) {
   gap: 8px;
   width: 140px;
   padding: 8px;
-  background: rgba(16, 18, 28, 0.95);
   border-radius: 16px;
-  border: 1px solid rgba(0, 240, 255, 0.15);
+  background:
+    radial-gradient(ellipse 60% 80% at 50% 0%, rgba(168, 85, 247, 0.08), transparent 70%),
+    radial-gradient(ellipse 80% 60% at 100% 100%, rgba(217, 70, 239, 0.06), transparent 70%),
+    rgba(6, 6, 12, 0.95);
+  border: 1px solid rgba(168, 85, 247, 0.2);
   backdrop-filter: var(--imago-blur-panel, blur(24px));
   -webkit-backdrop-filter: var(--imago-blur-panel, blur(24px));
   box-shadow: 
     0 16px 40px rgba(0, 0, 0, 0.6),
-    inset 0 0 20px rgba(0, 240, 255, 0.05);
+    inset 0 0 20px rgba(168, 85, 247, 0.05);
   
   /* The downward pointing caret/arrow */
   &::after {
@@ -79,9 +82,9 @@ function handleSelect(type: string) {
     transform: translateX(-50%) rotate(45deg);
     width: 12px;
     height: 12px;
-    background: rgba(16, 18, 28, 0.95);
-    border-right: 1px solid rgba(0, 240, 255, 0.2);
-    border-bottom: 1px solid rgba(0, 240, 255, 0.2);
+    background: rgba(6, 6, 12, 0.95);
+    border-right: 1px solid rgba(168, 85, 247, 0.2);
+    border-bottom: 1px solid rgba(168, 85, 247, 0.2);
     box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.3);
     z-index: -1;
   }
@@ -92,32 +95,32 @@ function handleSelect(type: string) {
   align-items: center;
   gap: 14px;
   padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--imago-bg-raised);
+  border: 1px solid var(--imago-border-light);
   border-radius: 10px;
-  color: var(--imago-text-primary, #fff);
+  color: var(--imago-text-primary);
   cursor: pointer;
-  transition: all var(--imago-ease-fast, 0.2s ease);
+  transition: all var(--imago-ease-fast);
   outline: none;
 
   &:hover,
   &:focus-visible {
-    background: rgba(0, 240, 255, 0.06);
-    border-color: rgba(0, 240, 255, 0.5);
+    background: var(--imago-cyan-06);
+    border-color: var(--imago-border-cyan-active);
     box-shadow: 
-      0 0 16px rgba(0, 240, 255, 0.15),
-      inset 0 0 12px rgba(0, 240, 255, 0.1);
+      var(--imago-glow-cyan-soft),
+      inset 0 0 12px var(--imago-cyan-08);
 
     .upload-menu-popup__icon {
-      color: var(--imago-cyan-bright, #00f0ff);
+      color: var(--imago-neon-cyan);
       filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.5));
     }
   }
 }
 
 .upload-menu-popup__icon {
-  color: #8b99ff; /* Soft purplish blue */
-  transition: all var(--imago-ease-fast, 0.2s ease);
+  color: var(--imago-text-muted);
+  transition: all var(--imago-ease-fast);
 }
 
 .upload-menu-popup__label {
