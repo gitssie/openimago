@@ -293,10 +293,11 @@ function goSettings() {
 .home-sidebar__nav-item.is-active {
   color: var(--imago-neon-cyan);
   background:
-    linear-gradient(90deg, rgba(0, 240, 255, 0.16) 0%, rgba(0, 240, 255, 0.04) 55%, rgba(168, 85, 247, 0.10) 100%);
+    linear-gradient(90deg, rgba(0, 240, 255, 0.32) 0%, rgba(0, 240, 255, 0.10) 50%, rgba(168, 85, 247, 0.24) 100%);
   box-shadow:
     inset 2px 0 0 var(--imago-neon-cyan),
-    0 0 18px rgba(0, 240, 255, 0.08);
+    0 0 22px rgba(0, 240, 255, 0.22),
+    0 0 36px rgba(168, 85, 247, 0.10);
 }
 
 .home-sidebar__nav-icon {
@@ -319,7 +320,8 @@ function goSettings() {
 
 .home-sidebar__nav-item.is-active .home-sidebar__nav-arrow {
   color: var(--imago-neon-cyan);
-  opacity: 0.95;
+  opacity: 1;
+  filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.65));
 }
 
 // ── Spacer ─────────────────────────────────────────────────────────────
