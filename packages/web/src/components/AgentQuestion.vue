@@ -298,9 +298,11 @@ async function rejectAll() {
 .agent-question-dock {
   position: absolute;
   bottom: 100%;
-  left: 0;
-  right: 0;
-  margin-bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  max-width: 480px;
+  margin-bottom: 12px;
 }
 
 .question-header {

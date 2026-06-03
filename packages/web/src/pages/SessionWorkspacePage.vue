@@ -1408,6 +1408,7 @@ onUnmounted(() => {
 .input-container {
   max-width: 760px;
   margin: 0 auto;
+  position: relative;
 }
 
 .todo-dock {
