@@ -37,9 +37,13 @@ import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
 
-function handleSelect(type: string) {
-  // TODO: Implement actual upload/selection logic for the selected type
-  console.debug('Selected type:', type)
+const emit = defineEmits<{
+  (e: 'select', type: 'image' | 'audio' | 'video' | 'text'): void
+}>()
+
+function handleSelect(type: 'image' | 'audio' | 'video' | 'text') {
+  // Emit intent to open picker; parent should handle actual file selection
+  emit('select', type)
 }
 </script>
 

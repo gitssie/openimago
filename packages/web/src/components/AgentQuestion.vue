@@ -121,7 +121,7 @@
     <div class="question-footer row items-center justify-between q-px-sm q-py-xs">
       <q-btn
         flat no-caps dense
-        color="grey-6"
+        class="imago-action-btn imago-action-btn--secondary"
         :label="t('agentQuestion.dismiss')"
         :disable="sending"
         @click="rejectAll"
@@ -131,16 +131,16 @@
         <q-btn
           v-if="tabIndex > 0"
           flat no-caps dense
-          color="grey-7"
+          class="imago-action-btn imago-action-btn--secondary"
           :label="t('agentQuestion.back')"
           :disable="sending"
           @click="back"
         />
         <q-btn
-          no-caps unelevated
-          :color="isLast ? 'primary' : 'grey-8'"
-          :text-color="isLast ? 'white' : 'grey-3'"
-           :label="isLast ? t('agentQuestion.submit') : t('agentQuestion.next')"
+          unelevated no-caps dense
+          class="imago-action-btn"
+          :class="isLast ? 'imago-action-btn--primary' : 'imago-action-btn--default'"
+          :label="isLast ? t('agentQuestion.submit') : t('agentQuestion.next')"
           :loading="sending"
           :disable="sending"
           @click="next"
@@ -359,7 +359,7 @@ async function rejectAll() {
 
   :deep(.q-field__native) {
     color: var(--imago-text-primary);
-    caret-color: $primary;
+    caret-color: var(--imago-neon-cyan);
   }
 
   :deep(.q-field__native::placeholder) {
@@ -369,5 +369,53 @@ async function rejectAll() {
 
 .question-footer {
   min-height: 36px;
+}
+
+.imago-action-btn {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 0 12px;
+  min-height: 26px;
+  border-radius: var(--imago-radius-sm);
+  transition: all var(--imago-ease-fast);
+}
+
+.imago-action-btn--secondary {
+  color: var(--imago-text-muted) !important;
+  
+  &:hover {
+    color: var(--imago-text-primary) !important;
+    background: var(--imago-border-light) !important;
+  }
+}
+
+.imago-action-btn--default {
+  color: var(--imago-text-secondary) !important;
+  background: var(--imago-bg-raised) !important;
+  border: 1px solid var(--imago-border-light);
+
+  &:hover {
+    color: var(--imago-text-primary) !important;
+    border-color: var(--imago-border-cyan);
+    background: var(--imago-cyan-06) !important;
+  }
+}
+
+.imago-action-btn--primary {
+  color: #030713 !important;
+  background: var(--imago-neon-cyan, #00f0ff) !important;
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.4);
+
+  &:hover:not(:disabled) {
+    box-shadow: 0 0 16px rgba(0, 240, 255, 0.6);
+    filter: brightness(1.1);
+  }
+  
+  &:disabled {
+    opacity: 0.6;
+    box-shadow: none;
+    background: rgba(0, 240, 255, 0.2) !important;
+    color: rgba(255, 255, 255, 0.5) !important;
+  }
 }
 </style>

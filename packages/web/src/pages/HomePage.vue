@@ -13,9 +13,13 @@
     <!-- Composer -->
     <section class="home-page__composer-wrap">
       <PromptInput
+        ref="inputRef"
         v-model="draft"
         :loading="submitting"
+        :attachments="pendingAttachments"
         @submit="handleSubmit"
+        @attach-files="onFilesSelected"
+        @remove-attachment="onRemoveAttachment"
       >
         <template #leading>
           <button
@@ -24,7 +28,7 @@
             :aria-label="t('gallery.composerAttach')"
           >
             <OiIcon name="plus" :size="14" />
-            <ImagePickerPopup />
+            <ImagePickerPopup @select="handleAttachmentSelect" />
           </button>
           <button type="button" class="prompt-input__select">
             <OiIcon name="sliders" :size="14" />
@@ -79,7 +83,7 @@ import HomeSkills from 'src/components/home/HomeSkills.vue'
 import HomeTV from 'src/components/home/HomeTV.vue'
 import HomeRecommended from 'src/components/home/HomeRecommended.vue'
 import OiIcon from 'src/components/ui/OiIcon.vue'
-import PromptInput from 'src/components/PromptInput.vue'
+import PromptInput, { type ComposerAttachment } from 'src/components/PromptInput.vue'
 import ImagePickerPopup from 'src/components/ImagePickerPopup.vue'
 
 const router = useRouter()
@@ -88,6 +92,7 @@ const { t } = useI18n()
 
 // ── State ──────────────────────────────────────────────────────────────────
 
+const inputRef = ref<{ focus: () => void; setDraft: (value: string) => void; openFilePicker: (type?: string) => void } | null>(null)
 const draft = ref('')
 const works = ref<GalleryCard[]>([])
 const recommendedWorks = ref<GalleryCard[]>([])
@@ -95,6 +100,7 @@ const loading = ref(false)
 const loadingRecommended = ref(false)
 const error = ref<string | null>(null)
 const submitting = ref(false)
+const pendingAttachments = ref<ComposerAttachment[]>([])
 
 // ── Load ───────────────────────────────────────────────────────────────────
 
@@ -136,6 +142,28 @@ function onSkillSelect(id: string) {
 function onPlay(work: GalleryCard) {
   // Future: open inline preview / modal.
   void work
+}
+
+function handleAttachmentSelect(type: 'image' | 'audio' | 'video' | 'text') {
+  inputRef.value?.openFilePicker(type)
+}
+
+function onFilesSelected(files: File[]) {
+  if (files.length === 0) return
+  // TODO: Implement actual home page attachment upload / preservation logic.
+  // For now, just show a temporary chip to acknowledge selection.
+  const tempFiles: ComposerAttachment[] = files.map((f, i) => ({
+    id: `temp-${Date.now()}-${i}`,
+    name: f.name,
+    mime: f.type,
+    status: 'uploading' as const,
+    progress: 10
+  }))
+  pendingAttachments.value.push(...tempFiles)
+}
+
+function onRemoveAttachment(id: string) {
+  pendingAttachments.value = pendingAttachments.value.filter(a => a.id !== id)
 }
 
 // ── Submit (navigate immediately, fire-and-forget the prompt) ─────────────

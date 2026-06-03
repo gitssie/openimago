@@ -192,7 +192,7 @@
                   :aria-label="t('gallery.composerAttach')"
                 >
                   <OiIcon name="plus" :size="14" />
-                  <ImagePickerPopup />
+                  <ImagePickerPopup @select="handleAttachmentSelect" />
                 </button>
                 <button type="button" class="prompt-input__select">
                   <OiIcon name="sliders" :size="14" />
@@ -300,7 +300,7 @@ const router = useRouter()
 const chatViewRef = ref<InstanceType<typeof SessionChatView> | null>(null)
 const followupCollapsed = ref(false)
 const isSessionSwitching = ref(false)
-const inputRef = ref<{ focus: () => void; setDraft: (value: string) => void } | null>(null)
+const inputRef = ref<{ focus: () => void; setDraft: (value: string) => void; openFilePicker: (type?: string) => void } | null>(null)
 const draftInputMessage = ref('')
 const resultTab = ref('result')
 const selectedResultId = ref<string | null>(null)
@@ -683,6 +683,10 @@ async function handleSwitchSession(sid: string) {
   } finally {
     isSessionSwitching.value = false
   }
+}
+
+function handleAttachmentSelect(type: 'image' | 'audio' | 'video' | 'text') {
+  inputRef.value?.openFilePicker(type)
 }
 
 function onFilesSelected(files: File[]) {

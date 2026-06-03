@@ -9,27 +9,6 @@
     >
 
     <div class="input-card">
-      <div
-        v-if="attachments.length > 0"
-        class="attachment-chip-row"
-      >
-        <div
-          v-for="attachment in attachments"
-          :key="attachment.id"
-          class="col-auto"
-        >
-          <q-chip
-            dense
-            removable
-            icon="attach_file"
-            class="attachment-chip"
-            @remove="emit('remove-attachment', attachment.id)"
-          >
-            {{ attachment.name }}
-          </q-chip>
-        </div>
-      </div>
-
       <q-input
         ref="inputRef"
         :model-value="localDraft"
@@ -55,11 +34,63 @@
               size="sm"
               class="attach-btn"
               :disable="disabled"
-              @click="openFilePicker"
+              @click="() => openFilePicker()"
             >
               <q-tooltip>{{ t('agent.attachFile') }}</q-tooltip>
             </q-btn>
           </slot>
+
+          <div
+            v-if="attachments && attachments.length > 0"
+            class="attachment-chip-row"
+          >
+            <div
+              v-for="attachment in attachments"
+              :key="attachment.id"
+              class="imago-attachment-chip"
+              :class="[
+                `imago-attachment-chip--${attachment.status || 'uploaded'}`,
+                { 'is-image': attachment.mime?.startsWith('image/') }
+              ]"
+            >
+              <!-- Progress Bar Background (when uploading) -->
+              <div
+                v-if="attachment.status === 'uploading'"
+                class="imago-attachment-chip__progress-bg"
+                :style="{ width: `${attachment.progress || 0}%` }"
+              />
+              
+              <!-- Thumbnail / Icon -->
+              <div class="imago-attachment-chip__icon-wrap">
+                <q-spinner-puff v-if="attachment.status === 'uploading'" color="cyan" size="14px" />
+                <q-icon v-else-if="attachment.status === 'error'" name="error" color="negative" size="14px" />
+                <q-icon v-else-if="attachment.mime?.startsWith('image/')" name="image" size="14px" color="cyan-3" />
+                <q-icon v-else-if="attachment.mime?.startsWith('audio/')" name="graphic_eq" size="14px" color="purple-3" />
+                <q-icon v-else-if="attachment.mime?.startsWith('video/')" name="videocam" size="14px" color="blue-3" />
+                <q-icon v-else name="description" size="14px" color="grey-4" />
+              </div>
+
+              <!-- Name & Status -->
+              <div class="imago-attachment-chip__info">
+                <div class="imago-attachment-chip__name ellipsis">{{ attachment.name }}</div>
+                <div v-if="attachment.status === 'error'" class="imago-attachment-chip__error-text ellipsis">
+                  {{ attachment.errorMsg || 'Upload failed' }}
+                </div>
+                <div v-else-if="attachment.status === 'uploading'" class="imago-attachment-chip__status-text">
+                  {{ attachment.progress || 0 }}%
+                </div>
+              </div>
+
+              <!-- Remove Action -->
+              <button
+                type="button"
+                class="imago-attachment-chip__remove"
+                @click.stop="emit('remove-attachment', attachment.id)"
+              >
+                <q-icon name="close" size="12px" />
+              </button>
+            </div>
+          </div>
         </div>
 
         <q-space />
@@ -109,6 +140,11 @@ import { useI18n } from 'vue-i18n'
 export interface ComposerAttachment {
   id: string
   name: string
+  // TODO: Add these fields to useAgentSession.ts PendingAttachment type when implementing upload logic
+  status?: 'uploading' | 'uploaded' | 'error'
+  progress?: number
+  errorMsg?: string
+  mime?: string
 }
 
 const props = withDefaults(
@@ -196,8 +232,16 @@ function handlePrimaryAction() {
   if (props.loading) emit('abort')
 }
 
-function openFilePicker() {
-  fileInputRef.value?.click()
+function openFilePicker(acceptType?: string) {
+  if (fileInputRef.value) {
+    if (acceptType === 'image') fileInputRef.value.accept = 'image/*';
+    else if (acceptType === 'audio') fileInputRef.value.accept = 'audio/*';
+    else if (acceptType === 'video') fileInputRef.value.accept = 'video/*';
+    else if (acceptType === 'text') fileInputRef.value.accept = 'text/plain,application/pdf,.md,.csv,.json';
+    else fileInputRef.value.accept = '';
+    
+    fileInputRef.value.click()
+  }
 }
 
 function onFileSelected(event: Event) {
@@ -214,6 +258,7 @@ defineExpose({
   setDraft: (value: string) => {
     localDraft.value = value
   },
+  openFilePicker,
 })
 </script>
 
@@ -289,37 +334,104 @@ defineExpose({
 .attachment-chip-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  padding: 8px 8px 0;
+  align-items: center;
+  gap: 8px;
   max-width: 100%;
 }
 
-.attachment-chip {
-  max-width: 240px;
+.imago-attachment-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px 0 6px;
+  border-radius: var(--imago-radius-md);
+  background: var(--imago-bg-raised);
+  border: 1px solid var(--imago-border-light);
+  overflow: hidden;
+  transition: all var(--imago-ease-fast);
 
-  :deep(.q-chip) {
-    background: var(--imago-border-light) !important;
-    color: var(--imago-text-muted);
-    border: 1px solid var(--imago-border-light);
-    border-radius: var(--imago-radius-md);
+  &--uploading {
+    border-color: rgba(0, 240, 255, 0.2);
+    box-shadow: inset 0 0 10px rgba(0, 240, 255, 0.05);
   }
 
-  :deep(.q-chip__icon) {
-    color: var(--imago-text-muted);
+  &--error {
+    border-color: rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.05);
   }
 
-  :deep(.q-chip__content) {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  &__progress-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: rgba(0, 240, 255, 0.1);
+    border-right: 1px solid rgba(0, 240, 255, 0.3);
+    z-index: 0;
+    transition: width 0.2s ease-out;
+  }
+
+  &__icon-wrap {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+  }
+
+  &__info {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    max-width: 140px;
+  }
+
+  &__name {
     font-size: 11px;
+    font-weight: 500;
+    color: var(--imago-text-primary);
+    line-height: 1.2;
   }
 
-  :deep(.q-chip__icon--remove) {
-    color: var(--imago-text-dim);
+  &__status-text {
+    font-size: 9px;
+    color: var(--imago-neon-cyan);
+    font-weight: 600;
+    line-height: 1;
+    margin-top: 1px;
+  }
+
+  &__error-text {
+    font-size: 9px;
+    color: #fca5a5;
+    line-height: 1;
+    margin-top: 1px;
+  }
+
+  &__remove {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    margin-left: 2px;
+    border: none;
+    background: transparent;
+    color: var(--imago-text-muted);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.15s ease;
 
     &:hover {
-      color: var(--imago-text-muted);
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--imago-text-primary);
     }
   }
 }
