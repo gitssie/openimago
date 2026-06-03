@@ -313,8 +313,8 @@ public class BillingRepository {
 
     private String buildMetadata(BillingEvent event) {
         return String.format(
-                "{\"source_lsn\": \"%s\", \"txid\": %d, \"table_name\": \"%s\", " +
-                "\"operation\": \"%s\", \"ts_ms\": %d}",
+                "{\"source_lsn\": %s, \"txid\": %d, \"table_name\": %s, " +
+                "\"operation\": %s, \"ts_ms\": %d}",
                 escapeJson(event.sourceLsn()),
                 event.txId(),
                 escapeJson(event.tableName()),
