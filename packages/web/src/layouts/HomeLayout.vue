@@ -293,7 +293,7 @@ function goSettings() {
 .home-sidebar__nav-item.is-active {
   color: var(--imago-neon-cyan);
   background:
-    linear-gradient(90deg, rgba(0, 240, 255, 0.14) 0%, rgba(0, 240, 255, 0.04) 100%);
+    linear-gradient(90deg, rgba(0, 240, 255, 0.16) 0%, rgba(0, 240, 255, 0.04) 55%, rgba(168, 85, 247, 0.10) 100%);
   box-shadow:
     inset 2px 0 0 var(--imago-neon-cyan),
     0 0 18px rgba(0, 240, 255, 0.08);
@@ -312,6 +312,14 @@ function goSettings() {
 .home-sidebar__nav-arrow {
   color: var(--imago-text-faint);
   opacity: 0.6;
+  transition:
+    color var(--imago-ease-fast),
+    opacity var(--imago-ease-fast);
+}
+
+.home-sidebar__nav-item.is-active .home-sidebar__nav-arrow {
+  color: var(--imago-neon-cyan);
+  opacity: 0.95;
 }
 
 // ── Spacer ─────────────────────────────────────────────────────────────
