@@ -151,7 +151,7 @@ function play(work: GalleryCard) {
   margin: 0;
   font-size: 22px;
   font-weight: 700;
-  background: linear-gradient(90deg, #00f0ff 0%, #a855f7 100%);
+  background: linear-gradient(90deg, #a855f7 0%, #ec4899 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -252,8 +252,9 @@ function play(work: GalleryCard) {
 }
 
 .home-tv__dot.is-active {
-  background: var(--imago-neon-cyan);
+  background: var(--imago-neon-purple);
   transform: scale(1.2);
+  box-shadow: 0 0 6px rgba(168, 85, 247, 0.6);
 }
 
 .home-tv__empty {

@@ -536,7 +536,7 @@ function goSettings() {
 }
 
 .home-topbar__btn:hover {
-  border-color: var(--imago-border-cyan);
+  border-color: rgba(168, 85, 247, 0.40);
   color: var(--imago-text-primary);
 }
 
@@ -546,11 +546,11 @@ function goSettings() {
   border-radius: 8px;
   font-size: 12.5px;
   font-weight: 600;
-  color: #030713;
-  background: linear-gradient(90deg, #00f0ff 0%, #a855f7 100%);
+  color: #fff;
+  background: linear-gradient(90deg, #ff2d95 0%, #a855f7 100%);
   box-shadow:
-    0 0 18px rgba(0, 240, 255, 0.32),
-    0 0 32px rgba(168, 85, 247, 0.20);
+    0 0 18px rgba(255, 45, 149, 0.40),
+    0 0 32px rgba(168, 85, 247, 0.28);
 }
 
 .home-topbar__pro-icon {

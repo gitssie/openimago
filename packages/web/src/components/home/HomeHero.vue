@@ -44,7 +44,7 @@ const { t } = useI18n()
   // combination collapses whitespace nodes unpredictably, so the space between
   // "OpenImago" and "1.0" needs to be a real, declared value.
   margin-left: 0.45em;
-  background: linear-gradient(90deg, #00f0ff 0%, #5cc6ff 60%, #ffffff 100%);
+  background: linear-gradient(90deg, #00f0ff 0%, #00f0ff 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;

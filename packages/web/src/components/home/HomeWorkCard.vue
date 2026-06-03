@@ -190,10 +190,11 @@ const displayTags = computed(() => (props.work.tags ?? []).slice(0, 2))
   left: 10px;
   padding: 3px 9px;
   border-radius: 6px;
-  background: rgba(8, 8, 15, 0.55);
+  border: 1px solid var(--imago-border-cyan-active);
+  background: rgba(0, 240, 255, 0.10);
   backdrop-filter: var(--imago-blur-light);
   -webkit-backdrop-filter: var(--imago-blur-light);
-  color: var(--imago-text-primary);
+  color: #d8fbff;
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.02em;
