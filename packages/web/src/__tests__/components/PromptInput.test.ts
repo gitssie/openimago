@@ -101,8 +101,8 @@ describe('PromptInput — placeholders', () => {
 describe('PromptInput — attachments', () => {
   it('renders attachment chips with name', () => {
     const attachments: ComposerAttachment[] = [
-      { id: 'a1', name: 'photo.jpg' },
-      { id: 'a2', name: 'sketch.png' },
+      { id: 'a1', name: 'photo.jpg', status: 'uploaded', progress: 100 },
+      { id: 'a2', name: 'sketch.png', status: 'uploaded', progress: 100 },
     ]
     const wrapper = mountInput({ attachments })
     const chips = wrapper.findAll('.attachment-chip')
@@ -113,7 +113,7 @@ describe('PromptInput — attachments', () => {
 
   it('emits remove-attachment when chip remove is clicked', async () => {
     const attachments: ComposerAttachment[] = [
-      { id: 'rm-me', name: 'remove.png' },
+      { id: 'rm-me', name: 'remove.png', status: 'uploaded', progress: 100 },
     ]
     const wrapper = mountInput({ attachments })
     // Find the removable chip and trigger remove
@@ -182,7 +182,7 @@ describe('PromptInput — submit', () => {
   it('send button is enabled when attachments exist but draft is empty', () => {
     const wrapper = mountInput({
       modelValue: '',
-      attachments: [{ id: 'a1', name: 'file.png' }],
+      attachments: [{ id: 'a1', name: 'file.png', status: 'uploaded', progress: 100 }],
       loading: false,
     })
     const sendBtn = wrapper.find('.send-btn')

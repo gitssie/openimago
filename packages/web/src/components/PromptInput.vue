@@ -140,10 +140,10 @@ import { useI18n } from 'vue-i18n'
 export interface ComposerAttachment {
   id: string
   name: string
-  // TODO: Add these fields to useAgentSession.ts PendingAttachment type when implementing upload logic
-  status?: 'uploading' | 'uploaded' | 'error'
-  progress?: number
+  status: 'uploading' | 'uploaded' | 'error'
+  progress: number
   errorMsg?: string
+  assetId?: string
   mime?: string
 }
 

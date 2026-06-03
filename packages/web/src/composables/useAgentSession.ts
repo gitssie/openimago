@@ -53,6 +53,10 @@ export interface PendingAttachment {
   name: string;
   mime: string;
   url: string;
+  status: 'uploading' | 'uploaded' | 'error';
+  progress: number;
+  errorMsg?: string;
+  assetId?: string;
 }
 
 export interface QueuedFollowup {
@@ -333,6 +337,8 @@ export function useAgentSession(
       name: file.name,
       mime: file.type || 'application/octet-stream',
       url: dataUrl,
+      status: 'uploaded',
+      progress: 100,
     });
   }
 

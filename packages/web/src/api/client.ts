@@ -246,8 +246,64 @@ export const api = {
     request<void>(`/api/session/${id}`, { method: 'DELETE' }),
 
   // Assets — { items: [...], cursor } / { asset: {...} }
-  listAssets: () =>
-    request<{ items: OpenimagoAsset[] }>('/api/platform/assets').then((r) => r.items ?? []),
+  listAssets: (params?: { type?: string; cursor?: string; order?: string; limit?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.type) qs.set('type', params.type)
+    if (params?.cursor) qs.set('cursor', params.cursor)
+    if (params?.order) qs.set('order', params.order)
+    if (params?.limit) qs.set('limit', String(params.limit))
+    const query = qs.toString()
+    return request<{ items: OpenimagoAsset[]; cursor?: string }>(`/api/platform/assets${query ? `?${query}` : ''}`).then((r) => r.items ?? [])
+  },
+  getAsset: (id: string) =>
+    request<{ asset: OpenimagoAsset }>(`/api/platform/assets/${id}`).then((r) => r.asset),
+  uploadAsset: (file: File, onProgress?: (percent: number) => void): Promise<{ asset: OpenimagoAsset }> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const auth = useAuthStore()
+      xhr.open('POST', apiUrl('/api/platform/assets/upload'))
+
+      if (onProgress) {
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percent = Math.round((event.loaded / event.total) * 100)
+            onProgress(percent)
+          }
+        }
+      }
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText))
+          } catch {
+            reject(new Error('Invalid response from upload'))
+          }
+        } else if (xhr.status === 401) {
+          auth.clearAuth()
+          reject(new Error('Unauthorized'))
+        } else {
+          try {
+            const err = JSON.parse(xhr.responseText)
+            reject(new Error(err.message || err.error?.message || `Upload failed: HTTP ${xhr.status}`))
+          } catch {
+            reject(new Error(`Upload failed: HTTP ${xhr.status}`))
+          }
+        }
+      }
+
+      xhr.onerror = () => reject(new Error('Network error during upload'))
+      xhr.ontimeout = () => reject(new Error('Upload timed out'))
+
+      if (auth.token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${auth.token}`)
+      }
+      xhr.send(formData)
+    })
+  },
   deleteAsset: (id: string) =>
     request<{ asset: OpenimagoAsset }>(`/api/platform/assets/${id}`, { method: 'DELETE' }),
 
