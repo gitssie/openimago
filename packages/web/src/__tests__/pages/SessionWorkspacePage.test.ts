@@ -72,16 +72,18 @@ const StubSessionWorkspaceResultsPanel = defineComponent({
   template: '<div class="results-panel-stub" />',
 })
 
-const StubAgentPromptInput = defineComponent({
-  name: 'AgentPromptInput',
+const StubPromptInput = defineComponent({
+  name: 'PromptInput',
   props: {
-    draft: String,
+    modelValue: String,
     loading: Boolean,
     connected: Boolean,
     disabled: Boolean,
     attachments: Array,
+    placeholder: String,
+    hint: { type: String, default: null },
   },
-  emits: ['submit', 'abort', 'remove-attachment', 'attach-files'],
+  emits: ['update:modelValue', 'submit', 'abort', 'remove-attachment', 'attach-files'],
   setup(_props, { expose }) {
     expose({ focus: vi.fn(), setDraft: vi.fn() })
     return {}
@@ -266,7 +268,7 @@ function mountPage(component: Component, opts?: Parameters<typeof mount>[1]) {
         SessionChatView: StubSessionChatView,
         SessionWorkspaceSidebar: StubSessionWorkspaceSidebar,
         SessionWorkspaceResultsPanel: StubSessionWorkspaceResultsPanel,
-        AgentPromptInput: StubAgentPromptInput,
+        PromptInput: StubPromptInput,
         AgentQuestion: StubAgentQuestion,
         AgentPermission: StubAgentPermission,
         RouterView: { template: '<div class="router-view-stub" />' },
@@ -508,8 +510,8 @@ describe('SessionWorkspacePage', () => {
       expect(wrapper.text()).toContain('Parent Session')
       expect(wrapper.find('.breadcrumb-parent-btn').exists()).toBe(true)
 
-      // AgentPromptInput should be hidden for child session
-      expect(wrapper.findComponent({ name: 'AgentPromptInput' }).exists()).toBe(false)
+      // PromptInput should be hidden for child session
+      expect(wrapper.findComponent({ name: 'PromptInput' }).exists()).toBe(false)
 
       // Back-to-parent button should be visible
       expect(wrapper.text()).toContain('Back to parent')
@@ -527,7 +529,7 @@ describe('SessionWorkspacePage', () => {
       await flushPromises()
 
       expect(wrapper.find('.breadcrumb-parent-btn').exists()).toBe(false)
-      expect(wrapper.findComponent({ name: 'AgentPromptInput' }).exists()).toBe(true)
+      expect(wrapper.findComponent({ name: 'PromptInput' }).exists()).toBe(true)
     })
 
     it('clicking back-to-parent calls handleSwitchSession with parent id', async () => {
@@ -879,7 +881,7 @@ describe('SessionWorkspacePage', () => {
       })
       await flushPromises()
 
-      const input = wrapper.findComponent({ name: 'AgentPromptInput' })
+      const input = wrapper.findComponent({ name: 'PromptInput' })
       input.vm.$emit('submit', '')
       await flushPromises()
 
@@ -893,7 +895,7 @@ describe('SessionWorkspacePage', () => {
       })
       await flushPromises()
 
-      const input = wrapper.findComponent({ name: 'AgentPromptInput' })
+      const input = wrapper.findComponent({ name: 'PromptInput' })
       input.vm.$emit('submit', 'hello world')
       await flushPromises()
 
@@ -909,7 +911,7 @@ describe('SessionWorkspacePage', () => {
       })
       await flushPromises()
 
-      const input = wrapper.findComponent({ name: 'AgentPromptInput' })
+      const input = wrapper.findComponent({ name: 'PromptInput' })
       const file1 = new File(['content1'], 'file1.png', { type: 'image/png' })
       const file2 = new File(['content2'], 'file2.jpg', { type: 'image/jpeg' })
       input.vm.$emit('attach-files', [file1, file2])
@@ -928,7 +930,7 @@ describe('SessionWorkspacePage', () => {
       })
       await flushPromises()
 
-      const input = wrapper.findComponent({ name: 'AgentPromptInput' })
+      const input = wrapper.findComponent({ name: 'PromptInput' })
       input.vm.$emit('attach-files', [new File([''], 'bad.png', { type: 'image/png' })])
       await flushPromises()
 

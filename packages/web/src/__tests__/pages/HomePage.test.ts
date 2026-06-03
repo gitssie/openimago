@@ -14,11 +14,11 @@ vi.mock('../../components/home/HomeHero.vue', () => ({
   default: { name: 'HomeHero', template: '<div class="stub-hero" />' },
 }))
 
-vi.mock('../../components/home/HomeComposer.vue', () => ({
+vi.mock('../../components/PromptInput.vue', () => ({
   default: {
-    name: 'HomeComposer',
-    props: ['modelValue', 'loading'],
-    emits: ['update:modelValue', 'submit'],
+    name: 'PromptInput',
+    props: ['modelValue', 'loading', 'connected', 'disabled', 'attachments', 'placeholder', 'hint'],
+    emits: ['update:modelValue', 'submit', 'abort', 'remove-attachment', 'attach-files'],
     template: `<div class="stub-composer">
       <input :value="modelValue" @input="$emit('update:modelValue', $event.target.value)" />
       <button :disabled="!modelValue" @click="$emit('submit', modelValue)">send</button>
