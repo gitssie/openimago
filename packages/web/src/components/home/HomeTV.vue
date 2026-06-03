@@ -192,8 +192,8 @@ function play(work: GalleryCard) {
 
 .home-tv__grid {
   display: grid;
-  grid-template-columns: 1.7fr 1fr 1fr 1fr 1fr;
-  gap: 14px;
+  grid-template-columns: 2.8fr 1fr 1fr 1fr 1fr;
+  gap: 16px;
   align-items: stretch;
 }
 

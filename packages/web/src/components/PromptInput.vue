@@ -82,6 +82,7 @@
           class="send-btn"
           :class="{ 'send-btn--active': hasAction }"
           :disable="disabled || !hasAction"
+          :aria-label="actionTooltip"
           @click="handlePrimaryAction"
         >
           <q-tooltip>{{ actionTooltip }}</q-tooltip>
@@ -223,30 +224,30 @@ defineExpose({
   max-width: 920px;
   margin: 0 auto;
   border: 1px solid transparent;
-  border-radius: 18px;
+  border-radius: 20px;
   background:
-    radial-gradient(ellipse 60% 80% at 50% 0%, rgba(0, 240, 255, 0.06), transparent 70%),
-    radial-gradient(ellipse 80% 60% at 100% 100%, rgba(168, 85, 247, 0.08), transparent 70%),
-    rgba(8, 8, 15, 0.85);
+    radial-gradient(ellipse 60% 80% at 50% 0%, rgba(168, 85, 247, 0.08), transparent 70%),
+    radial-gradient(ellipse 80% 60% at 100% 100%, rgba(217, 70, 239, 0.06), transparent 70%),
+    rgba(6, 6, 12, 0.92);
   backdrop-filter: var(--imago-blur-panel);
   -webkit-backdrop-filter: var(--imago-blur-panel);
   box-shadow:
-    0 0 32px rgba(0, 240, 255, 0.12),
-    inset 0 0 32px rgba(0, 240, 255, 0.04);
-  transition: box-shadow var(--imago-ease-smooth);
+    0 0 32px rgba(168, 85, 247, 0.12),
+    inset 0 0 32px rgba(168, 85, 247, 0.04);
+  transition: all var(--imago-ease-smooth);
 
   &::before {
     content: '';
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    padding: 1px;
+    padding: 1.2px;
     background: linear-gradient(
       135deg,
-      rgba(0, 240, 255, 0.55) 0%,
-      rgba(0, 240, 255, 0.30) 35%,
+      rgba(168, 85, 247, 0.45) 0%,
+      rgba(217, 70, 239, 0.55) 30%,
       rgba(168, 85, 247, 0.35) 70%,
-      rgba(168, 85, 247, 0.55) 100%
+      rgba(124, 58, 237, 0.45) 100%
     );
     -webkit-mask:
       linear-gradient(#fff 0 0) content-box,
@@ -259,17 +260,17 @@ defineExpose({
 
   &:focus-within {
     box-shadow:
-      0 0 44px rgba(0, 240, 255, 0.22),
-      0 0 24px rgba(168, 85, 247, 0.14),
-      inset 0 0 36px rgba(0, 240, 255, 0.06);
+      0 0 44px rgba(168, 85, 247, 0.22),
+      0 0 24px rgba(217, 70, 239, 0.14),
+      inset 0 0 36px rgba(168, 85, 247, 0.06);
 
     &::before {
       background: linear-gradient(
         135deg,
-        rgba(0, 240, 255, 0.85) 0%,
-        rgba(0, 240, 255, 0.45) 35%,
-        rgba(168, 85, 247, 0.55) 70%,
-        rgba(168, 85, 247, 0.85) 100%
+        rgba(168, 85, 247, 0.8) 0%,
+        rgba(217, 70, 239, 0.85) 30%,
+        rgba(168, 85, 247, 0.6) 70%,
+        rgba(124, 58, 237, 0.8) 100%
       );
     }
   }
@@ -398,30 +399,39 @@ defineExpose({
 }
 
 .send-btn {
+  background: rgba(255, 255, 255, 0.05) !important;
+  width: 32px;
+  height: 32px;
+  min-height: unset;
+  transition: all var(--imago-ease-smooth);
+
   :deep(.q-btn__content) {
-    color: var(--imago-text-faint);
+    color: rgba(255, 255, 255, 0.25) !important;
   }
 
   :deep(.q-icon) {
-    color: var(--imago-text-faint);
-  }
-
-  :deep(.q-btn) {
-    background: var(--imago-bg-raised);
+    color: rgba(255, 255, 255, 0.25) !important;
+    font-size: 16px;
   }
 
   &--active {
+    background: #00f0ff !important;
+    box-shadow: 0 0 16px rgba(0, 240, 255, 0.6);
+
     :deep(.q-btn__content) {
-      color: #030713;
+      color: #030713 !important;
     }
 
     :deep(.q-icon) {
-      color: #030713;
+      color: #030713 !important;
+      font-size: 16px;
+      font-weight: bold;
     }
 
-    :deep(.q-btn) {
-      background: var(--imago-neon-cyan);
-      box-shadow: 0 0 20px rgba(0, 240, 255, 0.55);
+    &:hover {
+      background: #33f3ff !important;
+      box-shadow: 0 0 24px rgba(0, 240, 255, 0.8);
+      transform: scale(1.05);
     }
   }
 }
@@ -443,23 +453,22 @@ defineExpose({
 :slotted(.prompt-input__icon-btn) {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--imago-border-light);
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 50%;
-  background: var(--imago-bg-raised);
-  color: var(--imago-text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
   font: inherit;
   padding: 0;
-  transition:
-    border-color var(--imago-ease-fast),
-    color var(--imago-ease-fast);
+  transition: all var(--imago-ease-fast);
 }
 
 :slotted(.prompt-input__icon-btn:hover) {
-  border-color: var(--imago-border-cyan);
-  color: var(--imago-text-primary);
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
 }
 
 :slotted(.prompt-input__select) {
@@ -467,22 +476,22 @@ defineExpose({
   align-items: center;
   gap: 6px;
   height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--imago-border-light);
-  border-radius: 10px;
-  background: var(--imago-bg-raised);
-  color: var(--imago-text-secondary);
-  font-size: 13px;
+  padding: 0 14px;
+  border: 1px solid rgba(168, 85, 247, 0.18);
+  border-radius: 9999px; // Beautiful capsule pill shape!
+  background: rgba(168, 85, 247, 0.04);
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 12.5px;
+  font-weight: 500;
   cursor: pointer;
   font-family: inherit;
-  transition:
-    border-color var(--imago-ease-fast),
-    color var(--imago-ease-fast);
+  transition: all var(--imago-ease-fast);
 }
 
 :slotted(.prompt-input__select:hover) {
-  border-color: var(--imago-border-cyan);
-  color: var(--imago-text-primary);
+  border-color: rgba(168, 85, 247, 0.4);
+  background: rgba(168, 85, 247, 0.08);
+  color: #fff;
 }
 
 :slotted(.prompt-input__select-caret) {

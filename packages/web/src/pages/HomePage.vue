@@ -255,7 +255,8 @@ onMounted(() => {
 .home-page__composer-wrap {
   position: relative;
   z-index: 1;
-  margin-top: 8px;
+  margin-top: 36px;
+  margin-bottom: 24px;
   padding: 0 16px;
 }
 

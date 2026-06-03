@@ -53,14 +53,14 @@ const skills: Skill[] = [
 .home-skills {
   position: relative;
   z-index: 1;
-  margin: 40px auto 0;
+  margin: 48px auto 0;
   max-width: 1200px;
   padding: 0 8px;
 }
 
 .home-skills__title {
   text-align: center;
-  margin: 0 0 18px;
+  margin: 0 0 20px;
   font-size: 14px;
   font-weight: 500;
   color: var(--imago-text-muted);
@@ -70,32 +70,30 @@ const skills: Skill[] = [
 .home-skills__grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 14px;
+  gap: 16px;
 }
 
 .home-skills__card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  border: 1px solid var(--imago-border-light);
-  border-radius: 14px;
-  background: var(--imago-bg-glass);
+  gap: 14px;
+  padding: 16px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  background: rgba(8, 8, 15, 0.45);
   backdrop-filter: var(--imago-blur-light);
   -webkit-backdrop-filter: var(--imago-blur-light);
   color: var(--imago-text-primary);
   text-align: left;
   cursor: pointer;
-  transition:
-    border-color var(--imago-ease-smooth),
-    transform var(--imago-ease-smooth),
-    box-shadow var(--imago-ease-smooth);
+  transition: all var(--imago-ease-smooth);
   font-family: inherit;
 }
 
 .home-skills__card:hover {
   border-color: rgb(var(--skill-hue) / 0.55);
   transform: translateY(-2px);
+  background: rgba(var(--skill-hue) / 0.05);
   box-shadow:
     0 0 24px rgb(var(--skill-hue) / 0.18),
     inset 0 0 16px rgb(var(--skill-hue) / 0.06);
@@ -122,14 +120,14 @@ const skills: Skill[] = [
 }
 
 .home-skills__name {
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 600;
   color: var(--imago-text-primary);
 }
 
 .home-skills__desc {
-  font-size: 11.5px;
-  color: var(--imago-text-dim);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
