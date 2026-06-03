@@ -619,22 +619,22 @@ function getTransitionName(route: RouteLocationNormalized) {
 /* Seamless transition for Home -> SessionWorkspace */
 .imago-session-flow-enter-active,
 .imago-session-flow-leave-active {
-  transition: opacity 0.4s cubic-bezier(0.25, 1, 0.5, 1),
-              transform 0.4s cubic-bezier(0.25, 1, 0.5, 1),
-              filter 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+  transition: opacity 0.75s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.75s cubic-bezier(0.16, 1, 0.3, 1),
+              filter 0.75s cubic-bezier(0.16, 1, 0.3, 1);
   will-change: opacity, transform, filter;
 }
 
 .imago-session-flow-enter-from {
   opacity: 0;
-  transform: scale(0.98) translateY(10px);
-  filter: blur(4px);
+  transform: scale(0.96) translateY(20px);
+  filter: blur(8px);
 }
 
 .imago-session-flow-leave-to {
   opacity: 0;
-  transform: scale(1.02) translateY(-10px);
-  filter: blur(4px);
+  transform: scale(1.04) translateY(-20px);
+  filter: blur(8px);
 }
 
 /* Fallback page fade */
