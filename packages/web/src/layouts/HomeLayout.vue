@@ -135,17 +135,36 @@
 
     <!-- ── Page ────────────────────────────────────────────────────────── -->
     <q-page-container class="home-page-container">
-      <router-view v-slot="{ Component, route }">
-        <transition :name="getTransitionName(route)" mode="out-in">
-          <component :is="Component" :key="route.path" />
-        </transition>
-      </router-view>
+      <div class="home-route-wrapper">
+        <router-view v-slot="{ Component, route }">
+          <transition :name="getTransitionName(route)" :mode="getTransitionMode(route)">
+            <component :is="Component" :key="route.path" class="home-route-page" />
+          </transition>
+        </router-view>
+
+        <!-- AI Transition FX Overlay -->
+        <div class="ai-fx-overlay" :class="{ 'is-active': isSessionTransitioning }" aria-hidden="true">
+          <div class="ai-fx-grid"></div>
+          <svg class="ai-fx-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="neonGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#00f0ff" stop-opacity="0" />
+                <stop offset="50%" stop-color="#a855f7" stop-opacity="1" />
+                <stop offset="100%" stop-color="#00f0ff" stop-opacity="0" />
+              </linearGradient>
+            </defs>
+            <path class="ai-fx-line line-1" d="M 0,85 Q 50,60 100,85" />
+            <path class="ai-fx-line line-2" d="M 0,85 Q 50,110 100,85" />
+          </svg>
+          <div class="ai-fx-pulse"></div>
+        </div>
+      </div>
     </q-page-container>
   </q-layout>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter, RouterLink, type RouteLocationNormalized } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from 'src/stores/auth'
@@ -238,12 +257,34 @@ function goSettings() {
 }
 
 // ── Routing Transitions ──────────────────────────────────────────────────
+const isSessionTransitioning = ref(false)
+let transitionTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(() => route.path, (newPath) => {
+  const isToSession = newPath.startsWith('/sessions/') || route.name === 'session'
+  if (isToSession) {
+    isSessionTransitioning.value = true
+    if (transitionTimer) clearTimeout(transitionTimer)
+    transitionTimer = setTimeout(() => {
+      isSessionTransitioning.value = false
+    }, 900)
+  }
+})
+
 function getTransitionName(route: RouteLocationNormalized) {
   // Use a seamless spatial transition for Home -> Session
   if (route.name === 'session' || route.path.startsWith('/sessions/')) {
     return 'imago-session-flow'
   }
   return 'imago-page-fade'
+}
+
+function getTransitionMode(route: RouteLocationNormalized): 'out-in' | 'in-out' | 'default' {
+  // Return 'default' (which is simultaneous) for the epic session transition
+  if (route.name === 'session' || route.path.startsWith('/sessions/')) {
+    return 'default'
+  }
+  return 'out-in'
 }
 </script>
 
@@ -615,25 +656,150 @@ function getTransitionName(route: RouteLocationNormalized) {
   background: transparent;
 }
 
+.home-route-wrapper {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  flex: 1;
+}
+
+.home-route-page {
+  grid-area: 1 / 1;
+  width: 100%;
+}
+
+// ── AI FX Overlay ───────────────────────────────────────────────────
+.ai-fx-overlay {
+  grid-area: 1 / 1;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 20;
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.ai-fx-overlay.is-active {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Expanding Pulse from Prompt Input */
+.ai-fx-pulse {
+  position: absolute;
+  bottom: 15%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 240, 255, 0.8) 0%, rgba(168, 85, 247, 0.4) 40%, transparent 70%);
+  box-shadow: 0 0 80px 40px rgba(0, 240, 255, 0.5);
+  transform: translate(-50%, 50%) scale(1);
+  opacity: 0;
+}
+
+.ai-fx-overlay.is-active .ai-fx-pulse {
+  animation: aiPulseExpand 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes aiPulseExpand {
+  0% { transform: translate(-50%, 50%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, 50%) scale(300); opacity: 0; }
+}
+
+/* Cyber Grid Sweep */
+.ai-fx-grid {
+  position: absolute;
+  inset: -50%;
+  background-image:
+    linear-gradient(rgba(0, 240, 255, 0.15) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 240, 255, 0.15) 1px, transparent 1px);
+  background-size: 60px 60px;
+  transform: perspective(600px) rotateX(70deg) translateY(100px);
+  transform-origin: bottom center;
+  opacity: 0;
+}
+
+.ai-fx-overlay.is-active .ai-fx-grid {
+  animation: aiGridSweep 0.9s ease-out forwards;
+}
+
+@keyframes aiGridSweep {
+  0% { opacity: 0; transform: perspective(600px) rotateX(70deg) translateY(100px); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: perspective(600px) rotateX(70deg) translateY(-400px); }
+}
+
+/* SVG Energy Lines */
+.ai-fx-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.ai-fx-line {
+  fill: none;
+  stroke: url(#neonGradient);
+  stroke-width: 1;
+  stroke-dasharray: 200;
+  stroke-dashoffset: 200;
+  opacity: 0;
+  filter: drop-shadow(0 0 4px #00f0ff);
+}
+
+.ai-fx-overlay.is-active .line-1 {
+  animation: aiLineDash 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.ai-fx-overlay.is-active .line-2 {
+  animation: aiLineDash 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards;
+}
+
+@keyframes aiLineDash {
+  0% { stroke-dashoffset: 200; opacity: 1; }
+  100% { stroke-dashoffset: -200; opacity: 0; }
+}
+
 // ── Transitions ───────────────────────────────────────────────────────
 /* Seamless transition for Home -> SessionWorkspace */
 .imago-session-flow-enter-active,
 .imago-session-flow-leave-active {
-  transition: opacity 0.75s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.75s cubic-bezier(0.16, 1, 0.3, 1),
-              filter 0.75s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: opacity, transform, filter;
+  transition: all 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity, filter, clip-path;
+}
+
+.imago-session-flow-enter-active {
+  z-index: 10;
+}
+
+.imago-session-flow-leave-active {
+  z-index: 1;
 }
 
 .imago-session-flow-enter-from {
-  opacity: 0;
-  transform: scale(0.96) translateY(20px);
-  filter: blur(8px);
+  clip-path: circle(0% at 50% 85%);
+  filter: brightness(2) saturate(1.5);
+  transform: translateY(20px);
+}
+
+.imago-session-flow-enter-to {
+  clip-path: circle(150% at 50% 85%);
+  filter: brightness(1) saturate(1);
+  transform: translateY(0);
+}
+
+.imago-session-flow-leave-from {
+  opacity: 1;
+  transform: scale(1);
+  filter: blur(0);
 }
 
 .imago-session-flow-leave-to {
   opacity: 0;
-  transform: scale(1.04) translateY(-20px);
+  transform: scale(0.95);
   filter: blur(8px);
 }
 
