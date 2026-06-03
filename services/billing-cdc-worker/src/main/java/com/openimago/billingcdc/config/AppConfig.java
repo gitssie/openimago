@@ -1,5 +1,6 @@
 package com.openimago.billingcdc.config;
 
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -68,40 +69,51 @@ public record AppConfig(
     private static final long DEFAULT_OFFSET_FLUSH_INTERVAL_MS = 60_000L;
 
     /**
-     * Creates an {@link AppConfig} from environment variables.
+     * Creates an {@link AppConfig} from system environment variables.
      *
-     * @throws IllegalStateException if any required variable is missing
+     * @throws NullPointerException if any required variable is missing
      */
     public static AppConfig fromEnv() {
-        String dbHost = require("CDC_DB_HOST");
-        int dbPort = Integer.parseInt(require("CDC_DB_PORT"));
-        String dbName = require("CDC_DB_NAME");
-        String dbUser = require("CDC_DB_USER");
-        String dbPassword = require("CDC_DB_PASSWORD");
+        return fromEnv(System.getenv());
+    }
 
-        String offsetJdbcUrl = System.getenv("CDC_OFFSET_JDBC_URL");
-        String offsetJdbcUser = System.getenv("CDC_OFFSET_JDBC_USER");
-        String offsetJdbcPassword = System.getenv("CDC_OFFSET_JDBC_PASSWORD");
+    /**
+     * Creates an {@link AppConfig} from a supplied environment map.
+     * Package-private for testability; production code should use {@link #fromEnv()}.
+     *
+     * @param env a map of environment variable names to values
+     * @throws NullPointerException if any required variable is missing
+     */
+    static AppConfig fromEnv(Map<String, String> env) {
+        String dbHost = requireEnv(env, "CDC_DB_HOST");
+        int dbPort = Integer.parseInt(requireEnv(env, "CDC_DB_PORT"));
+        String dbName = requireEnv(env, "CDC_DB_NAME");
+        String dbUser = requireEnv(env, "CDC_DB_USER");
+        String dbPassword = requireEnv(env, "CDC_DB_PASSWORD");
 
-        String schemaHistoryJdbcUrl = System.getenv("CDC_SCHEMA_HISTORY_JDBC_URL");
-        String schemaHistoryJdbcUser = System.getenv("CDC_SCHEMA_HISTORY_JDBC_USER");
-        String schemaHistoryJdbcPassword = System.getenv("CDC_SCHEMA_HISTORY_JDBC_PASSWORD");
+        String offsetJdbcUrl = env.get("CDC_OFFSET_JDBC_URL");
+        String offsetJdbcUser = env.get("CDC_OFFSET_JDBC_USER");
+        String offsetJdbcPassword = env.get("CDC_OFFSET_JDBC_PASSWORD");
 
-        String tableIncludeList = envOrDefault("CDC_TABLE_INCLUDE_LIST", DEFAULT_TABLE_INCLUDE_LIST);
-        String publicationName = envOrDefault("CDC_PUBLICATION_NAME", DEFAULT_PUBLICATION_NAME);
-        String slotName = envOrDefault("CDC_SLOT_NAME", DEFAULT_SLOT_NAME);
-        String topicPrefix = envOrDefault("CDC_TOPIC_PREFIX", DEFAULT_TOPIC_PREFIX);
-        String snapshotMode = envOrDefault("CDC_SNAPSHOT_MODE", DEFAULT_SNAPSHOT_MODE);
+        String schemaHistoryJdbcUrl = env.get("CDC_SCHEMA_HISTORY_JDBC_URL");
+        String schemaHistoryJdbcUser = env.get("CDC_SCHEMA_HISTORY_JDBC_USER");
+        String schemaHistoryJdbcPassword = env.get("CDC_SCHEMA_HISTORY_JDBC_PASSWORD");
+
+        String tableIncludeList = envOrDefault(env, "CDC_TABLE_INCLUDE_LIST", DEFAULT_TABLE_INCLUDE_LIST);
+        String publicationName = envOrDefault(env, "CDC_PUBLICATION_NAME", DEFAULT_PUBLICATION_NAME);
+        String slotName = envOrDefault(env, "CDC_SLOT_NAME", DEFAULT_SLOT_NAME);
+        String topicPrefix = envOrDefault(env, "CDC_TOPIC_PREFIX", DEFAULT_TOPIC_PREFIX);
+        String snapshotMode = envOrDefault(env, "CDC_SNAPSHOT_MODE", DEFAULT_SNAPSHOT_MODE);
 
         long offsetFlushIntervalMs = Long.parseLong(
-                envOrDefault("CDC_OFFSET_FLUSH_INTERVAL_MS", String.valueOf(DEFAULT_OFFSET_FLUSH_INTERVAL_MS))
+                envOrDefault(env, "CDC_OFFSET_FLUSH_INTERVAL_MS", String.valueOf(DEFAULT_OFFSET_FLUSH_INTERVAL_MS))
         );
 
         // Billing write connection — defaults to same as CDC DB if not explicitly set
-        String billingDbUrl = envOrDefault("BILLING_DB_URL",
+        String billingDbUrl = envOrDefault(env, "BILLING_DB_URL",
                 "jdbc:postgresql://" + dbHost + ":" + dbPort + "/" + dbName);
-        String billingDbUser = envOrDefault("BILLING_DB_USER", dbUser);
-        String billingDbPassword = envOrDefault("BILLING_DB_PASSWORD", dbPassword);
+        String billingDbUser = envOrDefault(env, "BILLING_DB_USER", dbUser);
+        String billingDbPassword = envOrDefault(env, "BILLING_DB_PASSWORD", dbPassword);
 
         return new AppConfig(
                 dbHost, dbPort, dbName, dbUser, dbPassword,
@@ -127,16 +139,16 @@ public record AppConfig(
         return schemaHistoryJdbcUrl != null && !schemaHistoryJdbcUrl.isBlank();
     }
 
-    private static String require(String envName) {
-        String value = System.getenv(envName);
+    private static String requireEnv(Map<String, String> env, String envName) {
+        String value = env.get(envName);
         Objects.requireNonNull(value,
                 "Missing required environment variable: " + envName
                 + ". No hardcoded defaults for critical credentials.");
         return value;
     }
 
-    private static String envOrDefault(String envName, String defaultValue) {
-        String value = System.getenv(envName);
+    private static String envOrDefault(Map<String, String> env, String envName, String defaultValue) {
+        String value = env.get(envName);
         return (value != null && !value.isBlank()) ? value : defaultValue;
     }
 }
