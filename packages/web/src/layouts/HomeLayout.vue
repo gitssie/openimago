@@ -10,16 +10,6 @@
       class="home-sidebar"
     >
       <div class="home-sidebar__inner">
-        <!-- Brand -->
-        <RouterLink to="/" class="home-sidebar__brand">
-          <OiIcon
-            name="oi-logomark"
-            :size="26"
-            class="home-sidebar__brand-icon"
-          />
-          <span class="home-sidebar__brand-name">openimago</span>
-        </RouterLink>
-
         <!-- Primary nav -->
         <nav class="home-sidebar__nav" :aria-label="t('nav.workbench')">
           <RouterLink
@@ -104,6 +94,14 @@
     <!-- ── Top bar (right-aligned actions) ─────────────────────────────── -->
     <q-header class="home-topbar">
       <q-toolbar class="home-topbar__toolbar">
+        <RouterLink to="/" class="home-topbar__brand">
+          <OiIcon
+            name="oi-logomark"
+            :size="26"
+            class="home-topbar__brand-icon"
+          />
+          <span class="home-topbar__brand-name">openimago</span>
+        </RouterLink>
         <q-space />
         <q-btn
           flat
@@ -260,34 +258,6 @@ function goSettings() {
   flex-direction: column;
   height: 100%;
   padding: 20px 14px 16px;
-}
-
-// ── Brand ──────────────────────────────────────────────────────────────
-.home-sidebar__brand {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 6px 8px 24px;
-  color: var(--imago-text-primary);
-  text-decoration: none;
-}
-
-.home-sidebar__brand-icon {
-  display: block;
-  flex-shrink: 0;
-  filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.45));
-}
-
-.home-sidebar__brand-name {
-  font-family: 'Trebuchet MS', 'Segoe UI', 'PingFang SC', sans-serif;
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  background: linear-gradient(90deg, #e8e8ec 0%, #a0e9ff 55%, #c39bff 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  line-height: 1;
 }
 
 // ── Nav items ──────────────────────────────────────────────────────────
@@ -524,6 +494,35 @@ function goSettings() {
   min-height: 56px;
   padding: 0 24px;
   gap: 10px;
+}
+
+.home-topbar__brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 56px;
+  color: var(--imago-text-primary);
+  text-decoration: none;
+
+  &:hover { opacity: 0.9; }
+}
+
+.home-topbar__brand-icon {
+  display: block;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.45));
+}
+
+.home-topbar__brand-name {
+  font-family: 'Trebuchet MS', 'Segoe UI', 'PingFang SC', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: linear-gradient(90deg, #e8e8ec 0%, #a0e9ff 55%, #c39bff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  line-height: 1;
 }
 
 .home-topbar__btn {
