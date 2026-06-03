@@ -1,5 +1,5 @@
 <template>
-  <div class="agent-permission-dock imago-dock imago-dock--glass">
+  <div class="agent-permission-dock imago-dock">
     <!-- Header -->
     <div class="perm-header row items-center no-wrap q-px-sm q-pt-xs q-pb-xs">
       <q-icon name="security" size="16px" color="warning" class="q-mr-xs" />
@@ -119,6 +119,8 @@ async function respond(response: 'once' | 'always' | 'reject') {
   width: calc(100% - 32px);
   max-width: 480px;
   margin-bottom: 12px;
+  background: var(--imago-bg-panel);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
 .perm-header {

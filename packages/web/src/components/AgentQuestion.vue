@@ -1,5 +1,5 @@
 <template>
-  <div class="agent-question-dock imago-dock imago-dock--glass">
+  <div class="agent-question-dock imago-dock">
     <!-- Header: "1 of N questions" + progress dots -->
     <div class="question-header row items-center no-wrap q-px-sm q-pt-xs">
       <span class="text-caption text-grey-6 col">{{ t('agentQuestion.questionCount', { current: tabIndex + 1, total }) }}</span>
@@ -303,6 +303,8 @@ async function rejectAll() {
   width: calc(100% - 32px);
   max-width: 480px;
   margin-bottom: 12px;
+  background: var(--imago-bg-panel);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
 .question-header {
