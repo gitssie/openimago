@@ -184,7 +184,31 @@
               @abort="abortSession"
               @remove-attachment="removeAttachment"
               @attach-files="onFilesSelected"
-            />
+            >
+              <template #leading>
+                <button
+                  type="button"
+                  class="prompt-input__icon-btn"
+                  :aria-label="t('gallery.composerAttach')"
+                >
+                  <OiIcon name="plus" :size="14" />
+                  <ImagePickerPopup />
+                </button>
+                <button type="button" class="prompt-input__select">
+                  <OiIcon name="sliders" :size="14" />
+                  <span>{{ t('gallery.composerMode') }}</span>
+                  <q-icon name="expand_more" size="14px" class="prompt-input__select-caret" />
+                </button>
+                <button type="button" class="prompt-input__select">
+                  <q-icon name="crop_landscape" size="14px" />
+                  <span>{{ t('gallery.composerAspect') }}</span>
+                </button>
+                <button type="button" class="prompt-input__select">
+                  <OiIcon name="clock" :size="14" />
+                  <span>{{ t('gallery.composerDuration') }}</span>
+                </button>
+              </template>
+            </PromptInput>
             <div v-else class="child-session-input-disabled imago-dock text-body2 text-grey-7">
               <span>{{ t('agent.childInputDisabled') }}</span>
               <q-btn
@@ -228,6 +252,7 @@ import OiIcon from 'src/components/ui/OiIcon.vue'
 import AgentQuestion from 'src/components/AgentQuestion.vue'
 import AgentPermission from 'src/components/AgentPermission.vue'
 import PromptInput from 'src/components/PromptInput.vue'
+import ImagePickerPopup from 'src/components/ImagePickerPopup.vue'
 import SessionChatView from 'src/components/session-workspace/SessionChatView.vue'
 import SessionWorkspaceSidebar from 'src/components/session-workspace/SessionWorkspaceSidebar.vue'
 import SessionWorkspaceResultsPanel from 'src/components/session-workspace/SessionWorkspaceResultsPanel.vue'
@@ -720,17 +745,17 @@ onUnmounted(() => {
 
 /* Override UILayoutDrawer default white bg with our dark creative theme */
 .session-layout :deep(.ui-layout__drawer) {
-  background: var(--imago-bg-void) !important;
+  background: var(--imago-bg-panel) !important;
   color: var(--imago-text-primary);
-  border-color: var(--imago-border-light);
+  border-color: var(--imago-border-dim);
 }
 
 .session-layout :deep(.ui-layout__drawer--left) {
-  border-right: 1px solid var(--imago-border-light);
+  border-right: 1px solid var(--imago-border-dim);
 }
 
 .session-layout :deep(.ui-layout__drawer--right) {
-  border-left: 1px solid var(--imago-border-light);
+  border-left: 1px solid var(--imago-border-dim);
 }
 
 .chat-page {
@@ -753,7 +778,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 0 20px;
-  border-bottom: 1px solid var(--imago-border-light);
+  border-bottom: 1px solid var(--imago-border-soft);
   background: var(--imago-bg-void);
 }
 
@@ -815,7 +840,7 @@ onUnmounted(() => {
   width: 32px;
   height: 32px;
   padding: 0;
-  border: 1px solid var(--imago-border-light);
+  border: 1px solid transparent;
   border-radius: var(--imago-radius-md);
   background: transparent;
   cursor: pointer;
@@ -825,13 +850,13 @@ onUnmounted(() => {
 
 .topbar-icon-btn:hover {
   color: var(--imago-text-primary);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--imago-bg-raised);
 }
 
 .topbar-icon-btn--active {
   color: var(--imago-neon-cyan);
-  border-color: rgba(0, 240, 255, 0.2);
-  background: rgba(0, 240, 255, 0.06);
+  border-color: var(--imago-border-cyan);
+  background: var(--imago-cyan-06);
 }
 
 /* ── Messages ────────────────────────────────────────────────────────────── */
@@ -910,12 +935,12 @@ onUnmounted(() => {
   inset: 0;
   border-radius: 50%;
   border: 2px solid transparent;
-  background: linear-gradient(135deg, rgba(0, 240, 255, 0.6), rgba(140, 80, 255, 0.6)) border-box;
+  background: linear-gradient(135deg, var(--imago-neon-cyan), var(--imago-neon-purple)) border-box;
   -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: destination-out;
   mask-composite: exclude;
   animation: logo-spin 6s linear infinite;
-  box-shadow: 0 0 32px rgba(0, 240, 255, 0.15), 0 0 80px rgba(140, 80, 255, 0.08);
+  box-shadow: 0 0 32px var(--imago-cyan-08), 0 0 80px rgba(168, 85, 247, 0.08);
 }
 
 .empty-chat__logo-ring::before {
@@ -923,7 +948,7 @@ onUnmounted(() => {
   position: absolute;
   inset: -4px;
   border-radius: 50%;
-  border: 1.5px solid rgba(0, 240, 255, 0.15);
+  border: 1.5px solid var(--imago-border-cyan);
 }
 
 .empty-chat__logo-ring::after {
@@ -943,19 +968,19 @@ onUnmounted(() => {
   width: 100px;
   height: 100px;
   border-radius: 50%;
-  background: linear-gradient(145deg, #1a1a2e 0%, #0d0d1a 100%);
-  border: 1.5px solid rgba(140, 80, 255, 0.3);
+  background: var(--imago-bg-panel);
+  border: 1.5px solid var(--imago-border-purple);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: inset 0 0 20px rgba(140, 80, 255, 0.1);
+  box-shadow: inset 0 0 20px rgba(168, 85, 247, 0.1);
 }
 
 .empty-chat__logo-img {
   width: 52px;
   height: 52px;
   object-fit: contain;
-  filter: drop-shadow(0 0 8px rgba(140, 80, 255, 0.5));
+  filter: drop-shadow(0 0 8px rgba(168, 85, 247, 0.5));
 }
 
 @keyframes logo-spin {
@@ -983,8 +1008,8 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--imago-border-light);
+  background: var(--imago-bg-surface);
+  border: 1px solid var(--imago-border-soft);
   border-radius: var(--imago-radius-md);
   color: var(--imago-text-secondary);
   font-size: 13px;
@@ -1003,8 +1028,8 @@ onUnmounted(() => {
 
 .suggestion-chip:hover {
   color: var(--imago-text-primary);
-  border-color: rgba(0, 240, 255, 0.25);
-  background: rgba(0, 240, 255, 0.05);
+  border-color: var(--imago-border-cyan-active);
+  background: var(--imago-cyan-04);
 }
 
 .suggestion-chip:hover .suggestion-chip__icon {
@@ -1040,8 +1065,8 @@ onUnmounted(() => {
   padding: 10px 14px;
   color: var(--imago-text-primary);
   border-radius: var(--imago-radius-md);
-  border: 1px solid var(--imago-border-light);
-  background: var(--imago-bg-raised);
+  border: 1px solid var(--imago-border-soft);
+  background: var(--imago-bg-surface);
 }
 
 .assistant-turn-content {
@@ -1099,8 +1124,8 @@ onUnmounted(() => {
   height: 48px;
   padding: 0 8px;
   border-radius: 10px;
-  background: rgba(255 255 255 / 0.015);
-  border: 1px solid rgba(255 255 255 / 0.05);
+  background: var(--imago-bg-raised);
+  border: 1px solid var(--imago-border-soft);
   font-size: 12px;
   line-height: 1.3;
   min-width: 0;
@@ -1140,11 +1165,11 @@ onUnmounted(() => {
   padding: 4px 0 4px 12px;
   border-radius: 0;
   background: transparent;
-  border-left: 1px solid rgba(0 229 255 / 0.24);
+  border-left: 1px solid var(--imago-border-cyan-active);
 }
 
 .user-comment-meta {
-  color: rgba(148 163 184 / 0.9);
+  color: var(--imago-text-muted);
 }
 
 .user-comment-path {
@@ -1155,7 +1180,7 @@ onUnmounted(() => {
   padding: 4px 0 0;
   border-radius: 0;
   background: transparent;
-  color: rgba(255, 255, 255, 0.56);
+  color: var(--imago-text-dim);
   white-space: pre-wrap;
 }
 
@@ -1181,7 +1206,7 @@ onUnmounted(() => {
   border: 0;
   font-size: 12px;
   line-height: 1.3;
-  color: rgba(255 255 255 / 0.62);
+  color: var(--imago-text-secondary);
 }
 
 .user-message-footer {
@@ -1193,7 +1218,7 @@ onUnmounted(() => {
 .user-message-meta {
   font-size: 12px;
   line-height: 1.2;
-  color: rgba(255, 255, 255, 0.50);
+  color: var(--imago-text-faint);
 }
 
 .user-turn-action {
@@ -1203,8 +1228,8 @@ onUnmounted(() => {
   width: 22px;
   height: 22px;
   border: none;
-  background: rgba(255 255 255 / 0.08);
-  color: rgba(255 255 255 / 0.6);
+  background: var(--imago-bg-raised);
+  color: var(--imago-text-muted);
   cursor: pointer;
   border-radius: 4px;
   opacity: 0;
@@ -1212,8 +1237,8 @@ onUnmounted(() => {
   padding: 0;
 
   &:hover {
-    background: rgba(255 255 255 / 0.15);
-    color: rgba(255 255 255 / 0.9);
+    background: var(--imago-bg-surface);
+    color: var(--imago-text-primary);
   }
 }
 
@@ -1368,15 +1393,15 @@ onUnmounted(() => {
   object-fit: contain;
   border-radius: var(--imago-radius-sm);
   display: block;
-  border: 1px solid rgba(255 255 255 / 0.06);
-  background: rgba(255 255 255 / 0.02);
+  border: 1px solid var(--imago-border-soft);
+  background: var(--imago-bg-raised);
 }
 
 /* ── Input / composer region ─────────────────────────────────────────────── */
 
 .input-area {
   padding: 12px 20px 16px;
-  background: var(--imago-bg-panel);
+  background: var(--imago-bg-void);
 
 }
 
@@ -1444,6 +1469,12 @@ onUnmounted(() => {
 
 .followup-dock__item {
   min-width: 0;
+}
+
+.imago-dock {
+  background: var(--imago-bg-surface);
+  border: 1px solid var(--imago-border-soft);
+  border-radius: var(--imago-radius-lg);
 }
 
 .child-session-input-disabled {
