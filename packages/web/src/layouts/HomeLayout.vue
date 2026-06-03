@@ -137,7 +137,7 @@
     <q-page-container class="home-page-container">
       <div class="home-route-wrapper">
         <router-view v-slot="{ Component, route }">
-          <transition :name="getTransitionName(route)" :mode="getTransitionMode(route)">
+          <transition :name="transitionName" :mode="transitionMode">
             <component :is="Component" :key="route.path" class="home-route-page" />
           </transition>
         </router-view>
@@ -164,8 +164,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import { useRoute, useRouter, RouterLink, type RouteLocationNormalized } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from 'src/stores/auth'
 import { api } from 'src/api/client'
@@ -257,35 +257,42 @@ function goSettings() {
 }
 
 // ── Routing Transitions ──────────────────────────────────────────────────
+const transitionName = ref('imago-page-fade')
+const transitionMode = ref<'out-in' | 'in-out' | 'default'>('out-in')
 const isSessionTransitioning = ref(false)
 let transitionTimer: ReturnType<typeof setTimeout> | null = null
 
-watch(() => route.path, (newPath) => {
-  const isToSession = newPath.startsWith('/sessions/') || route.name === 'session'
-  if (isToSession) {
+const removeGuard = router.beforeEach((to, from) => {
+  const isFromHome = from.path === '/'
+  const isToSession = to.name === 'session' || to.name === 'sessions' || to.path.startsWith('/sessions/')
+  const isFromSession = from.name === 'session' || from.name === 'sessions' || from.path.startsWith('/sessions/')
+
+  if (isFromHome && isToSession) {
+    // Cinematic AI transition
+    transitionName.value = 'imago-session-flow'
+    transitionMode.value = 'default'
+    
     isSessionTransitioning.value = true
     if (transitionTimer) clearTimeout(transitionTimer)
     transitionTimer = setTimeout(() => {
       isSessionTransitioning.value = false
     }, 900)
+  } else if (isFromSession && isToSession) {
+    // Lightweight transition between session routes
+    transitionName.value = 'imago-session-switch'
+    transitionMode.value = 'out-in'
+  } else {
+    // Fallback fade
+    transitionName.value = 'imago-page-fade'
+    transitionMode.value = 'out-in'
   }
+  return true
 })
 
-function getTransitionName(route: RouteLocationNormalized) {
-  // Use a seamless spatial transition for Home -> Session
-  if (route.name === 'session' || route.path.startsWith('/sessions/')) {
-    return 'imago-session-flow'
-  }
-  return 'imago-page-fade'
-}
-
-function getTransitionMode(route: RouteLocationNormalized): 'out-in' | 'in-out' | 'default' {
-  // Return 'default' (which is simultaneous) for the epic session transition
-  if (route.name === 'session' || route.path.startsWith('/sessions/')) {
-    return 'default'
-  }
-  return 'out-in'
-}
+onUnmounted(() => {
+  removeGuard()
+  if (transitionTimer) clearTimeout(transitionTimer)
+})
 </script>
 
 <style lang="scss" scoped>
@@ -803,6 +810,22 @@ function getTransitionMode(route: RouteLocationNormalized): 'out-in' | 'in-out' 
   filter: blur(8px);
 }
 
+/* Lightweight fade for switching between session routes */
+.imago-session-switch-enter-active,
+.imago-session-switch-leave-active {
+  transition: opacity 0.25s var(--imago-ease-out), transform 0.25s var(--imago-ease-out);
+}
+
+.imago-session-switch-enter-from {
+  opacity: 0;
+  transform: translateY(5px);
+}
+
+.imago-session-switch-leave-to {
+  opacity: 0;
+  transform: translateY(-5px);
+}
+
 /* Fallback page fade */
 .imago-page-fade-enter-active,
 .imago-page-fade-leave-active {
@@ -818,6 +841,8 @@ function getTransitionMode(route: RouteLocationNormalized): 'out-in' | 'in-out' 
 @media (prefers-reduced-motion: reduce) {
   .imago-session-flow-enter-active,
   .imago-session-flow-leave-active,
+  .imago-session-switch-enter-active,
+  .imago-session-switch-leave-active,
   .imago-page-fade-enter-active,
   .imago-page-fade-leave-active {
     transition: opacity 0.3s ease !important;
