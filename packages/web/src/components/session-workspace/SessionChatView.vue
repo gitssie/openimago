@@ -546,7 +546,8 @@ function copyAssistantTurn(message: DisplayMessage | null) {
 
 function shouldHideToolPart(part: ToolPart): boolean {
   if (part.tool === 'todowrite') return true
-  return part.tool === 'question' && (part.state.status === 'pending' || part.state.status === 'running')
+  // Let question tools render even when running so users can see the status
+  return (part.tool === 'question' || part.tool === 'ask_question') && part.state.status === 'pending'
 }
 
 function getMediaToolOutput(part: ToolPart): MediaToolOutputV1 | null {
