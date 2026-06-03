@@ -24,6 +24,7 @@
             :aria-label="t('gallery.composerAttach')"
           >
             <OiIcon name="plus" :size="14" />
+            <ImagePickerPopup />
           </button>
           <button type="button" class="prompt-input__select">
             <OiIcon name="sliders" :size="14" />
@@ -79,6 +80,7 @@ import HomeTV from 'src/components/home/HomeTV.vue'
 import HomeRecommended from 'src/components/home/HomeRecommended.vue'
 import OiIcon from 'src/components/ui/OiIcon.vue'
 import PromptInput from 'src/components/PromptInput.vue'
+import ImagePickerPopup from 'src/components/ImagePickerPopup.vue'
 
 const router = useRouter()
 const $q = useQuasar()
