@@ -119,7 +119,7 @@ async function respond(response: 'once' | 'always' | 'reject') {
   width: calc(100% - 32px);
   max-width: 480px;
   margin-bottom: 12px;
-  background: var(--imago-bg-panel);
+  background: rgba(10, 10, 20, 0.98);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 1px rgba(255, 255, 255, 0.1);
 }
 

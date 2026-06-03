@@ -705,7 +705,10 @@ export function useAgentSession(
           const hasLivePermission = permissions.some(
             (p: PermissionRequest) => p.tool?.callID === toolPart.callID && p.sessionID === sid
           );
-          if (!hasLivePermission) {
+          const hasLiveQuestion = questions.some(
+            (q: QuestionRequest) => q.tool?.callID === toolPart.callID && q.sessionID === sid
+          );
+          if (!hasLivePermission && !hasLiveQuestion) {
             const runningState = toolPart.state as ToolStateRunning;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (toolPart as any).state = {
