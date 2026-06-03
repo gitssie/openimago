@@ -706,7 +706,7 @@ export function useAgentSession(
             (p: PermissionRequest) => p.tool?.callID === toolPart.callID && p.sessionID === sid
           );
           const hasLiveQuestion = questions.some(
-            (q: QuestionRequest) => q.tool?.callID === toolPart.callID && q.sessionID === sid
+            (q: QuestionRequest) => (q.tool?.callID === toolPart.callID || toolPart.tool === 'question' || toolPart.tool === 'ask_question') && q.sessionID === sid
           );
           if (!hasLivePermission && !hasLiveQuestion) {
             const runningState = toolPart.state as ToolStateRunning;

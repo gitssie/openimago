@@ -166,6 +166,10 @@ const titleText = computed(() => {
   if (props.part.tool === 'apply_patch' && Array.isArray(input.files) && input.files.length > 0) {
     return `${input.files.length} file${input.files.length > 1 ? 's' : ''}`;
   }
+  if (props.part.tool === 'question' || props.part.tool === 'ask_question') {
+    if (state.status === 'running') return '运行中 (等待用户回复)';
+    if (state.status === 'completed') return '已回复';
+  }
   if ((state.status === 'running' || state.status === 'completed') && state.title) return state.title;
   return '';
 });
