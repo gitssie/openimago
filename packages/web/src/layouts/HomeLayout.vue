@@ -536,7 +536,7 @@ function goSettings() {
 }
 
 .home-topbar__btn:hover {
-  border-color: rgba(168, 85, 247, 0.40);
+  border-color: var(--imago-border-cyan);
   color: var(--imago-text-primary);
 }
 
