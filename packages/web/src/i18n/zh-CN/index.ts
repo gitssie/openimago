@@ -33,7 +33,7 @@ export default {
     attachFile: '附加文件',
     askAnythingPlaceholder: '输入任何你想要的内容...',
     subsession: '子会话',
-    inputHint: 'AI 可能会犯错，请核实重要信息。',
+    inputHint: '',
     justNow: '刚刚',
     minutesAgo: '{count} 分钟前',
     hoursAgo: '{count} 小时前',
