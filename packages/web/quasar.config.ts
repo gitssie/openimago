@@ -71,6 +71,18 @@ export default defineConfig((ctx) => {
       },
 
       vitePlugins: [
+        ctx.dev
+          ? [
+              'vite-plugin-vue-devtools',
+              {
+                componentInspector: {
+                  cleanHtml: false,
+                },
+              },
+              { client: true },
+            ]
+          : false,
+
         [
           '@intlify/unplugin-vue-i18n/vite',
           {
