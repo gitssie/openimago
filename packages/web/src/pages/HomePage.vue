@@ -20,6 +20,7 @@
         @submit="handleSubmit"
         @attach-files="onFilesSelected"
         @remove-attachment="onRemoveAttachment"
+        @retry-attachment="onRetryAttachment"
       >
         <template #leading>
           <button
@@ -101,6 +102,8 @@ const loadingRecommended = ref(false)
 const error = ref<string | null>(null)
 const submitting = ref(false)
 const pendingAttachments = ref<ComposerAttachment[]>([])
+const uploadedAssetIds = ref<string[]>([])
+const pendingFiles = new Map<string, File>()
 
 // ── Load ───────────────────────────────────────────────────────────────────
 
@@ -148,22 +151,112 @@ function handleAttachmentSelect(type: 'image' | 'audio' | 'video' | 'text') {
   inputRef.value?.openFilePicker(type)
 }
 
+const SIZE_LIMITS: Record<string, number> = {
+  'image/': 20 * 1024 * 1024,
+  'video/': 500 * 1024 * 1024,
+  'audio/': 50 * 1024 * 1024,
+  'text/': 10 * 1024 * 1024,
+  'application/pdf': 10 * 1024 * 1024,
+  'application/json': 10 * 1024 * 1024,
+  'application/xml': 10 * 1024 * 1024,
+}
+
+function getMaxSize(mime: string): number {
+  for (const [prefix, size] of Object.entries(SIZE_LIMITS)) {
+    if (mime.startsWith(prefix)) return size
+  }
+  return 20 * 1024 * 1024
+}
+
+function formatSizeLimit(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${bytes / (1024 * 1024)} MB`
+  return `${bytes / 1024} KB`
+}
+
+function rafThrottle(cb: (percent: number) => void): (percent: number) => void {
+  let rafId: number | null = null
+  let latest = 0
+  return (percent: number) => {
+    latest = percent
+    if (rafId === null) {
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        cb(latest)
+      })
+    }
+  }
+}
+
 function onFilesSelected(files: File[]) {
   if (files.length === 0) return
-  // TODO: Implement actual home page attachment upload / preservation logic.
-  // For now, just show a temporary chip to acknowledge selection.
-  const tempFiles: ComposerAttachment[] = files.map((f, i) => ({
-    id: `temp-${Date.now()}-${i}`,
-    name: f.name,
-    mime: f.type,
-    status: 'uploading' as const,
-    progress: 10
-  }))
-  pendingAttachments.value.push(...tempFiles)
+
+  for (const file of files) {
+    const id = `home-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const attachment: ComposerAttachment = {
+      id,
+      name: file.name,
+      mime: file.type,
+      status: 'uploading',
+      progress: 0,
+    }
+    pendingAttachments.value.push(attachment)
+    pendingFiles.set(id, file)
+
+    const maxSize = getMaxSize(file.type)
+    if (file.size > maxSize) {
+      updateHomeAttachment(id, {
+        status: 'error',
+        errorMsg: `文件过大，最大 ${formatSizeLimit(maxSize)}`,
+      })
+      continue
+    }
+
+    void api.uploadAsset(file, rafThrottle((percent: number) => {
+      updateHomeAttachment(id, { progress: percent })
+    })).then((result) => {
+      updateHomeAttachment(id, {
+        status: 'uploaded',
+        progress: 100,
+        assetId: result.asset.id,
+      })
+      uploadedAssetIds.value.push(result.asset.id)
+    }).catch((err: Error) => {
+      updateHomeAttachment(id, {
+        status: 'error',
+        errorMsg: err?.message || '上传失败',
+      })
+    })
+  }
+}
+
+function updateHomeAttachment(id: string, patch: Partial<ComposerAttachment>) {
+  const idx = pendingAttachments.value.findIndex(a => a.id === id)
+  if (idx !== -1) {
+    pendingAttachments.value[idx] = {
+      ...pendingAttachments.value[idx]!,
+      ...patch,
+    }
+  }
 }
 
 function onRemoveAttachment(id: string) {
   pendingAttachments.value = pendingAttachments.value.filter(a => a.id !== id)
+  pendingFiles.delete(id)
+}
+
+function onRetryAttachment(id: string) {
+  const idx = pendingAttachments.value.findIndex(a => a.id === id)
+  if (idx === -1) return
+  const attachment = pendingAttachments.value[idx]
+  if (!attachment || attachment.status !== 'error') return
+  const file = pendingFiles.get(id)
+  if (!file) {
+    updateHomeAttachment(id, { errorMsg: '无法重试：原始文件已丢失' })
+    return
+  }
+  // Remove failed entry, re-add for upload
+  pendingAttachments.value.splice(idx, 1)
+  onFilesSelected([file])
 }
 
 // ── Submit (navigate immediately, fire-and-forget the prompt) ─────────────
@@ -198,8 +291,12 @@ async function handleSubmit(text: string) {
   // Fire-and-forget the initial prompt. The session workspace will render
   // the user message when sendPrompt resolves; if it fails, surface a
   // notification (the user may already be on the session page).
+  const assetIds = uploadedAssetIds.value.length > 0 ? uploadedAssetIds.value : undefined
   void api
-    .sendPrompt(session.id, trimmed, { source: 'home' })
+    .sendPrompt(session.id, trimmed, {
+      source: 'home',
+      ...(assetIds ? { assetIds: assetIds.join(',') } : {}),
+    })
     .catch((e) => {
       $q.notify({
         color: 'negative',

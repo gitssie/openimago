@@ -183,6 +183,7 @@
               @submit="submitDraftMessage"
               @abort="abortSession"
               @remove-attachment="removeAttachment"
+              @retry-attachment="retryAttachment"
               @attach-files="onFilesSelected"
             >
               <template #leading>
@@ -351,6 +352,7 @@ const {
   deleteSession,
   addAttachment,
   removeAttachment,
+  retryAttachment,
   sendMessage,
   sendQueuedFollowup,
   editQueuedFollowup,

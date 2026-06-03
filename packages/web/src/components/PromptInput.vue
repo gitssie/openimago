@@ -89,6 +89,16 @@
               >
                 <q-icon name="close" size="12px" />
               </button>
+
+              <!-- Retry Action (error only) -->
+              <button
+                v-if="attachment.status === 'error'"
+                type="button"
+                class="imago-attachment-chip__retry"
+                @click.stop="emit('retry-attachment', attachment.id)"
+              >
+                <q-icon name="refresh" size="12px" />
+              </button>
             </div>
           </div>
         </div>
@@ -169,6 +179,7 @@ const emit = defineEmits<{
   (e: 'submit', value: string): void
   (e: 'abort'): void
   (e: 'remove-attachment', id: string): void
+  (e: 'retry-attachment', id: string): void
   (e: 'attach-files', files: File[]): void
 }>()
 
@@ -432,6 +443,28 @@ defineExpose({
     &:hover {
       background: rgba(255, 255, 255, 0.1);
       color: var(--imago-text-primary);
+    }
+  }
+
+  &__retry {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    margin-left: 2px;
+    border: none;
+    background: transparent;
+    color: var(--imago-text-muted);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.15s ease;
+
+    &:hover {
+      background: rgba(239, 68, 68, 0.15);
+      color: #fca5a5;
     }
   }
 }

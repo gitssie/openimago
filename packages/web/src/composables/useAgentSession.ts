@@ -19,6 +19,7 @@ import type { DisplayPart, PromptPartInput, RawMessageEntry, SessionItem } from 
 import { idGenerator } from 'src/utils/id';
 import { SessionState } from 'src/composables/session-state';
 import { useSseConnection } from 'src/composables/useSseConnection';
+import { api } from 'src/api/client';
 
 interface Dataset {
   id: string
@@ -72,6 +73,46 @@ const INITIAL_MESSAGE_PAGE_SIZE = 80;
 const HISTORY_MESSAGE_PAGE_SIZE = 200;
 const SESSION_MESSAGE_CACHE_LIMIT = 40;
 
+// ── Upload helpers ───────────────────────────────────────────────────────────
+
+const SIZE_LIMITS: Record<string, number> = {
+  'image/': 20 * 1024 * 1024,
+  'video/': 500 * 1024 * 1024,
+  'audio/': 50 * 1024 * 1024,
+  'text/': 10 * 1024 * 1024,
+  'application/pdf': 10 * 1024 * 1024,
+  'application/json': 10 * 1024 * 1024,
+  'application/xml': 10 * 1024 * 1024,
+}
+
+function getMaxSize(mime: string): number {
+  for (const [prefix, size] of Object.entries(SIZE_LIMITS)) {
+    if (mime.startsWith(prefix)) return size
+  }
+  return 20 * 1024 * 1024
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${bytes} B`
+}
+
+function rafThrottle(cb: (percent: number) => void): (percent: number) => void {
+  let rafId: number | null = null
+  let latest = 0
+  return (percent: number) => {
+    latest = percent
+    if (rafId === null) {
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        cb(latest)
+      })
+    }
+  }
+}
+
 // ── Composable ────────────────────────────────────────────────────────────────
 
 export function useAgentSession(
@@ -122,6 +163,7 @@ export function useAgentSession(
   const datasets = ref<Dataset[]>([]);
   const selectedDatasets = ref<string[]>([]);
   const pendingAttachments = ref<PendingAttachment[]>([]);
+  const pendingFiles = new Map<string, File>();
   const queuedFollowups = ref<Record<string, QueuedFollowup[]>>({});
   const failedFollowupId = ref<Record<string, string | undefined>>({});
   const pausedFollowups = ref<Record<string, boolean | undefined>>({});
@@ -325,25 +367,87 @@ export function useAgentSession(
   }
 
   async function addAttachment(file: File) {
-    const reader = new FileReader();
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
-      reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'));
-      reader.readAsDataURL(file);
-    });
-
-    pendingAttachments.value.push({
-      id: generateMessageId(),
+    const id = generateMessageId()
+    const attachment: PendingAttachment = {
+      id,
       name: file.name,
       mime: file.type || 'application/octet-stream',
-      url: dataUrl,
-      status: 'uploaded',
-      progress: 100,
-    });
+      url: '',
+      status: 'uploading',
+      progress: 0,
+    }
+
+    pendingAttachments.value.push(attachment)
+    pendingFiles.set(id, file)
+
+    // Validate file size
+    const maxSize = getMaxSize(file.type)
+    if (file.size > maxSize) {
+      const idx = pendingAttachments.value.findIndex(a => a.id === id)
+      if (idx !== -1) {
+        pendingAttachments.value[idx] = {
+          ...pendingAttachments.value[idx]!,
+          status: 'error',
+          errorMsg: `文件过大，最大允许 ${formatBytes(maxSize)}`,
+        }
+      }
+      return
+    }
+
+    try {
+      const result = await api.uploadAsset(file, rafThrottle((percent: number) => {
+        const idx = pendingAttachments.value.findIndex(a => a.id === id)
+        if (idx !== -1) {
+          pendingAttachments.value[idx] = {
+            ...pendingAttachments.value[idx]!,
+            progress: percent,
+          }
+        }
+      }))
+
+      const idx = pendingAttachments.value.findIndex(a => a.id === id)
+      if (idx !== -1) {
+        pendingAttachments.value[idx] = {
+          ...pendingAttachments.value[idx]!,
+          status: 'uploaded',
+          progress: 100,
+          assetId: result.asset.id,
+          url: result.asset.url ?? '',
+        }
+      }
+    } catch (err) {
+      const idx = pendingAttachments.value.findIndex(a => a.id === id)
+      if (idx !== -1) {
+        pendingAttachments.value[idx] = {
+          ...pendingAttachments.value[idx]!,
+          status: 'error',
+          errorMsg: err instanceof Error ? err.message : '上传失败',
+        }
+      }
+    }
   }
 
   function removeAttachment(attachmentId: string) {
     pendingAttachments.value = pendingAttachments.value.filter((attachment) => attachment.id !== attachmentId);
+    pendingFiles.delete(attachmentId);
+  }
+
+  function retryAttachment(attachmentId: string) {
+    const idx = pendingAttachments.value.findIndex(a => a.id === attachmentId)
+    if (idx === -1) return
+    const attachment = pendingAttachments.value[idx]
+    if (!attachment || attachment.status !== 'error') return
+    const file = pendingFiles.get(attachmentId)
+    if (!file) {
+      pendingAttachments.value[idx] = {
+        ...attachment,
+        errorMsg: '无法重试：原始文件已丢失',
+      }
+      return
+    }
+    // Remove the failed entry; re-add via addAttachment which handles upload
+    pendingAttachments.value.splice(idx, 1)
+    void addAttachment(file)
   }
 
   function appendCachedPart(sessionIdForPart: string, messageId: string, part: DisplayPart) {
@@ -1486,6 +1590,7 @@ Usage: search(search_query="<your query>", search_type="GRAPH_COMPLETION", datas
     toggleDataset,
     addAttachment,
     removeAttachment,
+    retryAttachment,
     sendMessage,
     abortSession,
     replyToQuestion,
