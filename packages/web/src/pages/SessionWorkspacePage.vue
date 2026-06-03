@@ -171,10 +171,10 @@
               :on-respond="replyToPermission"
             />
 
-            <AgentPromptInput
+            <PromptInput
               v-if="!currentParentSession"
               ref="inputRef"
-              :draft="draftInputMessage"
+              v-model="draftInputMessage"
               :loading="isLoading"
               :connected="isConnected"
               :disabled="isSessionSwitching"
@@ -226,7 +226,7 @@ import type { TextPart } from '@opencode-ai/sdk/v2'
 import OiIcon from 'src/components/ui/OiIcon.vue'
 import AgentQuestion from 'src/components/AgentQuestion.vue'
 import AgentPermission from 'src/components/AgentPermission.vue'
-import AgentPromptInput from 'src/components/AgentPromptInput.vue'
+import PromptInput from 'src/components/PromptInput.vue'
 import SessionChatView from 'src/components/session-workspace/SessionChatView.vue'
 import SessionWorkspaceSidebar from 'src/components/session-workspace/SessionWorkspaceSidebar.vue'
 import SessionWorkspaceResultsPanel from 'src/components/session-workspace/SessionWorkspaceResultsPanel.vue'
@@ -274,7 +274,7 @@ const router = useRouter()
 const chatViewRef = ref<InstanceType<typeof SessionChatView> | null>(null)
 const followupCollapsed = ref(false)
 const isSessionSwitching = ref(false)
-const inputRef = ref<{ focus: () => void; setDraft: (value: string) => void } | null>(null)
+const inputRef = ref<{ focus: () => void } | null>(null)
 const draftInputMessage = ref('')
 const resultTab = ref('result')
 const selectedResultId = ref<string | null>(null)
@@ -636,7 +636,7 @@ function onLoadHistory(_index: number, done: (stop?: boolean) => void) {
 // ── Input helpers ─────────────────────────────────────────────────────────────
 
 function useSuggestion(s: string) {
-  inputRef.value?.setDraft(s)
+  draftInputMessage.value = s
   void submitDraftMessage(s)
 }
 
@@ -644,7 +644,7 @@ async function submitDraftMessage(value: string) {
   const next = value
   if (!next.trim() && pendingAttachments.value.length === 0) return
   inputMessage.value = next
-  inputRef.value?.setDraft('')
+  draftInputMessage.value = ''
   await sendMessage()
 }
 

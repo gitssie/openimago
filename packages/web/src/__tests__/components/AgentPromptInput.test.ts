@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
-import AgentPromptInput from '../../components/AgentPromptInput.vue'
-import type { ComposerAttachment } from '../../components/AgentPromptInput.vue'
+import PromptInput from '../../components/PromptInput.vue'
+import type { ComposerAttachment } from '../../components/PromptInput.vue'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // i18n helper — minimal setup matching project conventions
@@ -24,6 +24,9 @@ function makeI18n() {
           stop: 'Stop',
           queueFollowup: 'Queue follow-up',
         },
+        gallery: {
+          composerPlaceholder: 'Describe the image you want to generate...',
+        },
       },
     },
   })
@@ -31,9 +34,9 @@ function makeI18n() {
 
 function mountInput(props?: Record<string, unknown>) {
   const i18n = makeI18n()
-  return mount(AgentPromptInput, {
+  return mount(PromptInput, {
     props: {
-      draft: '',
+      modelValue: '',
       loading: false,
       connected: true,
       disabled: false,
@@ -50,41 +53,41 @@ function mountInput(props?: Record<string, unknown>) {
 // Default i18n placeholders
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AgentPromptInput — placeholders', () => {
+describe('PromptInput — placeholders', () => {
   it('renders default i18n placeholder when no placeholder prop', () => {
     const wrapper = mountInput()
-    const textarea = wrapper.find('.chat-input textarea, .chat-input input')
-    expect(textarea.attributes('placeholder')).toBe('Ask anything...')
+    const textarea = wrapper.find('.prompt-input__textarea')
+    expect(textarea.attributes('placeholder')).toBe('Describe the image you want to generate...')
   })
 
   it('renders custom placeholder when placeholder prop is provided', () => {
     const wrapper = mountInput({ placeholder: '描述你想要的效果...' })
-    const textarea = wrapper.find('.chat-input textarea, .chat-input input')
+    const textarea = wrapper.find('.prompt-input__textarea')
     expect(textarea.attributes('placeholder')).toBe('描述你想要的效果...')
   })
 
   it('renders empty placeholder when placeholder="" is provided', () => {
     const wrapper = mountInput({ placeholder: '' })
-    const textarea = wrapper.find('.chat-input textarea, .chat-input input')
+    const textarea = wrapper.find('.prompt-input__textarea')
     expect(textarea.attributes('placeholder')).toBe('')
   })
 
   it('renders default i18n hint when no hint prop', () => {
     const wrapper = mountInput()
-    const hint = wrapper.find('.composer-hint')
+    const hint = wrapper.find('.prompt-input__hint')
     expect(hint.exists()).toBe(true)
     expect(hint.text()).toBe('AI may make mistakes.')
   })
 
   it('renders custom hint when hint prop is provided', () => {
     const wrapper = mountInput({ hint: '按 Enter 发送，Shift+Enter 换行' })
-    const hint = wrapper.find('.composer-hint')
+    const hint = wrapper.find('.prompt-input__hint')
     expect(hint.text()).toBe('按 Enter 发送，Shift+Enter 换行')
   })
 
-  it('hides hint when hint="" is provided', () => {
-    const wrapper = mountInput({ hint: '' })
-    const hint = wrapper.find('.composer-hint')
+  it('hides hint when hint=null is provided', () => {
+    const wrapper = mountInput({ hint: null })
+    const hint = wrapper.find('.prompt-input__hint')
     expect(hint.exists()).toBe(false)
   })
 })
@@ -93,14 +96,14 @@ describe('AgentPromptInput — placeholders', () => {
 // Attachments
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AgentPromptInput — attachments', () => {
+describe('PromptInput — attachments', () => {
   it('renders attachment chips with name', () => {
     const attachments: ComposerAttachment[] = [
       { id: 'a1', name: 'photo.jpg' },
       { id: 'a2', name: 'sketch.png' },
     ]
     const wrapper = mountInput({ attachments })
-    const chips = wrapper.findAll('.attachment-chip')
+    const chips = wrapper.findAll('.prompt-input__chip')
     expect(chips.length).toBe(2)
     expect(chips[0]!.text()).toContain('photo.jpg')
     expect(chips[1]!.text()).toContain('sketch.png')
@@ -123,7 +126,7 @@ describe('AgentPromptInput — attachments', () => {
 
   it('shows no attachment chips when attachments is empty', () => {
     const wrapper = mountInput({ attachments: [] })
-    const chips = wrapper.findAll('.attachment-chip')
+    const chips = wrapper.findAll('.prompt-input__chip')
     expect(chips.length).toBe(0)
   })
 })
@@ -132,16 +135,12 @@ describe('AgentPromptInput — attachments', () => {
 // Submit behavior
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AgentPromptInput — submit', () => {
+describe('PromptInput — submit', () => {
   it('emits submit when Enter is pressed with draft content', async () => {
-    const wrapper = mountInput({ draft: 'hello world' })
+    const wrapper = mountInput({ modelValue: 'hello world' })
 
-    // The draft prop watcher syncs localDraft
-    // Find the textarea and trigger Enter keydown
-    const textarea = wrapper.find('.chat-input textarea')
-    if (textarea.exists()) {
-      await textarea.trigger('keydown', { key: 'Enter', shiftKey: false })
-    }
+    const textarea = wrapper.find('.prompt-input__textarea')
+    await textarea.trigger('keydown', { key: 'Enter', shiftKey: false })
 
     const emitted = wrapper.emitted('submit')
     expect(emitted).toBeTruthy()
@@ -149,19 +148,16 @@ describe('AgentPromptInput — submit', () => {
   })
 
   it('does not emit submit on Enter when draft is empty', async () => {
-    const wrapper = mountInput({ draft: '' })
-    const textarea = wrapper.find('.chat-input textarea')
-    if (textarea.exists()) {
-      await textarea.trigger('keydown', { key: 'Enter', shiftKey: false })
-    }
+    const wrapper = mountInput({ modelValue: '' })
+    const textarea = wrapper.find('.prompt-input__textarea')
+    await textarea.trigger('keydown', { key: 'Enter', shiftKey: false })
     expect(wrapper.emitted('submit')).toBeFalsy()
   })
 
   it('emits submit on button click when draft has content', async () => {
-    const wrapper = mountInput({ draft: 'test message' })
+    const wrapper = mountInput({ modelValue: 'test message' })
 
-    // Click the send button
-    const sendBtn = wrapper.find('.send-btn')
+    const sendBtn = wrapper.find('.prompt-input__action')
     expect(sendBtn.exists()).toBe(true)
     await sendBtn.trigger('click')
 
@@ -169,20 +165,19 @@ describe('AgentPromptInput — submit', () => {
   })
 
   it('send button is disabled when no draft and no attachments', () => {
-    const wrapper = mountInput({ draft: '', attachments: [], loading: false })
-    const sendBtn = wrapper.find('.send-btn')
+    const wrapper = mountInput({ modelValue: '', attachments: [], loading: false })
+    const sendBtn = wrapper.find('.prompt-input__action')
     expect(sendBtn.attributes('disabled')).toBeDefined()
   })
 
   it('send button is enabled when attachments exist but draft is empty', () => {
     const wrapper = mountInput({
-      draft: '',
+      modelValue: '',
       attachments: [{ id: 'a1', name: 'file.png' }],
       loading: false,
     })
-    const sendBtn = wrapper.find('.send-btn')
-    // Button should be active (hasAction is true because attachments.length > 0)
-    expect(sendBtn.classes()).toContain('send-btn--active')
+    const sendBtn = wrapper.find('.prompt-input__action')
+    expect(sendBtn.classes()).toContain('is-active')
   })
 })
 
@@ -190,20 +185,17 @@ describe('AgentPromptInput — submit', () => {
 // Attach files
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AgentPromptInput — attach files', () => {
+describe('PromptInput — attach files', () => {
   it('emits attach-files when files are selected', async () => {
     const wrapper = mountInput()
 
-    // Find the hidden file input
-    const fileInput = wrapper.find('.hidden-file-input')
+    const fileInput = wrapper.find('.prompt-input__file-input')
     expect(fileInput.exists()).toBe(true)
 
-    // Create mock File objects
     const file1 = new File(['content'], 'test.png', { type: 'image/png' })
     const dt = new DataTransfer()
     dt.items.add(file1)
 
-    // Set files on the input element
     const el = fileInput.element as HTMLInputElement
     Object.defineProperty(el, 'files', { value: dt.files })
 
@@ -220,19 +212,17 @@ describe('AgentPromptInput — attach files', () => {
 // Exposed API
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AgentPromptInput — exposed API', () => {
-  it('exposes setDraft method that updates the input', () => {
-    const wrapper = mountInput({ draft: '' })
+describe('PromptInput — exposed API', () => {
+  it('exposes setDraft method that emits update:modelValue', () => {
+    const wrapper = mountInput({ modelValue: '' })
     const vm = wrapper.vm as unknown as { setDraft: (v: string) => void; focus: () => void }
 
-    // setDraft is callable
     expect(typeof vm.setDraft).toBe('function')
     vm.setDraft('hello via setDraft')
 
-    // The input's value should reflect the new draft
-    const textarea = wrapper.find('.chat-input textarea')
-    expect(textarea.exists()).toBe(true)
-    // setDraft sets localDraft ref; model-value binding propagates to the textarea
+    const emitted = wrapper.emitted('update:modelValue')
+    expect(emitted).toBeTruthy()
+    expect(emitted![0]![0]).toBe('hello via setDraft')
   })
 
   it('exposes focus method', () => {

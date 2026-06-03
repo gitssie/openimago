@@ -168,9 +168,10 @@
               :on-reply="replyToQuestion"
               :on-reject="rejectQuestion"
             />
-            <AgentPromptInput
+            <PromptInput
+              v-if="activeTab === 'chat'"
               ref="inputRef"
-              :draft="draftInputMessage"
+              v-model="draftInputMessage"
               :loading="isLoading"
               :connected="isConnected"
               :disabled="isSessionSwitching"
@@ -195,7 +196,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ProjectHeader from 'src/components/session-workspace/ProjectHeader.vue'
 import SessionChatView from 'src/components/session-workspace/SessionChatView.vue'
 import SessionWorkspaceSidebar from 'src/components/session-workspace/SessionWorkspaceSidebar.vue'
-import AgentPromptInput from 'src/components/AgentPromptInput.vue'
+import PromptInput from 'src/components/PromptInput.vue'
 import AgentQuestion from 'src/components/AgentQuestion.vue'
 import { UILayout, UILayoutDrawer, UILayoutFooter, UILayoutPage, UILayoutPageContainer } from 'src/components/ui/layout'
 import { useAgentSession } from 'src/composables/useAgentSession'
@@ -228,7 +229,7 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const chatViewRef = ref<InstanceType<typeof SessionChatView> | null>(null)
-const inputRef = ref<{ focus: () => void; setDraft: (value: string) => void } | null>(null)
+const inputRef = ref<{ focus: () => void } | null>(null)
 const sidebarCollapsed = ref(false)
 const activeTab = ref('chat')
 const draftInputMessage = ref('')
@@ -395,7 +396,7 @@ function onLoadHistory(_index: number, done: (stop?: boolean) => void) {
 }
 
 function useSuggestion(s: string) {
-  inputRef.value?.setDraft(s)
+  draftInputMessage.value = s
   void submitDraftMessage(s)
 }
 
@@ -403,7 +404,7 @@ async function submitDraftMessage(value: string) {
   const next = value
   if (!next.trim() && pendingAttachments.value.length === 0) return
   inputMessage.value = next
-  inputRef.value?.setDraft('')
+  draftInputMessage.value = ''
   await sendMessage()
 }
 

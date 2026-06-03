@@ -12,11 +12,30 @@
 
     <!-- Composer -->
     <section class="home-page__composer-wrap">
-      <HomeComposer
+      <PromptInput
         v-model="draft"
         :loading="submitting"
         @submit="handleSubmit"
-      />
+      >
+        <template #leading>
+          <button type="button" class="prompt-input__icon-btn" :aria-label="t('gallery.composerAttach')">
+            <OiIcon name="plus" :size="14" />
+          </button>
+          <button type="button" class="prompt-input__select">
+            <OiIcon name="sliders" :size="14" />
+            <span>{{ t('gallery.composerMode') }}</span>
+            <q-icon name="expand_more" size="14px" class="prompt-input__select-caret" />
+          </button>
+          <button type="button" class="prompt-input__select">
+            <q-icon name="crop_landscape" size="14px" />
+            <span>{{ t('gallery.composerAspect') }}</span>
+          </button>
+          <button type="button" class="prompt-input__select">
+            <OiIcon name="clock" :size="14" />
+            <span>{{ t('gallery.composerDuration') }}</span>
+          </button>
+        </template>
+      </PromptInput>
       <p v-if="submitting" class="home-page__composer-status">
         <span class="home-page__composer-pulse" />
         <span>{{ t('gallery.composerHint') }}</span>
@@ -51,7 +70,7 @@ import { useI18n } from 'vue-i18n'
 import { api, type GalleryCard } from 'src/api/client'
 
 import HomeHero from 'src/components/home/HomeHero.vue'
-import HomeComposer from 'src/components/home/HomeComposer.vue'
+import PromptInput from 'src/components/PromptInput.vue'
 import HomeSkills from 'src/components/home/HomeSkills.vue'
 import HomeTV from 'src/components/home/HomeTV.vue'
 import HomeRecommended from 'src/components/home/HomeRecommended.vue'
@@ -103,7 +122,7 @@ function onSkillSelect(id: string) {
   // Future: pre-fill composer with the selected skill's prompt template.
   // For now, focus the composer so the user can start typing.
   void id
-  const composer = document.querySelector<HTMLTextAreaElement>('.home-composer__input')
+  const composer = document.querySelector<HTMLTextAreaElement>('.prompt-input__textarea')
   composer?.focus()
 }
 
