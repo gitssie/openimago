@@ -1,0 +1,112 @@
+# =============================================================================
+# openimago 统一部署 (docker compose)
+#
+# 四个服务:
+#   db       — PostgreSQL 16 (项目数据库 + OpenCode 数据库)
+#   opencode — OpenCode serve (AI 执行环境)
+#   backend  — openimago 后端 (Bun + Hono)
+#   web      — Quasar SPA (nginx 静态 + 反向代理)
+#
+# 前提:
+#   - .env 文件已配置环境变量
+#   - Docker daemon 可用
+# =============================================================================
+
+services:
+
+  # ── PostgreSQL 16 (项目库 + OpenCode 库) ──────────────────────────────
+  db:
+    container_name: openimago-db
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-my-secret-pw}
+      - POSTGRES_DB=${POSTGRES_DB:-opencode_test}
+    ports:
+      - "5432:5432"
+    networks:
+      - openimago-net
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./packages/opencode/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── OpenCode Serve (AI 执行引擎) ──────────────────────────────────────
+  opencode:
+    container_name: openimago-opencode
+    build:
+      context: ./packages/opencode
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      - TZ=Asia/Shanghai
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - OPENCODE_DB_URL=${OPENCODE_DB_URL:-postgresql://postgres:my-secret-pw@db:5432/opencode_test}
+    ports:
+      - "4096:4096"
+    networks:
+      - openimago-net
+    volumes:
+      - opencode-work:/work
+      - opencode-data:/root/.local/share/opencode
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── openimago Backend (Bun + Hono) ───────────────────────────────────
+  backend:
+    container_name: openimago-backend
+    build:
+      context: ./packages/openimago
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      - PORT=5467
+      - HOST=0.0.0.0
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:my-secret-pw@db:5432/opencode_test}
+      - JWT_SECRET=${JWT_SECRET}
+      - OPENCODE_URL=http://opencode:4096
+      - COS_BASE_PATH=${COS_BASE_PATH:-/opt/work}
+    ports:
+      - "5467:5467"
+    networks:
+      - openimago-net
+    volumes:
+      - storage:/opt/work
+    depends_on:
+      db:
+        condition: service_healthy
+      opencode:
+        condition: service_started
+
+  # ── Frontend (Quasar SPA + nginx 反向代理) ───────────────────────────
+  web:
+    container_name: openimago-web
+    build:
+      context: ./packages/web
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    networks:
+      - openimago-net
+    depends_on:
+      - backend
+
+networks:
+  openimago-net:
+    driver: bridge
+
+volumes:
+  db-data:
+  opencode-work:
+  opencode-data:
+  storage:

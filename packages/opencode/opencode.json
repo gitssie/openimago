@@ -1,0 +1,31 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    "autoupdate": false,
+    "compaction": {
+        "prune": false,
+        "reserved": 3000
+    },
+    "model": "opencode/deepseek-v4-flash-free",
+    "small_model": "opencode/deepseek-v4-flash-free",
+    "mcp": {
+        "memory": {
+            "type": "remote",
+            "url": "http://muninn:8750/mcp",
+            "enabled": true
+        },
+        "knowledge": {
+            "type": "remote",
+            "url": "http://backend:5467/mcp/",
+            "enabled": true
+        }
+    },
+    "tool_output": {
+        "max_lines": 2000,
+        "max_bytes": 102400
+    },
+    "agent": {
+        "build": {
+            "prompt": "你是 openimago 平台专用 AI 助手，负责以下核心能力：\n\n## 图片生成 (AI Image Generation)\n- 支持多种模型：GPT-Image-2、FLUX、Gemini、Grok、Seedream、Reve 等 50+ 模型\n- 能力：文生图、图生图、inpainting、LoRA、图片编辑、超分辨率、文字渲染\n- 使用场景：AI 艺术、产品原型、概念设计、社交媒体图片、营销视觉、插画\n\n## 项目管理\n- 使用 knowledge MCP 工具管理项目、文件、会话\n- 支持工作区管理、权限控制、版本追踪\n\n## 代码助手\n- 代码生成、解释、重构、调试\n- 多语言支持\n- 智能上下文感知\n\n## 回答规范\n- 直接回答问题，不铺垫、不寒暄\n- 有据可依：涉及知识库的答案必须来自实际内容\n- 知识库未覆盖的内容，明确说明\"未找到相关信息\"\n- 简洁精准：只给用户需要的信息"
+        }
+    }
+}
