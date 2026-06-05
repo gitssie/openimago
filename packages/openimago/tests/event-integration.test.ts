@@ -10,6 +10,7 @@ import { WorkspaceTable } from "../src/db/workspace-schema"
 import { SessionTable } from "../src/db/session-schema"
 import { setup, teardown, setupSessionTable, setupMessageTable } from "./helper"
 import { createApp } from "../src/server/app"
+import { signJwt } from "../src/auth/jwt"
 
 let app: Hono
 
@@ -180,4 +181,25 @@ describe("/api/event SSE endpoint", () => {
       console.log("heartbeat also received")
     }
   }, 20_000)
+
+  test("closes SSE stream with auth.expired when short-lived token expires", async () => {
+    // Register a user via the normal flow to get a userId
+    const reg = await registerUser("sse_auth_exp")
+    // Generate a short-lived token (expires in 2 seconds) for the same user
+    const shortToken = await signJwt({ userId: reg.user.id, role: reg.user.role }, "2s")
+
+    // Wait briefly for EventLayer to register the user
+    await new Promise((r) => setTimeout(r, 6000))
+
+    // Connect to SSE with the short-lived token
+    const events = await readSSE(shortToken, 12_000)
+    console.log("SSE events for short-lived token:", events.length, events.map((e: any) => e.type))
+
+    // Should receive server.connected first (token is still valid at connect time)
+    expect(events.map((e: any) => e.type)).toContain("server.connected")
+
+    // After the token expires (2s), the heartbeat should detect it and
+    // send auth.expired before closing the stream.
+    expect(events.map((e: any) => e.type)).toContain("auth.expired")
+  }, 25_000)
 })

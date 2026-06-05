@@ -16,6 +16,7 @@ import type { BusEvent } from "../event/types"
 import { billingService } from "../billing/service"
 import { resolveAttachments, type AttachmentInput } from "../attachments/resolver"
 import { tempUploadService } from "../temp-uploads/service"
+import { verifyJwt } from "../auth/jwt"
 
 /**
  * Legacy callback (kept for compatibility).
@@ -461,6 +462,7 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
   routes.get("/api/event", async (c) => {
     const userId = c.get("userId") as string | undefined
     const workspaceId = c.get("workspaceId") as string
+    const token = c.get("token") as string | undefined
 
     // If the GlobalEventManager is running, use it for fan-out
     if (subscribe && userId) {
@@ -479,6 +481,30 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
         if (_unsubscribed) return
         _unsubscribed = true
         subscription.unsubscribe()
+      }
+
+      // ── JWT heartbeat: periodically verify the token is still valid ──────
+      let jwtCheckTimer: ReturnType<typeof setInterval> | null = null
+      if (token) {
+        jwtCheckTimer = setInterval(async () => {
+          try {
+            await verifyJwt(token)
+          } catch {
+            // Token expired or invalid — signal the client and close the stream
+            logger.warn({ userId }, "/api/event: token expired during stream")
+            try {
+              await writer.write(encoder.encode(sseEncode({
+                id: crypto.randomUUID(),
+                type: "auth.expired",
+                properties: {},
+              })))
+            } catch { /* writer may already be closed */ }
+            if (jwtCheckTimer) clearInterval(jwtCheckTimer)
+            jwtCheckTimer = null
+            unsubscribe()
+            writer.close().catch(() => {})
+          }
+        }, 10_000)
       }
 
       // Build SSE stream: connected event + bus events + heartbeat
@@ -518,6 +544,7 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
 
       // Clean up on client disconnect
       c.req.raw.signal.addEventListener("abort", () => {
+        if (jwtCheckTimer) clearInterval(jwtCheckTimer)
         unsubscribe()
         writer.close().catch(() => {})
       })

@@ -15,6 +15,7 @@
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from 'stores/auth'
+import { appEventBus } from 'src/utils/app-events'
 import AuthDialog from 'components/auth/AuthDialog.vue'
 import type { LoginPayload, RegisterPayload } from 'components/auth/AuthPanel.vue'
 
@@ -29,7 +30,7 @@ async function onReauthLogin(payload: LoginPayload) {
   reauthError.value = ''
   try {
     await auth.login(payload.email, payload.password)
-    // setAuth() resets showReauthDialog → dialog closes
+    appEventBus.emit('auth:reauthenticated')
   } catch (e: unknown) {
     reauthError.value = e instanceof Error ? e.message : '登录失败'
   } finally {
@@ -42,7 +43,7 @@ async function onReauthRegister(payload: RegisterPayload) {
   reauthError.value = ''
   try {
     await auth.register(payload.username, payload.email, payload.password)
-    // setAuth() resets showReauthDialog → dialog closes
+    appEventBus.emit('auth:reauthenticated')
   } catch (e: unknown) {
     reauthError.value = e instanceof Error ? e.message : '注册失败'
   } finally {

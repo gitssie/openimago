@@ -12,6 +12,7 @@ declare module "hono" {
     workspaceId: string | null
     role: string
     directory?: string
+    token?: string
   }
 }
 
@@ -31,13 +32,17 @@ export async function authMiddleware(c: Context, next: Next) {
   }
 
   let claims: { userId: string; role: string }
+  let token: string
   try {
-    const token = header.slice(7)
+    token = header.slice(7)
     claims = await verifyJwt(token)
   } catch {
     logger.warn({ path: new URL(c.req.url).pathname }, "auth: invalid token")
     return c.json({ error: { code: "UNAUTHORIZED", message: "Invalid token" } }, 401)
   }
+
+  // Store the raw token for routes that need it (e.g. SSE heartbeat JWT re-verification)
+  c.set("token", token!)
 
   // Look up workspace_id; may be null for users created before the migration.
   // A valid JWT can outlive a truncated/deleted user row, so reject it before

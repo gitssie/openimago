@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
+import { appEventBus } from '../../utils/app-events'
 import App from '../../App.vue'
 import type { RouteRecordRaw } from 'vue-router'
 
@@ -60,5 +61,35 @@ describe('App.vue — global reauth dialog', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.findComponent({ name: 'AuthDialog' }).exists()).toBe(false)
+  })
+
+  it('emits auth:reauthenticated event after successful reauth login', async () => {
+    const emitSpy = vi.spyOn(appEventBus, 'emit')
+
+    await router.push('/projects')
+    await router.isReady()
+
+    const auth = useAuthStore()
+    auth.login = vi.fn(() => {
+      auth.setAuth('new-token', { id: '1', username: 'test', email: 'test@test.com', role: 'user' })
+      return Promise.resolve()
+    })
+
+    const wrapper = mountApp()
+    await wrapper.vm.$nextTick()
+
+    auth.showReauthDialog = true
+    await wrapper.vm.$nextTick()
+
+    const authDialog = wrapper.findComponent({ name: 'AuthDialog' })
+    expect(authDialog.exists()).toBe(true)
+
+    await authDialog.vm.$emit('login', { email: 'test@test.com', password: 'pass123', rememberMe: false })
+    await wrapper.vm.$nextTick()
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(emitSpy).toHaveBeenCalledWith('auth:reauthenticated')
+
+    emitSpy.mockRestore()
   })
 })

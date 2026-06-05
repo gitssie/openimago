@@ -11,11 +11,18 @@
  *                      └───────────┘
  *   connected → server-closed  (server sent server.close; do NOT auto-reconnect)
  *   server-closed → connecting  (connect() was called explicitly, e.g. on sendMessage)
+ *
+ * Re-auth flow:
+ *   When the auth token expires, the SSE loop stops.
+ *   After re-auth (via the global dialog), the app emits 'auth:reauthenticated'
+ *   on the shared appEventBus. This composable listens and calls reconnect().
  */
 
 import { ref } from 'vue';
 import type { Event } from '@opencode-ai/sdk/v2';
 import { AgentService } from 'src/services/agents';
+import { useAuthStore } from 'src/stores/auth';
+import { appEventBus } from 'src/utils/app-events';
 
 export type SseState = 'disconnected' | 'connecting' | 'connected' | 'server-closed';
 
@@ -35,9 +42,27 @@ let running = false;
 /** Abort controller for stopping the current loop. */
 let abortCtrl: AbortController | null = null;
 
+/** Connection generation counter — ensures stale .then() callbacks are ignored. */
+let connectionId = 0;
+
 /** Sliding window of recently seen event IDs (deduplication). */
 const recentEventIds: string[] = [];
 const recentEventIdSet = new Set<string>();
+
+// ── Re-auth event listener (registered once at module level) ────────────────
+
+let _reauthUnlisten: (() => void) | null = null;
+
+function _ensureReauthListener() {
+  if (_reauthUnlisten) return;
+  const handler = () => {
+    // Stop old (expired-token) loop and start fresh with new token
+    if (abortCtrl) abortCtrl.abort();
+    _startLoop();
+  };
+  appEventBus.on('auth:reauthenticated', handler);
+  _reauthUnlisten = () => appEventBus.off('auth:reauthenticated', handler);
+}
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -83,7 +108,9 @@ function dispatch(event: Event) {
 
 // ── Core loop ────────────────────────────────────────────────────────────────
 
-async function _runLoop(ctrl: AbortController): Promise<'aborted' | 'server-closed'> {
+type LoopResult = 'aborted' | 'server-closed' | 'auth-expired';
+
+async function _runLoop(ctrl: AbortController): Promise<LoopResult> {
   let retryDelay = 1000;
 
   while (!ctrl.signal.aborted) {
@@ -100,15 +127,31 @@ async function _runLoop(ctrl: AbortController): Promise<'aborted' | 'server-clos
 
         dispatch(event);
 
+        // Handle server-initiated close
         if ((event as { type: string }).type === 'server.close') {
-          // Server is intentionally closing this connection (e.g. LRU eviction).
-          // Stop auto-reconnecting — the caller must explicitly call connect().
           return 'server-closed';
+        }
+
+        // Handle auth expiry signalled by backend heartbeat
+        if ((event as { type: string }).type === 'auth.expired') {
+          try {
+            const auth = useAuthStore();
+            auth.requestReauth();
+          } catch { /* store may not be available in all test contexts */ }
+          return 'auth-expired';
         }
       }
     } catch {
       if (ctrl.signal.aborted) return 'aborted';
-      // Connection error — retry after back-off
+
+      // If the token is gone (cleared by a concurrent HTTP 401), trigger reauth
+      try {
+        const auth = useAuthStore();
+        if (!auth.token && auth.wasPreviouslyAuthenticated) {
+          auth.requestReauth();
+          return 'auth-expired';
+        }
+      } catch { /* store may not be available */ }
     }
 
     if (ctrl.signal.aborted) return 'aborted';
@@ -127,21 +170,30 @@ async function _runLoop(ctrl: AbortController): Promise<'aborted' | 'server-clos
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
+/** Internal: start a fresh SSE loop, invalidating any previous connection. */
+function _startLoop(): void {
+  running = true;
+  ++connectionId;
+  const id = connectionId;
+  abortCtrl = new AbortController();
+  const ctrl = abortCtrl;
+
+  void _runLoop(ctrl).then((reason) => {
+    // Ignore stale connections (a newer reconnect() invalidated us)
+    if (id !== connectionId) return;
+    running = false;
+    abortCtrl = null;
+    sseState.value = reason === 'server-closed' ? 'server-closed' : 'disconnected';
+  });
+}
+
 /**
  * Start the SSE connection. No-op if already running.
  * Safe to call multiple times (idempotent).
  */
 function connect(): void {
   if (running) return;
-  running = true;
-  abortCtrl = new AbortController();
-  const ctrl = abortCtrl;
-
-  void _runLoop(ctrl).then((reason) => {
-    running = false;
-    abortCtrl = null;
-    sseState.value = reason === 'server-closed' ? 'server-closed' : 'disconnected';
-  });
+  _startLoop();
 }
 
 /**
@@ -151,6 +203,19 @@ function connect(): void {
 function disconnect(): void {
   abortCtrl?.abort();
   // sseState will be set to 'disconnected' by the loop's .then()
+}
+
+/**
+ * Reconnect the SSE stream (e.g. after token refresh).
+ * Stops the current loop and starts a fresh one with the new token.
+ * Connection generation counter ensures old loop cleanup is ignored.
+ */
+function reconnect(): void {
+  // Register the re-auth listener (idempotent — only once)
+  _ensureReauthListener();
+
+  abortCtrl?.abort();
+  _startLoop();
 }
 
 /**
@@ -174,5 +239,7 @@ function ensureConnected(): void {
 // ── Composable export ────────────────────────────────────────────────────────
 
 export function useSseConnection() {
-  return { state: sseState, connect, disconnect, onEvent, ensureConnected };
+  // Register the re-auth listener on first composable use
+  _ensureReauthListener();
+  return { state: sseState, connect, disconnect, reconnect, onEvent, ensureConnected };
 }

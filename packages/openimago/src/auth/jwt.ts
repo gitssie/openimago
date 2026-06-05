@@ -8,11 +8,11 @@ const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET)
 
 const JWT_EXPIRES_IN = "24h"
 
-export async function signJwt(payload: { userId: string; role: string }) {
+export async function signJwt(payload: { userId: string; role: string }, expiresIn?: string) {
   return new SignJWT({ ...payload })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime(JWT_EXPIRES_IN)
+    .setExpirationTime(expiresIn ?? JWT_EXPIRES_IN)
     .sign(JWT_SECRET)
 }
 
