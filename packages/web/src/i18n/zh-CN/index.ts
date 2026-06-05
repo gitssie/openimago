@@ -96,7 +96,7 @@ export default {
   },
   gallery: {
     // Sidebar / topbar
-    navWorkbench: '工作台',
+    navWorkbench: '首页',
     navSessions: '会话',
     navProjects: '项目',
     navAssets: '资产',

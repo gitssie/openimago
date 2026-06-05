@@ -1,13 +1,14 @@
 import { Hono } from "hono"
 import { and, or, eq, like, isNull, gte, gt, lt, asc, desc } from "drizzle-orm"
-import { mkdir } from "node:fs/promises"
+import { mkdir, copyFile, access } from "node:fs/promises"
+import { join, basename } from "node:path"
 import { authMiddleware, proxyMiddleware } from "../server/middleware"
 import { proxyRequest, createProxyConfig, forward } from "./service"
 import { loadAgentCommandConfig, getAgents, getCommands } from "./config"
 import { db } from "../db/client"
 import { SessionTable } from "../db/session-schema"
 import { MessageTable } from "../db/message-schema"
-import { projects } from "../db/schema"
+import { projects, assets } from "../db/schema"
 import { WorkspaceTable } from "../db/workspace-schema"
 import { logger } from "../server/logger"
 import { Effect, Stream } from "effect"
@@ -274,7 +275,66 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
     }
 
     const prompt = typeof body.prompt === "string" ? body.prompt : ""
-    const messageBody = JSON.stringify({ parts: [{ type: "text", text: prompt }] })
+
+    // ── Copy attached assets into session directory ──────────────
+    const metadata = (body.metadata ?? {}) as Record<string, unknown>
+    const rawAssetIds = metadata.assetIds
+    const assetIdList: string[] = []
+    if (typeof rawAssetIds === "string" && rawAssetIds.length > 0) {
+      assetIdList.push(...rawAssetIds.split(",").map((s) => s.trim()).filter(Boolean))
+    } else if (Array.isArray(rawAssetIds)) {
+      assetIdList.push(...rawAssetIds.filter((id): id is string => typeof id === "string" && id.length > 0))
+    }
+
+    const copiedPaths: string[] = []
+    if (assetIdList.length > 0) {
+      const attachDir = join(directory, "attachments")
+      await mkdir(attachDir, { recursive: true })
+
+      for (const assetId of assetIdList) {
+        const [row] = await db
+          .select({ storagePath: assets.storagePath, filename: assets.filename })
+          .from(assets)
+          .where(and(eq(assets.id, assetId), eq(assets.userId, userId), eq(assets.status, "active")))
+          .limit(1)
+
+        if (!row) {
+          logger.warn({ userId, assetId }, "proxy: asset not found or not owned, skipping")
+          continue
+        }
+
+        // Safe filename: basename strips path traversal, then remove null bytes
+        let safeName = basename(row.filename).replace(/\0/g, "")
+        if (!safeName || safeName === "." || safeName === "..") {
+          safeName = `${assetId}.bin`
+        }
+
+        // Handle name conflicts: if the destination already exists, prefix with asset ID
+        let destPath = join(attachDir, safeName)
+        try {
+          await access(destPath)
+          // File exists — prefix with asset ID to avoid collision
+          destPath = join(attachDir, `${assetId}_${safeName}`)
+        } catch {
+          // File doesn't exist — use as-is
+        }
+
+        await copyFile(row.storagePath, destPath)
+        const relativePath = join("attachments", basename(destPath))
+        copiedPaths.push(relativePath)
+        logger.info({ userId, assetId, destPath }, "proxy: copied asset to session attachments")
+      }
+    }
+
+    // Build text parts: user prompt + attachment paths
+    const textParts: Array<{ type: "text"; text: string }> = []
+    if (prompt) {
+      textParts.push({ type: "text", text: prompt })
+    }
+    if (copiedPaths.length > 0) {
+      textParts.push({ type: "text", text: `\n附件已复制到: ${copiedPaths.join(", ")}` })
+    }
+    const messageBody = JSON.stringify({ parts: textParts })
 
     // Build target URL: /session/:id/message with workspace/directory params
     const targetUrl = new URL(`/session/${id}/message`, config.opencodeUrl)
