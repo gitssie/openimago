@@ -137,7 +137,10 @@ async function handleFileChange(event: Event) {
       const headers: Record<string, string> = {}
       if (auth.token) headers.Authorization = `Bearer ${auth.token}`
       const res = await fetch('/api/platform/assets/upload', { method: 'POST', headers, body: form })
-      if (!res.ok) throw new Error(await res.text())
+      if (!res.ok) {
+        if (res.status === 401) auth.clearAuth()
+        throw new Error(await res.text())
+      }
     }
     await store.fetchAll()
   } finally {

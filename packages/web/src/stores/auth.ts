@@ -8,6 +8,7 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<OpenimagoUser | null>(
     JSON.parse(localStorage.getItem('user') || 'null'),
   )
+  const verified = ref(false)
 
   const isAuthenticated = computed(() => !!token.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
@@ -23,11 +24,15 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function fetchMe() {
-    if (!token.value) return
+    if (!token.value) {
+      verified.value = false
+      return
+    }
     try {
       const u = await api.me()
       user.value = u
       localStorage.setItem('user', JSON.stringify(u))
+      verified.value = true
     } catch {
       clearAuth()
     }
@@ -36,6 +41,7 @@ export const useAuthStore = defineStore('auth', () => {
   function setAuth(t: string, u: OpenimagoUser) {
     token.value = t
     user.value = u
+    verified.value = true
     localStorage.setItem('token', t)
     localStorage.setItem('user', JSON.stringify(u))
   }
@@ -43,9 +49,10 @@ export const useAuthStore = defineStore('auth', () => {
   function clearAuth() {
     token.value = null
     user.value = null
+    verified.value = false
     localStorage.removeItem('token')
     localStorage.removeItem('user')
   }
 
-  return { token, user, isAuthenticated, isAdmin, login, register, fetchMe, setAuth, clearAuth }
+  return { token, user, verified, isAuthenticated, isAdmin, login, register, fetchMe, setAuth, clearAuth }
 })

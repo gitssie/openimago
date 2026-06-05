@@ -21,9 +21,16 @@ export default defineRouter((/* { store, ssrContext } */) => {
     history: createHistory(process.env.VUE_ROUTER_BASE),
   })
 
-  Router.beforeEach((to) => {
+  Router.beforeEach(async (to) => {
     const auth = useAuthStore()
-    if (to.meta.requiresAuth && !auth.isAuthenticated) {
+    if (!to.meta.requiresAuth) return
+
+    // Verify token with backend when we have a local token but haven't confirmed it's valid
+    if (auth.isAuthenticated && !auth.verified) {
+      await auth.fetchMe()
+    }
+
+    if (!auth.isAuthenticated) {
       return '/auth'
     }
   })
