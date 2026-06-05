@@ -4,6 +4,24 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useAuthStore } from '../../stores/auth'
 import routes from '../../router/routes'
 
+/** Reusable guard matching src/router/index.ts behavior. */
+function createGuard() {
+  return async (to: { meta?: Record<string, unknown>; path?: string }) => {
+    const auth = useAuthStore()
+    if (!to.meta?.requiresAuth) return
+    if (auth.isAuthenticated && !auth.verified) {
+      await auth.fetchMe()
+    }
+    if (!auth.isAuthenticated) {
+      if (auth.wasPreviouslyAuthenticated && to.path !== '/auth') {
+        auth.requestReauth()
+        return true
+      }
+      return '/auth'
+    }
+  }
+}
+
 describe('Auth Guard', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -15,17 +33,7 @@ describe('Auth Guard', () => {
       history: createWebHistory(),
       routes,
     })
-
-    router.beforeEach(async (to) => {
-      const auth = useAuthStore()
-      if (!to.meta.requiresAuth) return
-      if (auth.isAuthenticated && !auth.verified) {
-        await auth.fetchMe()
-      }
-      if (!auth.isAuthenticated) {
-        return '/auth'
-      }
-    })
+    router.beforeEach(createGuard())
 
     await router.push('/projects')
     await router.isReady()
@@ -38,17 +46,7 @@ describe('Auth Guard', () => {
       history: createWebHistory(),
       routes,
     })
-
-    router.beforeEach(async (to) => {
-      const auth = useAuthStore()
-      if (!to.meta.requiresAuth) return
-      if (auth.isAuthenticated && !auth.verified) {
-        await auth.fetchMe()
-      }
-      if (!auth.isAuthenticated) {
-        return '/auth'
-      }
-    })
+    router.beforeEach(createGuard())
 
     const auth = useAuthStore()
     auth.setAuth('test-token', { id: '1', username: 'test', email: 'test@test.com', role: 'user' })
@@ -59,22 +57,12 @@ describe('Auth Guard', () => {
     expect(router.currentRoute.value.path).toBe('/projects')
   })
 
-  it('redirects to /auth when token is expired (fetchMe fails)', async () => {
+  it('shows reauth dialog instead of redirecting when token is expired', async () => {
     const router = createRouter({
       history: createWebHistory(),
       routes,
     })
-
-    router.beforeEach(async (to) => {
-      const auth = useAuthStore()
-      if (!to.meta.requiresAuth) return
-      if (auth.isAuthenticated && !auth.verified) {
-        await auth.fetchMe()
-      }
-      if (!auth.isAuthenticated) {
-        return '/auth'
-      }
-    })
+    router.beforeEach(createGuard())
 
     const auth = useAuthStore()
     // Simulate state after page reload with expired token in localStorage:
@@ -92,8 +80,11 @@ describe('Auth Guard', () => {
     await router.push('/projects')
     await router.isReady()
 
-    expect(router.currentRoute.value.path).toBe('/auth')
+    // Should stay on the protected page with the dialog showing
+    expect(router.currentRoute.value.path).toBe('/projects')
     expect(auth.isAuthenticated).toBe(false)
+    expect(auth.wasPreviouslyAuthenticated).toBe(true)
+    expect(auth.showReauthDialog).toBe(true)
   })
 
   it('allows navigation when token is verified (fetchMe succeeds)', async () => {
@@ -101,17 +92,7 @@ describe('Auth Guard', () => {
       history: createWebHistory(),
       routes,
     })
-
-    router.beforeEach(async (to) => {
-      const auth = useAuthStore()
-      if (!to.meta.requiresAuth) return
-      if (auth.isAuthenticated && !auth.verified) {
-        await auth.fetchMe()
-      }
-      if (!auth.isAuthenticated) {
-        return '/auth'
-      }
-    })
+    router.beforeEach(createGuard())
 
     const auth = useAuthStore()
     auth.token = 'valid-token'

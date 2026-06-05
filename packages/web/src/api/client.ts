@@ -6,6 +6,7 @@ function apiUrl(path: string): string {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const auth = useAuthStore()
+  const currentToken = auth.token
   const headers: Record<string, string> = {}
   // Only set Content-Type for JSON bodies; for FormData, let the browser auto-set with boundary
   const isFormData = options.body instanceof FormData
@@ -20,7 +21,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const err = isJson
       ? await res.json().catch(() => ({ message: res.statusText }))
       : { message: await res.text().catch(() => res.statusText) || res.statusText }
-    if (res.status === 401) auth.clearAuth()
+    if (res.status === 401 && auth.token === currentToken) {
+      auth.clearAuth()
+      auth.requestReauth()
+    }
     throw new Error(err.message || err.error?.message || `HTTP ${res.status}`)
   }
   if (res.status === 204) return undefined as T
@@ -270,6 +274,7 @@ export const api = {
       formData.append('file', file)
 
       const auth = useAuthStore()
+      const currentToken = auth.token
       xhr.open('POST', apiUrl('/api/platform/assets/upload'))
 
       if (onProgress) {
@@ -289,7 +294,10 @@ export const api = {
             reject(new Error('Invalid response from upload'))
           }
         } else if (xhr.status === 401) {
-          auth.clearAuth()
+          if (auth.token === currentToken) {
+            auth.clearAuth()
+            auth.requestReauth()
+          }
           reject(new Error('Unauthorized'))
         } else {
           try {

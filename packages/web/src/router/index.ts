@@ -31,6 +31,12 @@ export default defineRouter((/* { store, ssrContext } */) => {
     }
 
     if (!auth.isAuthenticated) {
+      // If user was previously authenticated (token existed but expired), show
+      // the global reauth dialog instead of redirecting away from the current page.
+      if (auth.wasPreviouslyAuthenticated && to.path !== '/auth') {
+        auth.requestReauth()
+        return true
+      }
       return '/auth'
     }
   })

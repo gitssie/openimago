@@ -2,101 +2,47 @@
   <q-layout view="lHh Lpr lFf" class="auth-layout">
     <div class="auth-aurora auth-aurora--cyan" />
     <div class="auth-aurora auth-aurora--violet" />
-    <div class="auth-prism auth-prism--left" />
-    <div class="auth-prism auth-prism--right" />
+    <div class="auth-prism auth-prism--left">
+      <span class="auth-prism__star auth-prism__star--cyan" aria-hidden="true" />
+    </div>
+    <div class="auth-prism auth-prism--right">
+      <span class="auth-prism__star auth-prism__star--violet" aria-hidden="true" />
+    </div>
     <div class="auth-floor" />
 
     <q-page-container>
       <q-page class="auth-page flex flex-center">
-        <div class="auth-card imago-panel--auth">
-          <!-- Logo -->
-          <div class="auth-brand text-center">
-            <div class="auth-logo imago-brand">openimago</div>
-            <p class="auth-tagline">AI 图片 / 视频创作平台</p>
-          </div>
-
-          <!-- Tabs -->
-          <q-tabs v-model="tab" dense class="imago-auth-tabs" active-class="imago-auth-tab--active" indicator-color="transparent" align="justify" no-caps>
-            <q-tab name="login" label="Login" class="imago-auth-tab" />
-            <q-tab name="register" label="Register" class="imago-auth-tab" />
-          </q-tabs>
-
-          <!-- Login -->
-          <q-form v-if="tab === 'login'" @submit.prevent="handleLogin" class="auth-form">
-            <q-input v-model="loginForm.email" label="Email address" outlined dark hide-bottom-space class="imago-input-panel" color="cyan-4" :rules="[(v: string) => !!v || '请输入邮箱']" lazy-rules>
-              <template #prepend><q-icon name="mail_outline" class="imago-input-panel__icon" /></template>
-            </q-input>
-            <q-input v-model="loginForm.password" label="Password" :type="showLoginPassword ? 'text' : 'password'" outlined dark hide-bottom-space class="imago-input-panel" color="cyan-4" :rules="[(v: string) => !!v || '请输入密码']" lazy-rules>
-              <template #prepend><q-icon name="lock_outline" class="imago-input-panel__icon" /></template>
-              <template #append>
-                <q-icon :name="showLoginPassword ? 'visibility_off' : 'visibility'" class="imago-input-panel__action" @click="showLoginPassword = !showLoginPassword" />
-              </template>
-            </q-input>
-            <q-btn type="submit" label="Login" class="imago-submit imago-submit--cyan" :loading="loading" unelevated no-caps />
-          </q-form>
-
-          <!-- Register -->
-          <q-form v-else @submit.prevent="handleRegister" class="auth-form">
-            <q-input v-model="registerForm.username" label="Username" outlined dark hide-bottom-space class="imago-input-panel" color="purple-4" :rules="[(v: string) => !!v || '请输入用户名']" lazy-rules>
-              <template #prepend><q-icon name="person_outline" class="imago-input-panel__icon" /></template>
-            </q-input>
-            <q-input v-model="registerForm.email" label="Email address" type="email" outlined dark hide-bottom-space class="imago-input-panel" color="purple-4" :rules="[(v: string) => !!v || '请输入邮箱']" lazy-rules>
-              <template #prepend><q-icon name="mail_outline" class="imago-input-panel__icon" /></template>
-            </q-input>
-            <q-input v-model="registerForm.password" label="Password" :type="showRegisterPassword ? 'text' : 'password'" outlined dark hide-bottom-space class="imago-input-panel" color="purple-4" :rules="[(v: string) => v.length >= 6 || '密码至少 6 位']" lazy-rules>
-              <template #prepend><q-icon name="lock_outline" class="imago-input-panel__icon" /></template>
-              <template #append>
-                <q-icon :name="showRegisterPassword ? 'visibility_off' : 'visibility'" class="imago-input-panel__action" @click="showRegisterPassword = !showRegisterPassword" />
-              </template>
-            </q-input>
-            <q-btn type="submit" label="Register" class="imago-submit imago-submit--violet" :loading="loading" unelevated no-caps />
-          </q-form>
-
-          <!-- Error -->
-          <q-banner v-if="error" dense rounded class="bg-negative text-white q-mt-md">
-            {{ error }}
-          </q-banner>
-
-          <!-- OAuth -->
-          <div class="auth-oauth">
-            <div class="imago-auth-divider row items-center">
-              <div class="col"><q-separator dark /></div>
-              <div class="col-auto imago-auth-divider__text">or<span class="imago-sr-only">第三方登录</span></div>
-              <div class="col"><q-separator dark /></div>
-            </div>
-            <div class="auth-socials">
-              <q-btn outline rounded icon="fa-brands fa-github" label="Continue with GitHub" class="imago-btn-auth-social" no-caps @click="oauthLogin('github')" />
-              <q-btn outline rounded icon="fa-brands fa-google" label="Continue with Google" class="imago-btn-auth-social" no-caps @click="oauthLogin('google')" />
-            </div>
-          </div>
-        </div>
+        <AuthPanel
+          variant="page"
+          :loading="loading"
+          :error="error"
+          @login="handleLogin"
+          @register="handleRegister"
+          @forgot-password="handleForgotPassword"
+          @oauth="oauthLogin"
+        />
       </q-page>
     </q-page-container>
   </q-layout>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from 'src/stores/auth'
+import AuthPanel, { type LoginPayload, type OAuthProvider, type RegisterPayload } from 'components/auth/AuthPanel.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
 
-const tab = ref<'login' | 'register'>('login')
 const loading = ref(false)
 const error = ref('')
-const showLoginPassword = ref(false)
-const showRegisterPassword = ref(false)
 
-const loginForm = reactive({ email: '', password: '' })
-const registerForm = reactive({ username: '', email: '', password: '' })
-
-async function handleLogin() {
+async function handleLogin(payload: LoginPayload) {
   loading.value = true
   error.value = ''
   try {
-    await auth.login(loginForm.email, loginForm.password)
+    await auth.login(payload.email, payload.password)
     void router.push('/projects')
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : '登录失败'
@@ -105,11 +51,11 @@ async function handleLogin() {
   }
 }
 
-async function handleRegister() {
+async function handleRegister(payload: RegisterPayload) {
   loading.value = true
   error.value = ''
   try {
-    await auth.register(registerForm.username, registerForm.email, registerForm.password)
+    await auth.register(payload.username, payload.email, payload.password)
     void router.push('/projects')
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : '注册失败'
@@ -118,19 +64,27 @@ async function handleRegister() {
   }
 }
 
-function oauthLogin(provider: string) {
+function oauthLogin(provider: OAuthProvider) {
   window.location.href = `/auth/oauth/${provider}`
+}
+
+function handleForgotPassword() {
+  // TODO: implement forgot password flow (route or modal)
+  void router.push('/forgot-password')
 }
 </script>
 
 <style scoped>
+/* ── Page-level layout: auroras, prisms, floor, background ────────── */
 .auth-layout {
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(circle at 12% 4%, rgb(13 218 255 / 42%), transparent 26%),
-    radial-gradient(circle at 88% 11%, rgb(196 38 255 / 42%), transparent 28%),
-    linear-gradient(115deg, #010713 0%, #061122 48%, #0c0415 100%);
+    radial-gradient(circle at 10% -2%, rgb(34 247 255 / 58%) 0%, transparent 30%),
+    radial-gradient(circle at 92% 8%, rgb(196 38 255 / 60%) 0%, transparent 32%),
+    radial-gradient(circle at 8% 78%, rgb(0 215 255 / 26%) 0%, transparent 38%),
+    radial-gradient(circle at 94% 74%, rgb(214 36 255 / 28%) 0%, transparent 40%),
+    linear-gradient(115deg, #01060f 0%, #061122 48%, #0c0415 100%);
   color: #eafcff;
 }
 
@@ -140,12 +94,20 @@ function oauthLogin(provider: string) {
   pointer-events: none;
   content: '';
   background:
-    linear-gradient(118deg, transparent 0 16%, rgb(21 232 255 / 32%) 16.2%, transparent 16.6%),
-    linear-gradient(143deg, transparent 68%, rgb(209 42 255 / 34%) 68.3%, transparent 69%),
-    radial-gradient(circle at 21% 19%, rgb(0 215 255 / 12%) 0 1px, transparent 3px),
-    radial-gradient(circle at 79% 35%, rgb(231 0 255 / 14%) 0 2px, transparent 4px);
-  background-size: 100% 100%, 100% 100%, 92px 92px, 118px 118px;
-  filter: blur(0.2px);
+    linear-gradient(118deg, transparent 0 14.5%, rgb(34 247 255 / 56%) 15.4%, transparent 16.2%),
+    linear-gradient(143deg, transparent 66.5%, rgb(209 42 255 / 58%) 67.4%, transparent 68.4%),
+    radial-gradient(circle at 21% 19%, rgb(0 215 255 / 22%) 0 1.2px, transparent 3px),
+    radial-gradient(circle at 79% 35%, rgb(231 0 255 / 22%) 0 1.6px, transparent 4px),
+    radial-gradient(circle at 42% 62%, rgb(255 255 255 / 14%) 0 1px, transparent 2.5px),
+    radial-gradient(circle at 64% 78%, rgb(255 255 255 / 12%) 0 1px, transparent 2.5px);
+  background-size:
+    100% 100%,
+    100% 100%,
+    92px 92px,
+    118px 118px,
+    144px 144px,
+    168px 168px;
+  filter: blur(0.25px);
 }
 
 .auth-layout::after {
@@ -153,9 +115,11 @@ function oauthLogin(provider: string) {
   inset: 0;
   pointer-events: none;
   content: '';
-  background-image: linear-gradient(rgb(255 255 255 / 4%) 1px, transparent 1px), linear-gradient(90deg, rgb(255 255 255 / 3%) 1px, transparent 1px);
+  background-image:
+    linear-gradient(rgb(255 255 255 / 5%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 4%) 1px, transparent 1px);
   background-size: 54px 54px;
-  mask-image: linear-gradient(to top, #000 0%, transparent 34%);
+  mask-image: linear-gradient(to top, #000 0%, transparent 36%);
   transform: perspective(520px) rotateX(68deg) translateY(18%);
   transform-origin: bottom;
 }
@@ -167,44 +131,7 @@ function oauthLogin(provider: string) {
   padding: 24px 18px;
 }
 
-.auth-card {
-  width: min(464px, 100%);
-  padding: 32px 34px 30px;
-}
-
-.auth-brand {
-  position: relative;
-  margin-bottom: 22px;
-}
-
-.auth-logo {
-  font-size: clamp(40px, 4.6vw, 52px);
-  line-height: 0.95;
-  color: var(--imago-cyan-bright);
-  text-shadow: 0 0 7px var(--imago-cyan-bright), 0 0 20px rgb(47 247 255 / 82%), 0 0 40px rgb(47 247 255 / 42%);
-}
-
-.auth-tagline {
-  height: 1px;
-  margin: 0;
-  overflow: hidden;
-  opacity: 0;
-}
-
-.auth-form {
-  display: grid;
-  gap: 16px;
-}
-
-.auth-oauth {
-  margin-top: 24px;
-}
-
-.auth-socials {
-  display: grid;
-  gap: 9px;
-}
-
+/* ── Decorative prisms + auroras + floor (page-only) ──────────────── */
 .auth-aurora,
 .auth-prism,
 .auth-floor {
@@ -213,74 +140,140 @@ function oauthLogin(provider: string) {
 }
 
 .auth-aurora {
-  width: 42vw;
-  height: 42vw;
-  filter: blur(62px);
-  opacity: 0.42;
+  width: 52vw;
+  height: 52vw;
+  filter: blur(54px);
+  opacity: 0.72;
 }
 
 .auth-aurora--cyan {
-  top: -14vw;
-  left: -12vw;
+  top: -16vw;
+  left: -14vw;
   background: var(--imago-neon-cyan);
 }
 
 .auth-aurora--violet {
-  top: -10vw;
-  right: -10vw;
+  top: -12vw;
+  right: -12vw;
   background: var(--imago-neon-purple);
 }
 
-.auth-prism {
-  width: 210px;
-  aspect-ratio: 1;
-  border: 2px solid rgb(22 225 255 / 55%);
-  filter: drop-shadow(0 0 18px rgb(0 229 255 / 42%));
-  opacity: 0.55;
-  transform: rotate(42deg) skew(-10deg, -8deg);
-}
-
-.auth-prism::before,
-.auth-prism::after {
-  position: absolute;
-  inset: 18%;
-  content: '';
-  border: 2px solid rgb(196 38 255 / 48%);
-}
-
+/* Left: vertical light beam + bright star point with lens-flare X cross */
 .auth-prism--left {
-  bottom: 18%;
-  left: 5%;
+  width: 3px;
+  height: clamp(440px, 60vh, 640px);
+  top: 8%;
+  left: 7%;
+  border: 0;
+  border-radius: 2px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgb(34 247 255 / 45%) 14%,
+    rgb(120 250 255 / 1) 50%,
+    rgb(34 247 255 / 45%) 86%,
+    transparent 100%
+  );
+  filter:
+    drop-shadow(0 0 6px rgb(34 247 255 / 95%))
+    drop-shadow(0 0 18px rgb(34 247 255 / 55%))
+    drop-shadow(0 0 48px rgb(34 247 255 / 28%));
+  opacity: 0.95;
 }
 
+.auth-prism--left::before,
+.auth-prism--left::after {
+  content: '';
+  position: absolute;
+  top: 18%;
+  left: 50%;
+  width: 320px;
+  height: 4px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(255 255 255 / 28%) 22%,
+    rgb(255 255 255 / 95%) 50%,
+    rgb(255 255 255 / 28%) 78%,
+    transparent 100%
+  );
+  filter:
+    drop-shadow(0 0 4px rgb(255 255 255 / 90%))
+    drop-shadow(0 0 14px rgb(34 247 255 / 75%));
+  transform-origin: center;
+}
+
+.auth-prism--left::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.auth-prism--left::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+/* Right: 3D octahedron — rotated square + X facet lines + top star */
 .auth-prism--right {
-  right: 6%;
-  bottom: 23%;
+  width: 240px;
+  height: 240px;
+  top: 18%;
+  right: 5%;
+  border: 1.5px solid rgb(196 38 255 / 78%);
+  background:
+    linear-gradient(0deg, transparent 49.6%, rgb(196 38 255 / 72%) 50%, transparent 50.4%),
+    linear-gradient(90deg, transparent 49.6%, rgb(196 38 255 / 72%) 50%, transparent 50.4%),
+    linear-gradient(135deg, rgb(196 38 255 / 22%) 0%, rgb(168 85 247 / 6%) 100%);
+  transform: rotate(45deg);
+  filter:
+    drop-shadow(0 0 18px rgb(196 38 255 / 55%))
+    drop-shadow(0 0 44px rgb(196 38 255 / 30%));
+  opacity: 0.9;
 }
 
+.auth-prism__star {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #ffffff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.auth-prism__star--cyan {
+  top: 18%;
+  left: 50%;
+  box-shadow:
+    0 0 6px 3px rgb(255 255 255 / 95%),
+    0 0 18px 6px rgb(34 247 255 / 88%),
+    0 0 42px 12px rgb(34 247 255 / 48%),
+    0 0 80px 20px rgb(34 247 255 / 22%);
+}
+
+.auth-prism__star--violet {
+  top: 0;
+  left: 50%;
+  box-shadow:
+    0 0 6px 3px rgb(255 255 255 / 95%),
+    0 0 18px 6px rgb(196 38 255 / 88%),
+    0 0 42px 12px rgb(196 38 255 / 48%),
+    0 0 80px 20px rgb(196 38 255 / 22%);
+}
+
+/* Horizon floor: cyan + purple light streaks fading upward from the bottom */
 .auth-floor {
-  right: -10%;
-  bottom: -20%;
-  left: -10%;
-  height: 44%;
-  background: radial-gradient(ellipse at 28% 72%, rgb(0 225 255 / 30%), transparent 28%), radial-gradient(ellipse at 78% 78%, rgb(214 36 255 / 32%), transparent 32%);
-  filter: blur(18px);
+  right: -12%;
+  bottom: -22%;
+  left: -12%;
+  height: 50%;
+  background:
+    radial-gradient(ellipse 36% 18% at 26% 84%, rgb(34 247 255 / 0.95) 0%, rgb(34 247 255 / 0.4) 30%, transparent 70%),
+    radial-gradient(ellipse 36% 18% at 78% 86%, rgb(196 38 255 / 0.95) 0%, rgb(196 38 255 / 0.4) 30%, transparent 70%),
+    radial-gradient(ellipse 70% 50% at 30% 78%, rgb(0 225 255 / 0.5), transparent 70%),
+    radial-gradient(ellipse 70% 50% at 76% 80%, rgb(214 36 255 / 0.55), transparent 70%);
+  filter: blur(20px);
 }
 
 @media (max-width: 600px) {
-  .auth-card {
-    padding: 28px 18px 24px;
-    border-radius: 22px;
-  }
-
-  :deep(.imago-input-panel .q-field__control) {
-    height: 54px;
-  }
-
-  :deep(.imago-btn-auth-social .q-icon) {
-    left: 26px;
-  }
-
   .auth-prism {
     display: none;
   }

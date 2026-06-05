@@ -10,6 +10,10 @@ export const useAuthStore = defineStore('auth', () => {
   )
   const verified = ref(false)
 
+  // ── Global reauth dialog state ──────────────────────────────────────
+  const showReauthDialog = ref(false)
+  const wasPreviouslyAuthenticated = ref(false)
+
   const isAuthenticated = computed(() => !!token.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
 
@@ -42,11 +46,16 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = t
     user.value = u
     verified.value = true
+    wasPreviouslyAuthenticated.value = false
+    showReauthDialog.value = false
     localStorage.setItem('token', t)
     localStorage.setItem('user', JSON.stringify(u))
   }
 
   function clearAuth() {
+    if (token.value) {
+      wasPreviouslyAuthenticated.value = true
+    }
     token.value = null
     user.value = null
     verified.value = false
@@ -54,5 +63,18 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('user')
   }
 
-  return { token, user, verified, isAuthenticated, isAdmin, login, register, fetchMe, setAuth, clearAuth }
+  function requestReauth() {
+    showReauthDialog.value = true
+  }
+
+  function dismissReauth() {
+    showReauthDialog.value = false
+  }
+
+  return {
+    token, user, verified, isAuthenticated, isAdmin,
+    showReauthDialog, wasPreviouslyAuthenticated,
+    login, register, fetchMe, setAuth, clearAuth,
+    requestReauth, dismissReauth,
+  }
 })
