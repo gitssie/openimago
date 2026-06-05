@@ -78,12 +78,15 @@ function makeI18n() {
 // ── Mock API ────────────────────────────────────────────────────────────────
 
 const mockListGallery = vi.fn()
+const mockSendPrompt = vi.fn().mockResolvedValue({})
+const mockUploadTemp = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
     listGallery: (...args: unknown[]) => mockListGallery(...args),
     createSession: vi.fn().mockResolvedValue({ id: 'ses_test' }),
-    sendPrompt: vi.fn().mockResolvedValue({}),
+    sendPrompt: (...args: unknown[]) => mockSendPrompt(...args),
+    uploadTemp: (...args: unknown[]) => mockUploadTemp(...args),
   },
   GalleryCard: {} as never,
 }))
@@ -167,5 +170,46 @@ describe('HomePage', () => {
     await flushPromises()
     await flushPromises()
     expect(wrapper.find('.home-page__error').exists()).toBe(true)
+  })
+
+  it('sends attachments array instead of metadata.assetIds on submit', async () => {
+    mockUploadTemp.mockResolvedValue({
+      batchId: 'batch_01',
+      attachments: [
+        { id: 'tmp_001', filename: 'test.png', mimeType: 'image/png', size: 100, status: 'pending' },
+        { id: 'tmp_002', filename: 'ref.jpg', mimeType: 'image/jpeg', size: 200, status: 'pending' },
+      ],
+    })
+
+    const wrapper = await mountPage()
+    await flushPromises()
+
+    // Find the PromptInput stub component
+    const promptInput = wrapper.findComponent({ name: 'PromptInput' })
+
+    // Simulate file selection
+    const testFile = new File(['fake'], 'test.png', { type: 'image/png' })
+    const testFile2 = new File(['fake2'], 'ref.jpg', { type: 'image/jpeg' })
+    promptInput.vm.$emit('attach-files', [testFile, testFile2])
+    await flushPromises()
+    await flushPromises()
+
+    // Simulate submit
+    promptInput.vm.$emit('submit', 'generate a video')
+    await flushPromises()
+    await flushPromises()
+
+    // Verify sendPrompt was called with attachments, not metadata.assetIds
+    expect(mockSendPrompt).toHaveBeenCalled()
+    const sendPromptCall = mockSendPrompt.mock.calls[0]!
+    // args: sessionId, prompt, meta, attachments
+    expect(sendPromptCall[1]).toBe('generate a video')
+    expect(sendPromptCall[3]).toEqual([
+      { id: 'tmp_001', scope: 'temporary', filename: 'test.png', mime: 'image/png' },
+      { id: 'tmp_002', scope: 'temporary', filename: 'ref.jpg', mime: 'image/jpeg' },
+    ])
+    // metadata should not contain assetIds
+    const meta = sendPromptCall[2] as Record<string, unknown>
+    expect(meta?.assetIds).toBeUndefined()
   })
 })

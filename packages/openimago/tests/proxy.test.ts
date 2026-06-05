@@ -793,57 +793,56 @@ test("prompt_async resolves directory from SessionTable", async () => {
 })
 
 // ════════════════════════════════════════════════════════════════
-// Prompt handler: asset copy into session directory
+// Prompt handler: unified attachment resolver
 // ════════════════════════════════════════════════════════════════
 
 import { mkdir, writeFile, readFile, access } from "node:fs/promises"
-import { join, basename } from "node:path"
+import { join } from "node:path"
 import { randomUUID } from "node:crypto"
-import { assets } from "../src/db/schema"
+import { tempAttachments } from "../src/db/schema"
 
-// 32. POST prompt with valid assetIds copies files to session attachments
-test("POST prompt with assetIds copies files to session attachments directory", async () => {
-  const { token, userId, workspaceId } = await registerUser("px_asset_cp", "px_asset_cp@example.com")
+// 32. POST prompt with temporary attachments copies files and sends file parts
+test("POST prompt with temp attachments copies to session dir and emits file parts", async () => {
+  const { token, userId, workspaceId } = await registerUser("px_tmp_att", "px_tmp_att@example.com")
 
-  // Create an actual asset file on disk
-  const assetContent = "hello-upload-content-" + randomUUID()
-  const assetDir = join(COS_BASE_PATH, `assets_${userId}`, "2026-06")
-  await mkdir(assetDir, { recursive: true })
-  const assetFilePath = join(assetDir, "ast_testfile.png")
-  await writeFile(assetFilePath, assetContent)
+  // Create a temp attachment record and file
+  const tempId = "tmp_test_01"
+  const assetContent = "temp-file-" + randomUUID()
+  const tempDir = join(COS_BASE_PATH, ".tmp", "uploads", userId, "batch_test")
+  await mkdir(tempDir, { recursive: true })
+  const tempFilePath = join(tempDir, `${tempId}_test.png`)
+  await writeFile(tempFilePath, assetContent)
 
-  // Insert asset record into DB
-  const assetId = "ast_cp_test_01"
-  await db.insert(assets).values({
-    id: assetId,
+  await db.insert(tempAttachments).values({
+    id: tempId,
     userId,
-    filename: "my-upload.png",
-    storedName: "ast_testfile.png",
+    batchId: "batch_test",
+    filename: "test.png",
     mimeType: "image/png",
     size: assetContent.length,
-    storagePath: assetFilePath,
-    status: "active",
-    createdAt: new Date(),
-  } as any).onConflictDoUpdate({ target: assets.id, set: { userId, storagePath: assetFilePath, status: "active" } } as any)
+    storagePath: tempFilePath,
+    status: "pending",
+    expiresAt: new Date(Date.now() + 86400000),
+  } as any).onConflictDoUpdate({ target: tempAttachments.id, set: { userId, status: "pending" } } as any)
 
-  // Create a session with a known directory
-  const sessionDir = join(COS_BASE_PATH, `ses_asset_cp_dir_${randomUUID().slice(0, 8)}`)
+  // Create session directory
+  const sessionDir = join(COS_BASE_PATH, `ses_tmp_att_${randomUUID().slice(0, 8)}`)
   await mkdir(sessionDir, { recursive: true })
 
-  await db.execute(sql`DELETE FROM session WHERE id = 'ses_asset_cp'`)
+  await db.execute(sql`DELETE FROM session WHERE id = 'ses_tmp_att'`)
   await db.insert(SessionTable).values({
-    id: "ses_asset_cp",
+    id: "ses_tmp_att",
     project_id: "global",
     workspace_id: workspaceId,
-    slug: "asset-cp",
+    slug: "tmp-att",
     directory: sessionDir,
-    title: "Asset Copy Test",
+    title: "Temp Attachment Test",
     version: "1.0",
     time_created: Date.now(),
     time_updated: Date.now(),
   })
 
-  // Mock fetch to OpenCode — we only care about asset copy, not OpenCode interaction
+  // Mock fetch to OpenCode
   const origFetch = globalThis.fetch
   let forwardedBody: string | null = null
   globalThis.fetch = (async (input: any, init?: RequestInit) => {
@@ -859,9 +858,8 @@ test("POST prompt with assetIds copies files to session attachments directory", 
   }) as typeof fetch
 
   try {
-    // POST prompt with assetIds (comma-separated string, as frontend sends)
     const res = await app.fetch(
-      new Request("http://localhost/api/session/ses_asset_cp/prompt", {
+      new Request("http://localhost/api/session/ses_tmp_att/prompt", {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -869,78 +867,88 @@ test("POST prompt with assetIds copies files to session attachments directory", 
         },
         body: JSON.stringify({
           prompt: "use this file",
-          metadata: { assetIds: assetId },
+          attachments: [
+            { id: tempId, scope: "temporary", filename: "test.png", mime: "image/png" },
+          ],
         }),
       }),
     )
 
     expect(res.status).toBe(200)
 
-    // Verify the asset was copied to sessionDir/attachments/
-    const copiedPath = join(sessionDir, "attachments", "my-upload.png")
-    const copiedContent = await readFile(copiedPath, "utf-8")
-    expect(copiedContent).toBe(assetContent)
+    // Verify file was copied to sessionDir/attachments/
+    const attachDir = join(sessionDir, "attachments")
+    const files = await (await import("node:fs/promises")).readdir(attachDir)
+    expect(files.length).toBeGreaterThanOrEqual(1)
 
-    // Verify the forwarded message includes attachment paths
+    // Verify forwarded body contains file part, not text-appended path
     expect(forwardedBody).not.toBeNull()
     const fwdMsg = JSON.parse(forwardedBody!)
-    const textParts = fwdMsg.parts?.filter((p: any) => p.type === "text") ?? []
-    const fullText = textParts.map((p: any) => p.text).join("\n")
-    expect(fullText).toContain("attachments/my-upload.png")
+    const parts = fwdMsg.parts as any[]
+    const fileParts = parts.filter((p: any) => p.type === "file")
+    expect(fileParts.length).toBeGreaterThanOrEqual(1)
+    expect(fileParts[0].mime).toBe("image/png")
+    expect(fileParts[0].url).toMatch(/^file:\/\//)
+
+    // Text parts should NOT contain attachment path text
+    const textParts = parts.filter((p: any) => p.type === "text")
+    const allText = textParts.map((p: any) => p.text).join(" ")
+    expect(allText).not.toContain("附件已复制到")
   } finally {
     globalThis.fetch = origFetch
   }
 })
 
-// 33. POST prompt with non-owned assetIds does NOT copy files
-test("POST prompt with non-owned assetIds does not copy files", async () => {
-  const { userId } = await registerUser("px_asset_cp_owner", "px_asset_cp_owner@example.com")
-  const userBInfo = await registerUser("px_asset_cp_userb", "px_asset_cp_userb@example.com")
+// 33. POST prompt with non-owned temp attachment skips it
+test("POST prompt with non-owned temp attachment skips the attachment", async () => {
+  const { userId } = await registerUser("px_tmp_own", "px_tmp_own@example.com")
+  const userB = await registerUser("px_tmp_userb", "px_tmp_userb@example.com")
 
-  // Create asset owned by user A
-  const assetContent = "owned-by-other-" + randomUUID()
-  const assetDir = join(COS_BASE_PATH, `assets_${userId}`, "2026-06")
-  await mkdir(assetDir, { recursive: true })
-  const assetFilePath = join(assetDir, "ast_privfile.png")
-  await writeFile(assetFilePath, assetContent)
+  // Create temp attachment for user A
+  const tempId = "tmp_non_owned"
+  const assetContent = "not-yours-" + randomUUID()
+  const tempDir = join(COS_BASE_PATH, ".tmp", "uploads", userId, "batch_nono")
+  await mkdir(tempDir, { recursive: true })
+  const tempFilePath = join(tempDir, `${tempId}_private.png`)
+  await writeFile(tempFilePath, assetContent)
 
-  const assetId = "ast_cp_priv_01"
-  await db.insert(assets).values({
-    id: assetId,
+  await db.insert(tempAttachments).values({
+    id: tempId,
     userId,
+    batchId: "batch_nono",
     filename: "private.png",
-    storedName: "ast_privfile.png",
     mimeType: "image/png",
     size: assetContent.length,
-    storagePath: assetFilePath,
-    status: "active",
-    createdAt: new Date(),
-  } as any).onConflictDoUpdate({ target: assets.id, set: { userId, storagePath: assetFilePath, status: "active" } } as any)
+    storagePath: tempFilePath,
+    status: "pending",
+    expiresAt: new Date(Date.now() + 86400000),
+  } as any).onConflictDoUpdate({ target: tempAttachments.id, set: { userId, status: "pending" } } as any)
 
-  // Session directory for user B
-  const sessionDir = join(COS_BASE_PATH, `ses_asset_priv_${randomUUID().slice(0, 8)}`)
+  // Session for user B
+  const sessionDir = join(COS_BASE_PATH, `ses_tmp_non_${randomUUID().slice(0, 8)}`)
   await mkdir(sessionDir, { recursive: true })
-  const sessionIdB = "ses_asset_cp_userb"
 
-  await db.execute(sql`DELETE FROM session WHERE id = ${sessionIdB}`)
+  await db.execute(sql`DELETE FROM session WHERE id = 'ses_tmp_non'`)
   await db.insert(SessionTable).values({
-    id: sessionIdB,
+    id: "ses_tmp_non",
     project_id: "global",
-    workspace_id: userBInfo.workspaceId,
-    slug: "asset-cp-userb",
+    workspace_id: userB.workspaceId,
+    slug: "tmp-non",
     directory: sessionDir,
-    title: "User B Session",
+    title: "Non-Owned Test",
     version: "1.0",
     time_created: Date.now(),
     time_updated: Date.now(),
   })
 
-  // Mock fetch to OpenCode
+  // Mock fetch
   const origFetch = globalThis.fetch
+  let forwardedBody: string | null = null
   globalThis.fetch = (async (input: any, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input?.url ?? ""
     if (String(url).includes("/session/") && String(url).includes("/message")) {
-      return new Response(JSON.stringify({ id: "msg_mock", status: "ok" }), {
+      forwardedBody = init?.body as string ?? null
+      return new Response(JSON.stringify({ id: "msg_mock" }), {
         status: 200,
         headers: { "content-type": "application/json" },
       })
@@ -949,84 +957,77 @@ test("POST prompt with non-owned assetIds does not copy files", async () => {
   }) as typeof fetch
 
   try {
-    // User B sends prompt referencing User A's assetId
     const res = await app.fetch(
-      new Request(`http://localhost/api/session/${sessionIdB}/prompt`, {
+      new Request("http://localhost/api/session/ses_tmp_non/prompt", {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          authorization: `Bearer ${userBInfo.token}`,
+          authorization: `Bearer ${userB.token}`,
         },
         body: JSON.stringify({
-          prompt: "use this file",
-          metadata: { assetIds: assetId },
+          prompt: "use this",
+          attachments: [
+            { id: tempId, scope: "temporary", filename: "private.png", mime: "image/png" },
+          ],
         }),
       }),
     )
 
     expect(res.status).toBe(200)
 
-    // The asset should NOT be copied because it doesn't belong to user B
-    const copiedPath = join(sessionDir, "attachments", "private.png")
-    let fileCopied = false
-    try {
-      await access(copiedPath)
-      fileCopied = true
-    } catch {
-      // Expected: file not found
-    }
-    expect(fileCopied).toBe(false)
+    // Forwarded body should have NO file parts (attachment skipped)
+    const fwdMsg = JSON.parse(forwardedBody!)
+    const fileParts = (fwdMsg.parts as any[]).filter((p: any) => p.type === "file")
+    expect(fileParts.length).toBe(0)
   } finally {
     globalThis.fetch = origFetch
   }
 })
 
-// 34. POST prompt sanitizes path-traversal filenames
-test("POST prompt sanitizes path-traversal filenames", async () => {
-  const { token, userId, workspaceId } = await registerUser("px_asset_safe", "px_asset_safe@example.com")
+// 34. Filename sanitization: path traversal is stripped
+test("POST prompt sanitizes path-traversal filename from temp attachment", async () => {
+  const { token, userId, workspaceId } = await registerUser("px_tmp_safe", "px_tmp_safe@example.com")
 
-  const assetContent = "safe-content-" + randomUUID()
-  const assetDir = join(COS_BASE_PATH, `assets_${userId}`, "2026-06")
-  await mkdir(assetDir, { recursive: true })
-  const assetFilePath = join(assetDir, "ast_safe.png")
-  await writeFile(assetFilePath, assetContent)
+  const tempId = "tmp_safe_fn"
+  const assetContent = "safe-" + randomUUID()
+  const tempDir = join(COS_BASE_PATH, ".tmp", "uploads", userId, "batch_safe")
+  await mkdir(tempDir, { recursive: true })
+  const tempFilePath = join(tempDir, `${tempId}_evil.png`)
+  await writeFile(tempFilePath, assetContent)
 
-  // Asset with path-traversal filename
-  const assetId = "ast_cp_safe_01"
-  await db.insert(assets).values({
-    id: assetId,
+  await db.insert(tempAttachments).values({
+    id: tempId,
     userId,
-    filename: "../../../etc/passwd.png",
-    storedName: "ast_safe.png",
+    batchId: "batch_safe",
+    filename: "../../../etc/hacked.png",
     mimeType: "image/png",
     size: assetContent.length,
-    storagePath: assetFilePath,
-    status: "active",
-    createdAt: new Date(),
-  } as any).onConflictDoUpdate({ target: assets.id, set: { userId, storagePath: assetFilePath, status: "active" } } as any)
+    storagePath: tempFilePath,
+    status: "pending",
+    expiresAt: new Date(Date.now() + 86400000),
+  } as any).onConflictDoUpdate({ target: tempAttachments.id, set: { userId, status: "pending" } } as any)
 
-  const sessionDir = join(COS_BASE_PATH, `ses_asset_safe_${randomUUID().slice(0, 8)}`)
+  const sessionDir = join(COS_BASE_PATH, `ses_tmp_safe_${randomUUID().slice(0, 8)}`)
   await mkdir(sessionDir, { recursive: true })
 
-  await db.execute(sql`DELETE FROM session WHERE id = 'ses_asset_safe'`)
+  await db.execute(sql`DELETE FROM session WHERE id = 'ses_tmp_safe'`)
   await db.insert(SessionTable).values({
-    id: "ses_asset_safe",
+    id: "ses_tmp_safe",
     project_id: "global",
     workspace_id: workspaceId,
-    slug: "asset-safe",
+    slug: "tmp-safe",
     directory: sessionDir,
-    title: "Path Traversal Test",
+    title: "Safe Filename Test",
     version: "1.0",
     time_created: Date.now(),
     time_updated: Date.now(),
   })
 
-  // Mock fetch to OpenCode
   const origFetch = globalThis.fetch
   globalThis.fetch = (async (input: any, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input?.url ?? ""
     if (String(url).includes("/session/") && String(url).includes("/message")) {
-      return new Response(JSON.stringify({ id: "msg_mock", status: "ok" }), {
+      return new Response(JSON.stringify({ id: "msg_mock" }), {
         status: 200,
         headers: { "content-type": "application/json" },
       })
@@ -1036,7 +1037,7 @@ test("POST prompt sanitizes path-traversal filenames", async () => {
 
   try {
     await app.fetch(
-      new Request("http://localhost/api/session/ses_asset_safe/prompt", {
+      new Request("http://localhost/api/session/ses_tmp_safe/prompt", {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -1044,21 +1045,24 @@ test("POST prompt sanitizes path-traversal filenames", async () => {
         },
         body: JSON.stringify({
           prompt: "use this",
-          metadata: { assetIds: assetId },
+          attachments: [
+            { id: tempId, scope: "temporary", filename: "../../../etc/hacked.png", mime: "image/png" },
+          ],
         }),
       }),
     )
 
-    // File should be saved with only the base name, not traversing up
-    const safeCopyPath = join(sessionDir, "attachments", "passwd.png")
-    const copiedContent = await readFile(safeCopyPath, "utf-8")
-    expect(copiedContent).toBe(assetContent)
+    // File should be saved with basename only, in attachments dir
+    const attachDir = join(sessionDir, "attachments")
+    const files = await (await import("node:fs/promises")).readdir(attachDir)
+    // Filename should contain hacked.png (the basename), not the full path
+    const hasSafe = files.some((f) => f.endsWith("hacked.png"))
+    expect(hasSafe).toBe(true)
 
-    // File should NOT exist at the traversal path
-    const traversalPath = join(sessionDir, "attachments", "..", "..", "..", "etc", "passwd.png")
+    // File should NOT exist at a traversal escape path
     let traversalExists = false
     try {
-      await access(traversalPath)
+      await access(join(sessionDir, "attachments", "..", "..", "..", "etc", "hacked.png"))
       traversalExists = true
     } catch { /* expected */ }
     expect(traversalExists).toBe(false)

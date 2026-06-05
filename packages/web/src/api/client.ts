@@ -6,7 +6,12 @@ function apiUrl(path: string): string {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const auth = useAuthStore()
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  const headers: Record<string, string> = {}
+  // Only set Content-Type for JSON bodies; for FormData, let the browser auto-set with boundary
+  const isFormData = options.body instanceof FormData
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json'
+  }
   if (auth.token) headers['Authorization'] = `Bearer ${auth.token}`
   const res = await fetch(apiUrl(path), { ...options, headers })
   const contentType = res.headers.get('content-type') ?? ''
@@ -235,9 +240,10 @@ export const api = {
     request<SessionInfo>('/api/session', { method: 'POST', body: JSON.stringify(data) }),
   sessionMessages: (id: string) =>
     request<{ items?: Record<string, unknown>[] } | Record<string, unknown>[]>(`/api/session/${id}/message`).then(normalizeMessageResponse),
-  sendPrompt: (id: string, prompt: string, meta?: Record<string, string>) => {
+  sendPrompt: (id: string, prompt: string, meta?: Record<string, string>, attachments?: Array<{ id: string; scope: string; filename: string; mime: string }>) => {
     const body: Record<string, unknown> = { prompt }
     if (meta) body.metadata = meta
+    if (attachments && attachments.length > 0) body.attachments = attachments
     return request<{ content?: string; message?: string }>(`/api/session/${id}/prompt`, { method: 'POST', body: JSON.stringify(body) })
   },
   abortSession: (id: string) =>
@@ -306,6 +312,18 @@ export const api = {
   },
   deleteAsset: (id: string) =>
     request<{ asset: OpenimagoAsset }>(`/api/platform/assets/${id}`, { method: 'DELETE' }),
+
+  // Temp uploads — { batchId, attachments: [{ id, filename, mimeType, size, status }] }
+  uploadTemp: async (files: File[]): Promise<{ batchId: string; attachments: Array<{ id: string; filename: string; mimeType: string; size: number; status: string }> }> => {
+    const form = new FormData()
+    for (const file of files) {
+      form.append('files', file)
+    }
+    return request<{ batchId: string; attachments: Array<{ id: string; filename: string; mimeType: string; size: number; status: string }> }>(
+      '/api/platform/temp-uploads',
+      { method: 'POST', body: form },
+    )
+  },
 
   // Prompts — { templates: [...], total } / { template: {...} } / { deleted }
   listPrompts: () =>

@@ -230,7 +230,7 @@ export async function migrate() {
       id TEXT PRIMARY KEY,
       account_id TEXT NOT NULL REFERENCES billing_accounts(id),
       user_id TEXT NOT NULL,
-      provider TEXT NOT NULL,
+      provider TEXT NOT NULL DEFAULT '',
       provider_order_id TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
       amount_micros BIGINT NOT NULL DEFAULT 0,
@@ -241,6 +241,22 @@ export async function migrate() {
       metadata JSONB,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+
+  // ── Temporary attachments (homepage pre-session uploads) ──────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS temp_attachments (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      batch_id TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size INTEGER NOT NULL DEFAULT 0,
+      storage_path TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      expires_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `)
 }
@@ -254,6 +270,7 @@ export async function truncate() {
 
   await db.execute(sql`DELETE FROM workspace_generated_files`)
   await db.execute(sql`DELETE FROM assets`)
+  await db.execute(sql`DELETE FROM temp_attachments`)
   await db.execute(sql`DELETE FROM prompt_templates`)
   await db.execute(sql`DELETE FROM gallery_works`)
   await db.execute(sql`DELETE FROM workspace_refs`)

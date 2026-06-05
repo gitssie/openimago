@@ -175,3 +175,17 @@ export const billingPaymentOrders = pgTable("billing_payment_orders", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 })
+
+// Temporary attachments for homepage pre-session uploads
+export const tempAttachments = pgTable("temp_attachments", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id),
+  batchId: text("batch_id").notNull(),
+  filename: text("filename").notNull(),
+  mimeType: text("mime_type").notNull(),
+  size: integer("size").notNull().default(0),
+  storagePath: text("storage_path").notNull(),
+  status: text("status").notNull().default("pending"), // pending | consumed | expired
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+})

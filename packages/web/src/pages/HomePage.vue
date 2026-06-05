@@ -102,7 +102,7 @@ const loadingRecommended = ref(false)
 const error = ref<string | null>(null)
 const submitting = ref(false)
 const pendingAttachments = ref<ComposerAttachment[]>([])
-const uploadedAssetIds = ref<string[]>([])
+const tempAttachmentIds = ref<Array<{ id: string; filename: string; mimeType: string }>>([])
 const pendingFiles = new Map<string, File>()
 
 // ── Load ───────────────────────────────────────────────────────────────────
@@ -168,25 +168,6 @@ function getMaxSize(mime: string): number {
   return 20 * 1024 * 1024
 }
 
-function formatSizeLimit(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${bytes / (1024 * 1024)} MB`
-  return `${bytes / 1024} KB`
-}
-
-function rafThrottle(cb: (percent: number) => void): (percent: number) => void {
-  let rafId: number | null = null
-  let latest = 0
-  return (percent: number) => {
-    latest = percent
-    if (rafId === null) {
-      rafId = requestAnimationFrame(() => {
-        rafId = null
-        cb(latest)
-      })
-    }
-  }
-}
-
 function onFilesSelected(files: File[]) {
   if (files.length === 0) return
 
@@ -201,32 +182,40 @@ function onFilesSelected(files: File[]) {
     }
     pendingAttachments.value.push(attachment)
     pendingFiles.set(id, file)
-
-    const maxSize = getMaxSize(file.type)
-    if (file.size > maxSize) {
-      updateHomeAttachment(id, {
-        status: 'error',
-        errorMsg: `文件过大，最大 ${formatSizeLimit(maxSize)}`,
-      })
-      continue
-    }
-
-    void api.uploadAsset(file, rafThrottle((percent: number) => {
-      updateHomeAttachment(id, { progress: percent })
-    })).then((result) => {
-      updateHomeAttachment(id, {
-        status: 'uploaded',
-        progress: 100,
-        assetId: result.asset.id,
-      })
-      uploadedAssetIds.value.push(result.asset.id)
-    }).catch((err: Error) => {
-      updateHomeAttachment(id, {
-        status: 'error',
-        errorMsg: err?.message || '上传失败',
-      })
-    })
   }
+
+  const maxSizeFiles = files.filter((f) => {
+    const maxSize = getMaxSize(f.type)
+    return f.size <= maxSize
+  })
+
+  if (maxSizeFiles.length === 0) return
+
+  void api.uploadTemp(maxSizeFiles).then((result) => {
+    for (const temp of result.attachments) {
+      // Find matching pending attachment by filename
+      const matchIdx = pendingAttachments.value.findIndex(
+        (a) => a.status === 'uploading' && a.name === temp.filename && a.id.startsWith('home-'),
+      )
+      if (matchIdx !== -1) {
+        updateHomeAttachment(pendingAttachments.value[matchIdx]!.id, {
+          status: 'uploaded',
+          progress: 100,
+        })
+        tempAttachmentIds.value.push({ id: temp.id, filename: temp.filename, mimeType: temp.mimeType })
+      }
+    }
+  }).catch((err: Error) => {
+    // Mark all uploading attachments as failed
+    for (const a of pendingAttachments.value) {
+      if (a.status === 'uploading') {
+        updateHomeAttachment(a.id, {
+          status: 'error',
+          errorMsg: err?.message || '上传失败',
+        })
+      }
+    }
+  })
 }
 
 function updateHomeAttachment(id: string, patch: Partial<ComposerAttachment>) {
@@ -240,8 +229,15 @@ function updateHomeAttachment(id: string, patch: Partial<ComposerAttachment>) {
 }
 
 function onRemoveAttachment(id: string) {
+  const removed = pendingAttachments.value.find((a) => a.id === id)
   pendingAttachments.value = pendingAttachments.value.filter(a => a.id !== id)
   pendingFiles.delete(id)
+  // Also remove from temp IDs if this was an uploaded attachment
+  if (removed?.name) {
+    tempAttachmentIds.value = tempAttachmentIds.value.filter(
+      (t) => t.filename !== removed.name,
+    )
+  }
 }
 
 function onRetryAttachment(id: string) {
@@ -291,12 +287,17 @@ async function handleSubmit(text: string) {
   // Fire-and-forget the initial prompt. The session workspace will render
   // the user message when sendPrompt resolves; if it fails, surface a
   // notification (the user may already be on the session page).
-  const assetIds = uploadedAssetIds.value.length > 0 ? uploadedAssetIds.value : undefined
+  const attachments = tempAttachmentIds.value.length > 0
+    ? tempAttachmentIds.value.map((a) => ({
+        id: a.id,
+        scope: 'temporary' as const,
+        filename: a.filename,
+        mime: a.mimeType,
+      }))
+    : undefined
+
   void api
-    .sendPrompt(session.id, trimmed, {
-      source: 'home',
-      ...(assetIds ? { assetIds: assetIds.join(',') } : {}),
-    })
+    .sendPrompt(session.id, trimmed, { source: 'home' }, attachments)
     .catch((e) => {
       $q.notify({
         color: 'negative',
