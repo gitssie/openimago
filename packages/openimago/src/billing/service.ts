@@ -85,6 +85,9 @@ async function writeLedgerEntry(params: {
   unit?: string | null
   pricingSnapshot?: unknown
   metadata?: unknown
+  sourceStatus?: string
+  /** If set, requires current balance >= this amount before writing. */
+  requireBalanceAtLeast?: number
 }): Promise<LedgerEntry> {
   return db.transaction(async (tx) => {
     // Lock and read current account balance
@@ -96,6 +99,14 @@ async function writeLedgerEntry(params: {
 
     if (!account) {
       throw new Error(`Billing account ${params.accountId} not found`)
+    }
+
+    // Pre-charge balance eligibility check
+    if (
+      params.requireBalanceAtLeast !== undefined &&
+      account.balanceMicros < params.requireBalanceAtLeast
+    ) {
+      throw new Error("INSUFFICIENT_BALANCE")
     }
 
     const newBalance = account.balanceMicros + params.amountMicros
@@ -119,7 +130,7 @@ async function writeLedgerEntry(params: {
       entryType: params.entryType,
       sourceType: params.sourceType,
       sourceId: params.sourceId,
-      sourceStatus: "completed",
+      sourceStatus: params.sourceStatus ?? "completed",
       provider: params.provider ?? null,
       model: params.model ?? null,
       toolName: params.toolName ?? null,
@@ -323,6 +334,100 @@ export const billingService = {
       unit: params.unit,
       pricingSnapshot: params.pricingSnapshot,
       metadata: params.metadata,
+    })
+  },
+
+  /**
+   * Pre-charge for a media tool call (negative amount).
+   *
+   * Atomic eligibility check: current balance must be >= costMagnitude
+   * before the charge is written. Throws `INSUFFICIENT_BALANCE` if not.
+   * Does NOT create a new account — if no account exists, fails.
+   */
+  async prechargeToolCall(params: {
+    accountId: string
+    userId: string
+    amountMicros: number
+    workspaceId?: string
+    projectId?: string
+    sessionId?: string
+    provider?: string
+    model?: string
+    toolName?: string
+    mediaKind?: string
+    quantity?: number
+    unit?: string
+    pricingSnapshot?: unknown
+    metadata?: unknown
+  }): Promise<LedgerEntry> {
+    if (params.amountMicros >= 0) {
+      throw new Error("Charge amount must be negative")
+    }
+    const costMagnitude = Math.abs(params.amountMicros)
+    return writeLedgerEntry({
+      accountId: params.accountId,
+      userId: params.userId,
+      entryType: "charge",
+      sourceType: "toolcall",
+      sourceId: genId("tch"),
+      sourceStatus: "completed",
+      amountMicros: params.amountMicros,
+      requireBalanceAtLeast: costMagnitude,
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      sessionId: params.sessionId,
+      provider: params.provider,
+      model: params.model,
+      toolName: params.toolName,
+      mediaKind: params.mediaKind,
+      quantity: params.quantity,
+      unit: params.unit,
+      pricingSnapshot: params.pricingSnapshot,
+      metadata: params.metadata,
+    })
+  },
+
+  /**
+   * Refund a tool-call pre-charge (positive amount).
+   *
+   * Writes a positive refund entry that offsets the original pre-charge.
+   * Links to the original charge via metadata for audit trail.
+   */
+  async refundToolCallPrecharge(params: {
+    accountId: string
+    userId: string
+    amountMicros: number
+    originalChargeSourceId: string
+    workspaceId?: string
+    projectId?: string
+    sessionId?: string
+    provider?: string
+    model?: string
+    toolName?: string
+    mediaKind?: string
+    metadata?: unknown
+  }): Promise<LedgerEntry> {
+    if (params.amountMicros <= 0) {
+      throw new Error("Refund amount must be positive")
+    }
+    return writeLedgerEntry({
+      accountId: params.accountId,
+      userId: params.userId,
+      entryType: "refund",
+      sourceType: "toolcall_refund",
+      sourceId: genId("tcr"),
+      amountMicros: params.amountMicros,
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      sessionId: params.sessionId,
+      provider: params.provider,
+      model: params.model,
+      toolName: params.toolName,
+      mediaKind: params.mediaKind,
+      metadata: {
+        ...(params.metadata as Record<string, unknown> | undefined),
+        originalChargeSourceId: params.originalChargeSourceId,
+      },
     })
   },
 

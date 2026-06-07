@@ -2,6 +2,20 @@ import { sql } from "drizzle-orm"
 import { db } from "./client"
 
 export async function migrate() {
+  // ── OpenCode-owned tables referenced by openimago ──────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS workspace (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT '',
+      branch TEXT,
+      directory TEXT,
+      extra JSONB,
+      project_id TEXT NOT NULL,
+      time_used BIGINT NOT NULL
+    )
+  `)
+
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -61,11 +75,21 @@ export async function migrate() {
   `)
 
   await db.execute(sql`
-    ALTER TABLE workspace ADD COLUMN IF NOT EXISTS user_id TEXT
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'workspace') THEN
+        ALTER TABLE workspace ADD COLUMN IF NOT EXISTS user_id TEXT;
+      END IF;
+    END$$
   `)
 
   await db.execute(sql`
-    ALTER TABLE workspace ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'workspace') THEN
+        ALTER TABLE workspace ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+      END IF;
+    END$$
   `)
 
   await db.execute(sql`
@@ -273,8 +297,25 @@ export async function truncate() {
   await db.execute(sql`DELETE FROM temp_attachments`)
   await db.execute(sql`DELETE FROM prompt_templates`)
   await db.execute(sql`DELETE FROM gallery_works`)
-  await db.execute(sql`DELETE FROM workspace_refs`)
-  await db.execute(sql`DELETE FROM workspace`)
+
+  // OpenCode-owned tables — only truncate if they exist
+  await db.execute(sql`
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'workspace_refs') THEN
+        DELETE FROM workspace_refs;
+      END IF;
+    END$$
+  `)
+  await db.execute(sql`
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'workspace') THEN
+        DELETE FROM workspace;
+      END IF;
+    END$$
+  `)
+
   await db.execute(sql`DELETE FROM projects`)
   await db.execute(sql`DELETE FROM user_auths`)
   await db.execute(sql`DELETE FROM users`)
