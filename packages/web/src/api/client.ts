@@ -116,8 +116,10 @@ export interface WorkspaceFileAccessLocator {
   expiresAt?: string
 }
 
-export interface WorkspaceFile extends Omit<MediaToolResultV1, 'access'> {
+export interface WorkspaceFile extends Omit<MediaToolResultV1, 'access' | 'createdAt'> {
   kind: 'image' | 'video' | 'audio'
+  /** Backend API always returns createdAt (ISO string). Required, unlike MediaToolResultV1 where it's optional for inline history. */
+  createdAt: string
   access: {
     preview: WorkspaceFileAccessLocator
     download?: WorkspaceFileAccessLocator
