@@ -3,8 +3,8 @@ import type { GenerateUsage } from "./pricing.js"
 
 // ── Shared types ───────────────────────────────────────────────────────
 
-/** Media kind discriminator shared across provider, service, and billing. */
-export type MediaKind = "image" | "video"
+/** Media kind discriminator shared across provider, service, billing, and workspace-files. */
+export type MediaKind = "image" | "video" | "audio"
 
 /** Parameters for image generation requests. */
 export interface GenerateImageParams {

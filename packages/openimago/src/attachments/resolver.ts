@@ -1,9 +1,9 @@
-import { mkdir, copyFile, access } from "node:fs/promises"
 import { join, basename } from "node:path"
 import { db } from "../db/client"
 import { tempAttachments } from "../db/schema"
 import { and, eq } from "drizzle-orm"
 import { logger } from "../server/logger"
+import { localStorage, type StorageAdapter } from "../storage/adapter"
 
 export interface AttachmentInput {
   id: string
@@ -50,6 +50,11 @@ function safeDestName(attachmentId: string, filename: string): string {
 
 class TemporaryResolver implements AttachmentResolverStrategy {
   readonly scope = "temporary"
+  private storage: StorageAdapter
+
+  constructor(storage: StorageAdapter = localStorage) {
+    this.storage = storage
+  }
 
   async resolve(input: AttachmentInput, ctx: ResolverContext): Promise<ResolveResult> {
     const [row] = await db
@@ -70,20 +75,15 @@ class TemporaryResolver implements AttachmentResolverStrategy {
     }
 
     const attachDir = join(ctx.sessionDirectory, "attachments")
-    await mkdir(attachDir, { recursive: true })
-
     const destName = safeDestName(input.id, input.filename)
     let destPath = join(attachDir, destName)
 
     // Handle name conflicts (if same id+filename somehow already exists)
-    try {
-      await access(destPath)
+    if (await this.storage.exists(destPath)) {
       destPath = join(attachDir, `${input.id}_${Date.now()}_${destName}`)
-    } catch {
-      // File doesn't exist — use as-is
     }
 
-    await copyFile(row.storagePath, destPath)
+    await this.storage.copy({ sourcePath: row.storagePath, destPath, ensureDir: true })
     logger.info({ userId: ctx.userId, attachmentId: input.id, destPath }, "attachments: copied temp to session")
 
     return {
@@ -99,15 +99,18 @@ class TemporaryResolver implements AttachmentResolverStrategy {
 
 class SessionResolver implements AttachmentResolverStrategy {
   readonly scope = "session"
+  private storage: StorageAdapter
+
+  constructor(storage: StorageAdapter = localStorage) {
+    this.storage = storage
+  }
 
   async resolve(input: AttachmentInput, ctx: ResolverContext): Promise<ResolveResult> {
     const attachDir = join(ctx.sessionDirectory, "attachments")
     const destName = safeDestName(input.id, input.filename)
     const filePath = join(attachDir, destName)
 
-    try {
-      await access(filePath)
-    } catch {
+    if (!(await this.storage.exists(filePath))) {
       logger.warn({ userId: ctx.userId, attachmentId: input.id, filePath }, "attachments: session file not found")
       return null
     }

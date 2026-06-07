@@ -4,6 +4,7 @@ import { GlobalEventUpstream } from "./upstream"
 import { WorkspaceResolver } from "./resolver"
 import type { BusEvent, GlobalEvent } from "./types"
 import { logger } from "../server/logger"
+import { extractWorkspaceKey } from "./extractor"
 
 /** Maximum concurrent SSE connections per user. Oldest idle connection is closed when exceeded. */
 const MAX_CONNECTIONS_PER_USER = parseInt(process.env.SSE_MAX_CONNECTIONS_PER_USER ?? "10", 10)
@@ -74,17 +75,8 @@ export function makeUserEventBus(
       Effect.gen(function* () {
         if (!evt.payload?.type || evt.payload.type.startsWith("server.")) return
 
-        let ws = evt.workspace ?? evt.directory ?? ""
-        if (!ws || ws.startsWith("/")) {
-          const p = evt.payload.properties as Record<string, unknown> | undefined
-          const infoWs = (p?.info as Record<string, unknown> | undefined)?.workspaceID as string | undefined
-          ws = (p?.workspaceID as string) ?? infoWs ?? ""
-        }
-        if ((!ws || ws.startsWith("/")) && evt.directory) {
-          const parts = evt.directory.split("/").filter(Boolean)
-          ws = parts.pop() ?? ""
-        }
-        if (!ws || ws.startsWith("/")) {
+        const ws = extractWorkspaceKey(evt)
+        if (!ws) {
           logger.warn(
             { workspaceId: evt.workspace ?? evt.directory ?? "<unknown>", eventType: evt.payload.type, reason: "unable to resolve workspaceId" },
             "UserEventBus: skipping event — cannot resolve workspace to workspaceId",

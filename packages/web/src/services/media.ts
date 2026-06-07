@@ -49,7 +49,7 @@ export interface MediaToolOutputV1 {
 }
 
 const MEDIA_KINDS = ['image', 'video', 'audio'] as const
-type MediaKind = (typeof MEDIA_KINDS)[number]
+export type MediaKind = (typeof MEDIA_KINDS)[number]
 
 // ── Detection ──────────────────────────────────────────────────────────────────
 

@@ -16,6 +16,7 @@ export interface RegisterWorkspaceFileInput {
   width?: number
   height?: number
   duration?: number
+  seed?: number
   accessPreviewHref: string
   accessDownloadHref?: string
   accessThumbnailHref?: string
@@ -46,6 +47,7 @@ export interface WorkspaceFileRecord {
   width?: number
   height?: number
   duration?: number
+  seed?: number
   access: WorkspaceFileAccessLocators
   prompt?: string
   provider?: string
@@ -72,6 +74,7 @@ function buildAccessLocators(input: RegisterWorkspaceFileInput): WorkspaceFileAc
 
 function rowToRecord(row: typeof workspaceGeneratedFiles.$inferSelect): WorkspaceFileRecord {
   const access = row.accessLocators as WorkspaceFileAccessLocators
+  const meta = row.metadata as Record<string, unknown> | undefined
   return {
     workspaceFileId: row.id,
     kind: row.kind,
@@ -80,12 +83,13 @@ function rowToRecord(row: typeof workspaceGeneratedFiles.$inferSelect): Workspac
     width: row.width ?? undefined,
     height: row.height ?? undefined,
     duration: row.duration ?? undefined,
+    seed: (meta?.seed as number) ?? undefined,
     access,
     prompt: row.prompt ?? undefined,
     provider: row.provider ?? undefined,
     model: row.model ?? undefined,
     createdAt: row.createdAt.toISOString(),
-    metadata: row.metadata as Record<string, unknown> | undefined,
+    metadata: meta,
   }
 }
 
@@ -166,6 +170,7 @@ export class WorkspaceFilesService {
       width: input.width,
       height: input.height,
       duration: input.duration,
+      seed: input.seed,
       access: accessLocators,
       prompt: input.prompt,
       provider: input.provider,

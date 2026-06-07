@@ -1,9 +1,8 @@
 import { eq, and, or, sql, lt, gt } from "drizzle-orm"
-import { mkdirSync, writeFileSync, existsSync } from "fs"
-import { join } from "path"
 import { db } from "../db/client"
 import { assets } from "../db/schema"
 import { userId as genUserId } from "../utils/ids"
+import { localStorage, type StorageAdapter } from "../storage/adapter"
 
 if (!process.env.COS_BASE_PATH) {
   throw new Error("COS_BASE_PATH environment variable is required")
@@ -25,6 +24,12 @@ function assetId(): string {
 }
 
 export class AssetsService {
+  private storage: StorageAdapter
+
+  constructor(storage: StorageAdapter = localStorage) {
+    this.storage = storage
+  }
+
   async upload(userId: string, file: File): Promise<
     | { asset: Record<string, any>; status: 201 }
     | { error: { code: string; message: string }; status: number }
@@ -45,24 +50,23 @@ export class AssetsService {
     const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : ""
     const storedName = `${id}${ext}`
 
-    // Ensure user assets directory exists
-    const assetDir = join(COS_BASE_PATH, `assets_${userId}`, new Date().toISOString().slice(0, 7))
-    mkdirSync(assetDir, { recursive: true })
+    // Build storage paths
+    const datePrefix = new Date().toISOString().slice(0, 7)
+    const assetDir = `${COS_BASE_PATH}/assets_${userId}/${datePrefix}`
+    const storagePath = `${assetDir}/${storedName}`
 
-    // Write file
-    const storagePath = join(assetDir, storedName)
-    await Bun.write(storagePath, file)
+    const buffer = new Uint8Array(await file.arrayBuffer())
+    await this.storage.write(storagePath, buffer, { ensureDir: true })
 
     // Generate thumbnail for images
     let thumbnailPath: string | null = null
     if (file.type.startsWith("image/")) {
-      const thumbDir = join(assetDir, ".thumbnails")
-      mkdirSync(thumbDir, { recursive: true })
-      const thumbFile = join(thumbDir, `${storedName}.thumb.webp`)
+      const thumbDir = `${assetDir}/.thumbnails`
+      const thumbFile = `${thumbDir}/${storedName}.thumb.webp`
       // Simple placeholder thumbnail — in production this would use real image processing
-      const buffer = await file.arrayBuffer()
-      writeFileSync(thumbFile, new Uint8Array(buffer.slice(0, Math.min(buffer.byteLength, 2048))))
-      thumbnailPath = join(".thumbnails", `${storedName}.thumb.webp`)
+      const thumbData = buffer.slice(0, Math.min(buffer.byteLength, 2048))
+      await this.storage.write(thumbFile, thumbData, { ensureDir: true })
+      thumbnailPath = `.thumbnails/${storedName}.thumb.webp`
     }
 
     const now = new Date()

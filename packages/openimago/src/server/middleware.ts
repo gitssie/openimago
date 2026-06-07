@@ -3,8 +3,8 @@ import { eq } from "drizzle-orm"
 import { verifyJwt } from "../auth/jwt"
 import { db } from "../db/client"
 import { users } from "../db/schema"
-import { SessionTable } from "../db/session-schema"
 import { logger } from "./logger"
+import { resolveDirectory as resolveSessionDirectory } from "../workdir/resolver"
 
 declare module "hono" {
   interface ContextVariableMap {
@@ -121,29 +121,6 @@ export const ROUTE_REGISTRY: RoutePattern[] = [
   { method: "POST", pattern: /^\/api\/permission\/([^/]+)\/reply$/, needsDirectory: false },
 ]
 
-async function resolveDirectory(sessionId: string, workspaceId: string): Promise<{ directory: string } | { status: number; code: string; message: string }> {
-  const rows = await db
-    .select({
-      workspaceId: SessionTable.workspace_id,
-      directory: SessionTable.directory,
-    })
-    .from(SessionTable)
-    .where(eq(SessionTable.id, sessionId))
-    .limit(1)
-
-  if (rows.length === 0) {
-    return { status: 404, code: "NOT_FOUND", message: "Session not found" }
-  }
-
-  const session = rows[0]!
-
-  if (session.workspaceId !== workspaceId) {
-    return { status: 403, code: "FORBIDDEN", message: "Access denied" }
-  }
-
-  return { directory: session.directory }
-}
-
 export async function adminMiddleware(c: Context, next: Next) {
   const role = c.get("role") as string | undefined
   if (role !== "admin") {
@@ -180,7 +157,7 @@ export async function proxyMiddleware(c: Context, next: Next) {
     const match = pathname.match(route.pattern)!
     const sessionId = match[1]!
 
-    const result = await resolveDirectory(sessionId, workspaceId)
+    const result = await resolveSessionDirectory(sessionId, workspaceId)
 
     if ("status" in result) {
       logger.warn({ userId, sessionId, code: result.code, pathname }, "proxy: directory resolve failed")

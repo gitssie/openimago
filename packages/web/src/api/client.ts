@@ -101,20 +101,23 @@ export interface PromptTemplate {
 }
 
 // ── Workspace Generated Files (ADR 0002) ─────────────────────────────────────
+//
+// WorkspaceFile mirrors the workspace-files API response shape and is
+// structurally aligned with MediaToolResultV1 from services/media.ts.
+// The two types represent the same domain entity viewed from different
+// consumers (right-side panel vs chatbot inline card).
+
+import type { MediaToolResultV1 } from '../services/media'
+
+export type { MediaAccessLocator } from '../services/media'
 
 export interface WorkspaceFileAccessLocator {
   href: string
   expiresAt?: string
 }
 
-export interface WorkspaceFile {
-  workspaceFileId: string
+export interface WorkspaceFile extends Omit<MediaToolResultV1, 'access'> {
   kind: 'image' | 'video' | 'audio'
-  mime: string
-  filename?: string
-  width?: number
-  height?: number
-  duration?: number
   access: {
     preview: WorkspaceFileAccessLocator
     download?: WorkspaceFileAccessLocator
@@ -124,8 +127,6 @@ export interface WorkspaceFile {
   prompt?: string
   provider?: string
   model?: string
-  createdAt: string
-  metadata?: Record<string, unknown>
 }
 
 // ── Billing ──────────────────────────────────────────────────────────────────

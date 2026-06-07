@@ -44,6 +44,15 @@ export interface OutputEntry {
   modifiedAt: string
 }
 
+/**
+ * @deprecated Use WorkspaceFilesService (packages/openimago/src/workspace-files/service.ts)
+ *   for right-panel generated file listings per ADR 0002. This directory-scanning
+ *   Module will be removed once all consumers migrate to the workspace-files API.
+ *
+ *   Migration path:
+ *     listOutputs(sessionId)  →  workspaceFilesService.listFiles(sessionId)
+ *     listProjectOutputs(pid) →  workspaceFilesService.listFiles(sid) (per-session)
+ */
 export class OutputsService {
   async listOutputs(
     sessionId: string,

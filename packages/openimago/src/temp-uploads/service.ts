@@ -1,9 +1,9 @@
 import { and, eq, sql } from "drizzle-orm"
-import { mkdirSync } from "fs"
-import { join, basename } from "path"
+import { basename } from "path"
 import { db } from "../db/client"
 import { tempAttachments } from "../db/schema"
 import { userId as genUserId } from "../utils/ids"
+import { localStorage, type StorageAdapter } from "../storage/adapter"
 
 if (!process.env.COS_BASE_PATH) {
   throw new Error("COS_BASE_PATH environment variable is required")
@@ -24,6 +24,12 @@ export interface TempUploadResult {
 }
 
 export class TempUploadService {
+  private storage: StorageAdapter
+
+  constructor(storage: StorageAdapter = localStorage) {
+    this.storage = storage
+  }
+
   /**
    * Upload a file as a temporary attachment. Files are stored under:
    *   COS_BASE_PATH/.tmp/uploads/<userId>/<batchId>/<safeId>_<safeName>
@@ -37,11 +43,11 @@ export class TempUploadService {
     const safeName = basename(file.name).replace(/\0/g, "") || `${id}.bin`
     const destName = `${id}_${safeName}`
 
-    const uploadDir = join(COS_BASE_PATH, ".tmp", "uploads", userId, batchId)
-    mkdirSync(uploadDir, { recursive: true })
+    const uploadDir = `${COS_BASE_PATH}/.tmp/uploads/${userId}/${batchId}`
+    const storagePath = `${uploadDir}/${destName}`
 
-    const storagePath = join(uploadDir, destName)
-    await Bun.write(storagePath, file)
+    const buffer = new Uint8Array(await file.arrayBuffer())
+    await this.storage.write(storagePath, buffer, { ensureDir: true })
 
     const size = file.size
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24h TTL
