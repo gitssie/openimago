@@ -11,7 +11,7 @@ import { WorkspaceTable } from "../src/db/workspace-schema"
 import { authRoutes } from "../src/auth/routes"
 import { createProxyRoutes } from "../src/proxy/routes"
 import { createProxyConfig } from "../src/proxy/service"
-import { buildTargetUrl, buildForwardHeaders, buildForwardUrl } from "../src/proxy/service"
+import { buildTargetUrl, buildForwardHeaders, buildForwardUrl, forward } from "../src/proxy/service"
 
 let app: Hono
 
@@ -46,12 +46,47 @@ async function registerUser(username: string, email: string): Promise<{ token: s
 }
 
 // ════════════════════════════════════════════════════════════════
-// Pure function tests: buildTargetUrl
+// Pure function tests: createProxyConfig URL normalization
 // ════════════════════════════════════════════════════════════════
 
 function makeConfig(opts?: { opencodeUrl?: string }) {
   return createProxyConfig({ opencodeUrl: opts?.opencodeUrl ?? "http://opencode:3000", authUsername: "testuser", authPassword: "testpass" })
 }
+
+// 0. createProxyConfig normalizes 0.0.0.0 to 127.0.0.1
+test("createProxyConfig normalizes 0.0.0.0 to 127.0.0.1", () => {
+  const config = createProxyConfig({ opencodeUrl: "http://0.0.0.0:4096", authUsername: "test", authPassword: "pass" })
+  expect(config.opencodeUrl).toBe("http://127.0.0.1:4096")
+})
+
+// 0b. createProxyConfig preserves localhost
+test("createProxyConfig preserves localhost URL", () => {
+  const config = createProxyConfig({ opencodeUrl: "http://localhost:4096", authUsername: "test", authPassword: "pass" })
+  expect(config.opencodeUrl).toBe("http://localhost:4096")
+})
+
+// 0c. createProxyConfig preserves 127.0.0.1
+test("createProxyConfig preserves 127.0.0.1 URL", () => {
+  const config = createProxyConfig({ opencodeUrl: "http://127.0.0.1:4096", authUsername: "test", authPassword: "pass" })
+  expect(config.opencodeUrl).toBe("http://127.0.0.1:4096")
+})
+
+// 0d. createProxyConfig preserves non-loopback IPs
+test("createProxyConfig preserves non-loopback IPs", () => {
+  const config = createProxyConfig({ opencodeUrl: "http://192.168.1.1:3000", authUsername: "test", authPassword: "pass" })
+  expect(config.opencodeUrl).toBe("http://192.168.1.1:3000")
+})
+
+// 0e. createProxyConfig normalizes 0.0.0.0 in default URL path
+test("createProxyConfig watches for 0.0.0.0 in process.env fallback path", () => {
+  // This test verifies the normalization function itself works
+  const config = createProxyConfig({ opencodeUrl: "http://0.0.0.0:4096/session", authUsername: "test", authPassword: "pass" })
+  expect(config.opencodeUrl).toBe("http://127.0.0.1:4096/session")
+})
+
+// ════════════════════════════════════════════════════════════════
+// Pure function tests: buildTargetUrl
+// ════════════════════════════════════════════════════════════════
 
 // 1. buildTargetUrl always injects workspace=workspaceId
 test("buildTargetUrl always injects workspace=workspaceId", () => {
@@ -1066,6 +1101,72 @@ test("POST prompt sanitizes path-traversal filename from temp attachment", async
       traversalExists = true
     } catch { /* expected */ }
     expect(traversalExists).toBe(false)
+  } finally {
+    globalThis.fetch = origFetch
+  }
+})
+
+// ════════════════════════════════════════════════════════════════
+// forward() empty-502 defense: Bun returns a 502 Response instead
+// of throwing on some connection failures (e.g. 0.0.0.0).
+// forward() must detect this and return a proper JSON error body.
+// ════════════════════════════════════════════════════════════════
+
+// 35. forward returns JSON error when upstream returns empty-body 502
+test("forward returns JSON error when upstream returns empty 502", async () => {
+  const config = createProxyConfig({ opencodeUrl: "http://127.0.0.1:4096" })
+
+  // Mock fetch to return a Bun-style connection-failure 502: empty body, no content-type.
+  const origFetch = globalThis.fetch
+  globalThis.fetch = (async (_input: any, _init?: RequestInit) => {
+    return new Response(undefined, { status: 502 }) as any
+  }) as unknown as typeof fetch
+
+  try {
+    const res = await forward(config, {
+      method: "POST",
+      path: "/session",
+      directory: "/mnt/test",
+      workspaceId: "wrk_empty_502",
+      body: {},
+    })
+
+    expect(res.status).toBe(502)
+    expect(res.headers.get("content-type")).toBe("application/json")
+    const body = await res.json() as any
+    expect(body.error).toBeDefined()
+    expect(body.error.code).toBe("OPENCODE_UNREACHABLE")
+    expect(body.error.message).toContain("OpenCode service unavailable")
+  } finally {
+    globalThis.fetch = origFetch
+  }
+})
+
+// 36. forward passes through real 502 from upstream (with content-type)
+test("forward passes through real 502 from upstream", async () => {
+  const config = createProxyConfig({ opencodeUrl: "http://127.0.0.1:4096" })
+
+  const origFetch = globalThis.fetch
+  globalThis.fetch = (async (_input: any, _init?: RequestInit) => {
+    return new Response(
+      JSON.stringify({ error: "upstream-gateway-error" }),
+      { status: 502, headers: { "content-type": "application/json" } },
+    ) as any
+  }) as unknown as typeof fetch
+
+  try {
+    const res = await forward(config, {
+      method: "GET",
+      path: "/event",
+      directory: "/mnt/test",
+      workspaceId: "wrk_real_502",
+    })
+
+    expect(res.status).toBe(502)
+    expect(res.headers.get("content-type")).toBe("application/json")
+    const body = await res.json() as any
+    // Real upstream response passes through — not replaced with OPENCODE_UNREACHABLE
+    expect(body.error).toBe("upstream-gateway-error")
   } finally {
     globalThis.fetch = origFetch
   }

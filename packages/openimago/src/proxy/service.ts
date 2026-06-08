@@ -5,8 +5,28 @@ export interface ProxyConfig {
 
 import { logger } from "../server/logger"
 
+/**
+ * Normalizes an upstream URL so it can be used as a fetch target.
+ * `0.0.0.0` is a server bind address ("listen on all interfaces") but
+ * Bun's fetch cannot connect to it — returns a 502 Response with empty
+ * body instead of throwing. We replace `0.0.0.0` with `127.0.0.1` so
+ * the proxy always uses a routable loopback address.
+ */
+function normalizeUpstreamUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname === "0.0.0.0") {
+      return url.replace("0.0.0.0", "127.0.0.1")
+    }
+    return url
+  } catch {
+    return url
+  }
+}
+
 export function createProxyConfig(opts?: { opencodeUrl?: string; authUsername?: string; authPassword?: string }): ProxyConfig {
-  const opencodeUrl = opts?.opencodeUrl ?? process.env.OPENCODE_URL ?? "http://localhost:3000"
+  const rawUrl = opts?.opencodeUrl ?? process.env.OPENCODE_URL ?? "http://localhost:3000"
+  const opencodeUrl = normalizeUpstreamUrl(rawUrl)
   const authUser = opts?.authUsername ?? process.env.OPENCODE_AUTH_USERNAME ?? "opencode"
   const authPass = opts?.authPassword ?? process.env.OPENCODE_AUTH_PASSWORD ?? ""
   const basicAuth = btoa(`${authUser}:${authPass}`)
@@ -106,6 +126,18 @@ export async function forward(config: ProxyConfig, input: ForwardInput): Promise
       headers,
       body: input.body !== undefined ? JSON.stringify(input.body) : undefined,
     })
+    // Bun returns a 502 Response instead of throwing on some connection failures
+    // (e.g. targeting 0.0.0.0). Detect an empty-body 502 and treat as unreachable.
+    if (res.status === 502 && res.headers.get("content-type") === null) {
+      const bodyText = await res.text().catch(() => "")
+      if (!bodyText) {
+        logger.error({ method: input.method, path: input.path, url }, "proxy.forward: opencode unreachable (empty 502)")
+        return new Response(
+          JSON.stringify({ error: { code: "OPENCODE_UNREACHABLE", message: "OpenCode service unavailable" } }),
+          { status: 502, headers: { "content-type": "application/json" } },
+        )
+      }
+    }
     logger.debug({ method: input.method, path: input.path, status: res.status }, "proxy.forward: received response")
     return res
   } catch {
@@ -136,6 +168,18 @@ export async function proxyRequest(
       headers,
       body: method !== "GET" && method !== "HEAD" ? body : undefined,
     })
+
+    // Bun returns a 502 Response instead of throwing on some connection failures.
+    if (response.status === 502 && response.headers.get("content-type") === null) {
+      const bodyText = await response.text().catch(() => "")
+      if (!bodyText) {
+        logger.error({ method, targetUrl }, "proxy.proxyRequest: opencode unreachable (empty 502)")
+        return new Response(
+          JSON.stringify({ error: { code: "OPENCODE_UNREACHABLE", message: "OpenCode service unavailable" } }),
+          { status: 502, headers: { "content-type": "application/json" } },
+        )
+      }
+    }
 
     const responseHeaders = new Headers(response.headers)
     // Remove content-encoding: the Bun/Node fetch already decompresses the body,
