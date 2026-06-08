@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { h, defineComponent, type Plugin } from 'vue'
+import { type Plugin } from 'vue'
 import { QPage, QBtn, QIcon, QSpinnerDots, QTooltip, QItem, QItemSection, QItemLabel, QList } from 'quasar'
 import ProjectWorkspaceGrid, {
   type ShotOutputItem,
