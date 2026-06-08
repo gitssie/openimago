@@ -1,0 +1,24 @@
+{
+  "name": "openimago-opencode-plugins",
+  "private": true,
+  "type": "module",
+  "description": "OpenImago OpenCode plugins and custom tools — compiled to JS and loaded inside the OpenCode Docker container under /root/.config/opencode/",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "bun test",
+    "check": "bun run typecheck && bun run build && bun test"
+  },
+  "dependencies": {
+    "@google/genai": "^2.8.0",
+    "@opencode-ai/plugin": "^1.15.10",
+    "effect": "^3.14.0",
+    "@fal-ai/client": "^1.7.0",
+    "openai": "^6.9.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^5.9.3"
+  }
+}
