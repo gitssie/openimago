@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "episodeId": "ep_001",
+  "runs": [
+    {
+      "id": "run_01h_kai_concept_v1",
+      "nodeId": "n01-char-kai-concept",
+      "shotId": null,
+      "status": "completed",
+      "params": {
+        "prompt": "Character concept art of A young street racer with a custom cybernetic arm. Quiet, determined, carries a debt to the Yakuza. Short dark hair, silver cybernetic right arm with exposed circuits, worn leather jacket, always wears fingerless gloves. Style: High contrast cyberpunk with film noir influences. Deep shadows, neon rim lights, rain-slicked surfaces. Full body turnaround, three-quarter view, detailed cybernetic arm design. High quality concept art.",
+        "negativePrompt": "blurry, low quality, deformed hands, extra limbs",
+        "model": "flux-pro",
+        "aspectRatio": "3:4",
+        "seed": 42,
+        "referenceArtifactIds": []
+      },
+      "result": {
+        "artifactId": "wf_01h_kai_concept",
+        "kind": "image",
+        "mime": "image/png",
+        "filename": "kai-concept-v1.png",
+        "access": {
+          "preview": "https://cdn.example.com/projects/proj_01h_example/outputs/kai-concept-v1.png",
+          "thumbnail": "https://cdn.example.com/projects/proj_01h_example/outputs/kai-concept-v1.thumb.webp"
+        }
+      },
+      "startedAt": "2026-06-08T10:00:00Z",
+      "completedAt": "2026-06-08T10:00:15Z"
+    },
+    {
+      "id": "run_01h_rei_concept_v1",
+      "nodeId": "n02-char-rei-concept",
+      "shotId": null,
+      "status": "completed",
+      "params": {
+        "prompt": "Character concept art of Kai's childhood friend and genius mechanic. Runs an underground garage. Witty and resourceful. Goggles always pushed up on forehead, oil-stained overalls over a tank top, short ponytail with neon streaks. Style: High contrast cyberpunk with film noir influences. Deep shadows, neon rim lights, rain-slicked surfaces. Full body turnaround, three-quarter view, confident pose with tools. High quality concept art.",
+        "negativePrompt": "blurry, low quality, deformed hands, extra limbs",
+        "model": "flux-pro",
+        "aspectRatio": "3:4",
+        "seed": 137,
+        "referenceArtifactIds": []
+      },
+      "result": {
+        "artifactId": "wf_01h_rei_concept",
+        "kind": "image",
+        "mime": "image/png",
+        "filename": "rei-concept-v1.png",
+        "access": {
+          "preview": "https://cdn.example.com/projects/proj_01h_example/outputs/rei-concept-v1.png",
+          "thumbnail": "https://cdn.example.com/projects/proj_01h_example/outputs/rei-concept-v1.thumb.webp"
+        }
+      },
+      "startedAt": "2026-06-08T10:01:00Z",
+      "completedAt": "2026-06-08T10:01:12Z"
+    },
+    {
+      "id": "run_01h_neon_alley_v1",
+      "nodeId": "n04-scene-neon-alley",
+      "shotId": null,
+      "status": "completed",
+      "params": {
+        "prompt": "Environment concept art of Narrow back alley in the entertainment district. Walls covered in flickering holographic ads in Japanese and Chinese. Steam vents, puddles reflecting neon. Overhead neon signs in cyan and pink, volumetric light beams through steam, deep shadows in corners. Style: High contrast cyberpunk with film noir influences. Deep shadows, neon rim lights, rain-slicked surfaces. Wide establishing shot, cinematic composition. High quality environment concept art.",
+        "negativePrompt": "blurry, low quality, characters, people",
+        "model": "flux-pro",
+        "aspectRatio": "16:9",
+        "seed": 256,
+        "referenceArtifactIds": []
+      },
+      "result": {
+        "artifactId": "wf_01h_neon_alley",
+        "kind": "image",
+        "mime": "image/png",
+        "filename": "neon-alley-v1.png",
+        "access": {
+          "preview": "https://cdn.example.com/projects/proj_01h_example/outputs/neon-alley-v1.png",
+          "thumbnail": "https://cdn.example.com/projects/proj_01h_example/outputs/neon-alley-v1.thumb.webp"
+        }
+      },
+      "startedAt": "2026-06-08T10:02:00Z",
+      "completedAt": "2026-06-08T10:02:20Z"
+    },
+    {
+      "id": "run_01h_shot01_v1",
+      "nodeId": "n07-shot-s01-opening",
+      "shotId": "s01-opening",
+      "status": "completed",
+      "params": {
+        "prompt": "Wide establishing shot of the neon alley at night. Rain falls steadily. Kai's car — a modified electric racer — drifts into frame, damaged. Steam rises from the hood. The race is over; he lost. Camera: Slow crane down from neon sign level to street level. Rack focus from distant city lights to Kai's car. Lighting: Cyan and magenta neon reflections in puddles. Car headlights flickering. Character Kai in car: Short dark hair, silver cybernetic right arm with exposed circuits, worn leather jacket, always wears fingerless gloves. Scene: Narrow back alley in the entertainment district. Walls covered in flickering holographic ads in Japanese and Chinese. Steam vents, puddles reflecting neon. Style: High contrast cyberpunk with film noir influences. Deep shadows, neon rim lights, rain-slicked surfaces. Cinematic keyframe, high quality.",
+        "negativePrompt": "blurry, low quality, deformed, extra limbs",
+        "model": "flux-pro",
+        "aspectRatio": "16:9",
+        "seed": 888,
+        "referenceArtifactIds": [
+          "wf_01h_kai_concept",
+          "wf_01h_neon_alley"
+        ]
+      },
+      "result": {
+        "artifactId": "wf_01h_shot01",
+        "kind": "image",
+        "mime": "image/png",
+        "filename": "ep001-shot01-opening-v1.png",
+        "access": {
+          "preview": "https://cdn.example.com/projects/proj_01h_example/outputs/ep001-shot01-opening-v1.png",
+          "thumbnail": "https://cdn.example.com/projects/proj_01h_example/outputs/ep001-shot01-opening-v1.thumb.webp"
+        }
+      },
+      "startedAt": "2026-06-08T10:05:00Z",
+      "completedAt": "2026-06-08T10:05:25Z"
+    },
+    {
+      "id": "run_01h_takeshi_concept_v1",
+      "nodeId": "n03-char-takeshi-concept",
+      "shotId": null,
+      "status": "running",
+      "params": {
+        "prompt": "Character concept art of Yakuza enforcer who owns Kai's debt. Cold, calculating, always one step ahead. Immaculate white suit (stark contrast to neon streets), traditional irezumi tattoos peeking from collar, cybernetic eye implant. Style: High contrast cyberpunk with film noir influences. Deep shadows, neon rim lights, rain-slicked surfaces. Full body turnaround, imposing stance, white suit contrasts with dark background. High quality concept art.",
+        "negativePrompt": "blurry, low quality, deformed hands, extra limbs",
+        "model": "flux-pro",
+        "aspectRatio": "3:4",
+        "seed": null,
+        "referenceArtifactIds": []
+      },
+      "startedAt": "2026-06-08T10:10:00Z"
+    }
+  ]
+}

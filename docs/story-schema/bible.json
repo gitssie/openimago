@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "projectId": "proj_01h_example",
+  "world": {
+    "name": "Neon Drift",
+    "description": "A cyberpunk metropolis where street racers compete in underground circuits beneath neon-lit skyscrapers.",
+    "era": "Near-future 2089",
+    "moodKeywords": ["cyberpunk", "neon", "rain", "speed", "rebellion"],
+    "visualStyleNotes": "High contrast neon lighting, wet reflective streets, volumetric fog, cinematic wide shots. Primary palette: cyan, magenta, deep blue. Inspired by Blade Runner 2049 and Akira."
+  },
+  "characters": [
+    {
+      "id": "kai-the-runner",
+      "displayName": "凯 (Kai)",
+      "role": "protagonist",
+      "description": "A young street racer with a custom cybernetic arm. Quiet, determined, carries a debt to the Yakuza.",
+      "visualNotes": "Short dark hair, silver cybernetic right arm with exposed circuits, worn leather jacket, always wears fingerless gloves.",
+      "referenceArtifactIds": [],
+      "tags": ["protagonist", "racer", "cybernetic"]
+    },
+    {
+      "id": "rei-the-mechanic",
+      "displayName": "零 (Rei)",
+      "role": "supporting",
+      "description": "Kai's childhood friend and genius mechanic. Runs an underground garage. Witty and resourceful.",
+      "visualNotes": "Goggles always pushed up on forehead, oil-stained overalls over a tank top, short ponytail with neon streaks.",
+      "referenceArtifactIds": [],
+      "tags": ["mechanic", "supporting", "hacker"]
+    },
+    {
+      "id": "takeshi-the-enforcer",
+      "displayName": "武 (Takeshi)",
+      "role": "antagonist",
+      "description": "Yakuza enforcer who owns Kai's debt. Cold, calculating, always one step ahead.",
+      "visualNotes": "Immaculate white suit (stark contrast to neon streets), traditional irezumi tattoos peeking from collar, cybernetic eye implant.",
+      "referenceArtifactIds": [],
+      "tags": ["antagonist", "yakuza", "enforcer"]
+    }
+  ],
+  "scenes": [
+    {
+      "id": "neon-alley",
+      "displayName": "霓虹小巷 (Neon Alley)",
+      "type": "exterior",
+      "description": "Narrow back alley in the entertainment district. Walls covered in flickering holographic ads in Japanese and Chinese. Steam vents, puddles reflecting neon.",
+      "mood": "tense, claustrophobic",
+      "lighting": "Overhead neon signs in cyan and pink, volumetric light beams through steam, deep shadows in corners.",
+      "referenceArtifactIds": [],
+      "tags": ["alley", "exterior", "night"]
+    },
+    {
+      "id": "underground-garage",
+      "displayName": "地下车库 (Underground Garage)",
+      "type": "interior",
+      "description": "Rei's hidden workshop beneath an abandoned parking structure. Filled with car parts, holographic blueprints, and custom rigs.",
+      "mood": "warm, safe haven",
+      "lighting": "Warm tungsten work lights, blue holographic displays, contrast with cool neon from street level seeping through grates.",
+      "referenceArtifactIds": [],
+      "tags": ["garage", "interior", "workshop"]
+    },
+    {
+      "id": "expressway-overpass",
+      "displayName": "高速路高架 (Expressway Overpass)",
+      "type": "exterior",
+      "description": "Multi-level elevated highway overlooking the city. The finish line of the underground race circuit. Breathtaking cityscape views.",
+      "mood": "epic, exhilarating, dangerous",
+      "lighting": "Golden hour / sunset, long shadows, lens flares, city lights beginning to flicker on below.",
+      "referenceArtifactIds": [],
+      "tags": ["highway", "exterior", "sunset"]
+    }
+  ],
+  "styleSeeds": [
+    {
+      "id": "cyberpunk-noir",
+      "displayName": "Cyberpunk Noir",
+      "description": "High contrast cyberpunk with film noir influences. Deep shadows, neon rim lights, rain-slicked surfaces.",
+      "visualStyle": "cyberpunk-noir",
+      "colorPalette": ["#0a0a1a", "#ff006e", "#00f5d4", "#8338ec", "#ffbe0b"],
+      "referenceArtifactIds": []
+    }
+  ],
+  "updatedAt": "2026-06-08T00:00:00Z"
+}

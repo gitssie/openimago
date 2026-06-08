@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "id": "ep_001",
+  "episodeNumber": 1,
+  "title": "霓虹起跑线 (Neon Starting Line)",
+  "logline": "Kai loses a high-stakes street race, putting him deeper in debt to the Yakuza — but Rei has a plan.",
+  "synopsis": "The episode opens on a rain-soaked neon alley where Kai's car sputters to a stop after losing a race. Takeshi appears to remind him of his growing debt. Back at the underground garage, Rei reveals a prototype engine mod that could give Kai the edge he needs — but it requires a rare component only available through a dangerous deal. Kai must decide: play it safe and slowly pay off his debt, or risk everything on one final race.",
+  "status": "storyboard",
+  "shots": [
+    {
+      "id": "s01-opening",
+      "shotNumber": 1,
+      "sceneId": "neon-alley",
+      "description": "Wide establishing shot of the neon alley at night. Rain falls steadily. Kai's car — a modified electric racer — drifts into frame, damaged. Steam rises from the hood. The race is over; he lost.",
+      "durationEstimate": 8,
+      "cameraNotes": "Slow crane down from neon sign level to street level. Rack focus from distant city lights to Kai's car.",
+      "lightingNotes": "Cyan and magenta neon reflections in puddles. Car headlights flickering.",
+      "dialog": [],
+      "characterIds": ["kai-the-runner"],
+      "referenceArtifactIds": [],
+      "status": "pending"
+    },
+    {
+      "id": "s02-kai-defeat",
+      "shotNumber": 2,
+      "sceneId": "neon-alley",
+      "description": "Close-up on Kai inside the car. His cybernetic arm sparks from damage. He slams the steering wheel in frustration. Through the rain-streaked window, we see a figure approaching.",
+      "durationEstimate": 5,
+      "cameraNotes": "Tight close-up through rain-streaked windshield. Shallow depth of field on Kai's face, figure approaching in blurred background.",
+      "lightingNotes": "Key light from dashboard glow (amber), rim light from alley neon (cyan).",
+      "dialog": [],
+      "characterIds": ["kai-the-runner"],
+      "referenceArtifactIds": [],
+      "status": "pending"
+    },
+    {
+      "id": "s03-takeshi-arrives",
+      "shotNumber": 3,
+      "sceneId": "neon-alley",
+      "description": "Takeshi steps out of the shadows, immaculate white suit stark against the grimy alley. He taps his cybernetic eye implant — a holographic debt counter appears, the number increasing. He smiles coldly.",
+      "durationEstimate": 7,
+      "cameraNotes": "Low angle looking up at Takeshi. Slow push-in as the holographic counter appears.",
+      "lightingNotes": "Harsh backlight from a flickering neon sign. His white suit glows unnaturally.",
+      "dialog": [
+        {
+          "characterId": "takeshi-the-enforcer",
+          "text": "You're running out of time, Kai. And time... is expensive.",
+          "emotion": "cold, amused"
+        }
+      ],
+      "characterIds": ["takeshi-the-enforcer", "kai-the-runner"],
+      "referenceArtifactIds": [],
+      "status": "pending"
+    },
+    {
+      "id": "s04-garage-entrance",
+      "shotNumber": 4,
+      "sceneId": "underground-garage",
+      "description": "Transition to the underground garage. Warm lighting contrasts with the cold alley. Rei is working on a holographic engine schematic, surrounded by tools and parts.",
+      "durationEstimate": 6,
+      "cameraNotes": "Tracking shot following Kai as he enters. Camera pans across workshop details — holographic blueprints, car parts, custom rigs.",
+      "lightingNotes": "Warm tungsten work lights, blue holographic glow. Warm/cool contrast with scene 1-3.",
+      "dialog": [],
+      "characterIds": ["kai-the-runner", "rei-the-mechanic"],
+      "referenceArtifactIds": [],
+      "status": "pending"
+    },
+    {
+      "id": "s05-rei-plan",
+      "shotNumber": 5,
+      "sceneId": "underground-garage",
+      "description": "Two-shot of Kai and Rei at the workbench. Rei excitedly explains the prototype engine mod — a quantum capacitor that doubles acceleration. Kai is skeptical. The component is illegal and expensive.",
+      "durationEstimate": 12,
+      "cameraNotes": "Over-the-shoulder alternating between Kai and Rei. Close-ups on the holographic engine schematic when Rei points at specific parts.",
+      "lightingNotes": "Hologram provides motivated blue light on their faces. Warm ambient from work lights.",
+      "dialog": [
+        {
+          "characterId": "rei-the-mechanic",
+          "text": "I've been working on something. A quantum capacitor mod. It could double your acceleration.",
+          "emotion": "excited"
+        },
+        {
+          "characterId": "kai-the-runner",
+          "text": "That tech is illegal, Rei. And it costs more than I owe Takeshi.",
+          "emotion": "skeptical, worried"
+        },
+        {
+          "characterId": "rei-the-mechanic",
+          "text": "I know a guy. One job. One race. You win, you're free.",
+          "emotion": "determined"
+        }
+      ],
+      "characterIds": ["kai-the-runner", "rei-the-mechanic"],
+      "referenceArtifactIds": [],
+      "status": "pending"
+    },
+    {
+      "id": "s06-decision",
+      "shotNumber": 6,
+      "sceneId": "underground-garage",
+      "description": "Close-up on Kai's face. Internal conflict. His cybernetic arm twitches involuntarily — a visual tell of his anxiety. He looks at his damaged arm, then at Rei, then at the holographic engine. Makes his decision.",
+      "durationEstimate": 6,
+      "cameraNotes": "Slow push-in on Kai's face. Cut to his cybernetic hand clenching. Cut to the holographic engine reflecting in his eyes.",
+      "lightingNotes": "Half his face in warm workshop light, half in cool blue holographic glow — visual representation of his internal conflict.",
+      "dialog": [],
+      "characterIds": ["kai-the-runner"],
+      "referenceArtifactIds": [],
+      "status": "pending"
+    },
+    {
+      "id": "s07-race-prep",
+      "shotNumber": 7,
+      "sceneId": "underground-garage",
+      "description": "Montage: Kai and Rei working on the car. Installing parts. Welding. Holographic diagnostics. The car transforms from damaged to upgraded. Kai's cybernetic arm gets repaired too. They work in sync — a well-oiled team.",
+      "durationEstimate": 10,
+      "cameraNotes": "Fast-paced montage with dynamic camera moves. Whip pans between workstations. Close-ups on tools and parts.",
+      "lightingNotes": "Time-lapse lighting shifts from warm to cool as hours pass. Sparks from welding create dynamic highlights.",
+      "dialog": [],
+      "characterIds": ["kai-the-runner", "rei-the-mechanic"],
+      "referenceArtifactIds": [],
+      "status": "pending"
+    },
+    {
+      "id": "s08-cliffhanger",
+      "shotNumber": 8,
+      "sceneId": "expressway-overpass",
+      "description": "Wide shot of the expressway overpass at sunset. Kai's upgraded car sits at the starting line. Three rival racers beside him. In the distance, we see Takeshi watching from an observation platform, his debt counter hologram visible. The countdown begins. 3... 2... 1... — cut to black.",
+      "durationEstimate": 8,
+      "cameraNotes": "Epic wide establishing shot. Crane up to reveal the full cityscape. Push in on Takeshi's observation platform. Cut to Kai's determined face inside the car. Cut to countdown lights. Cut to black on GO.",
+      "lightingNotes": "Golden hour sunset. Long dramatic shadows. The race countdown lights (red → yellow → green) provide pulsing color. Takeshi's hologram glows cold blue against the warm sunset.",
+      "dialog": [],
+      "characterIds": ["kai-the-runner", "takeshi-the-enforcer"],
+      "referenceArtifactIds": [],
+      "status": "pending"
+    }
+  ],
+  "updatedAt": "2026-06-08T00:00:00Z"
+}

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "projectId": "proj_01h_example",
+  "title": "Neon Drift",
+  "description": "A 3-episode animated short series following Kai, a street racer in a cyberpunk metropolis, racing to pay off his debt to the Yakuza.",
+  "status": "in_progress",
+  "episodes": [
+    {
+      "episodeNumber": 1,
+      "id": "ep_001",
+      "title": "霓虹起跑线 (Neon Starting Line)",
+      "status": "storyboard",
+      "shotCount": 8,
+      "durationEstimate": 120,
+      "updatedAt": "2026-06-08T00:00:00Z"
+    },
+    {
+      "episodeNumber": 2,
+      "id": "ep_002",
+      "title": "地下竞速 (Underground Race)",
+      "status": "draft",
+      "shotCount": 0,
+      "durationEstimate": null,
+      "updatedAt": "2026-06-08T00:00:00Z"
+    },
+    {
+      "episodeNumber": 3,
+      "id": "ep_003",
+      "title": "终点线 (Finish Line)",
+      "status": "draft",
+      "shotCount": 0,
+      "durationEstimate": null,
+      "updatedAt": "2026-06-08T00:00:00Z"
+    }
+  ],
+  "updatedAt": "2026-06-08T00:00:00Z"
+}

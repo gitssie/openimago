@@ -1,0 +1,213 @@
+{
+  "schemaVersion": 1,
+  "episodeId": "ep_001",
+  "nodes": [
+    {
+      "id": "n01-char-kai-concept",
+      "shotId": null,
+      "toolKind": "image_generate",
+      "label": "Kai Character Concept Art",
+      "params": {
+        "promptTemplate": "Character concept art of {{character.kai-the-runner.description}}. {{character.kai-the-runner.visualNotes}}. Style: {{style.cyberpunk-noir.visualStyle}}. Full body turnaround, three-quarter view, detailed cybernetic arm design. High quality concept art.",
+        "negativePromptTemplate": "blurry, low quality, deformed hands, extra limbs",
+        "model": "flux-pro",
+        "aspectRatio": "3:4",
+        "referenceArtifactIds": []
+      },
+      "dependsOn": []
+    },
+    {
+      "id": "n02-char-rei-concept",
+      "shotId": null,
+      "toolKind": "image_generate",
+      "label": "Rei Character Concept Art",
+      "params": {
+        "promptTemplate": "Character concept art of {{character.rei-the-mechanic.description}}. {{character.rei-the-mechanic.visualNotes}}. Style: {{style.cyberpunk-noir.visualStyle}}. Full body turnaround, three-quarter view, confident pose with tools. High quality concept art.",
+        "negativePromptTemplate": "blurry, low quality, deformed hands, extra limbs",
+        "model": "flux-pro",
+        "aspectRatio": "3:4",
+        "referenceArtifactIds": []
+      },
+      "dependsOn": []
+    },
+    {
+      "id": "n03-char-takeshi-concept",
+      "shotId": null,
+      "toolKind": "image_generate",
+      "label": "Takeshi Character Concept Art",
+      "params": {
+        "promptTemplate": "Character concept art of {{character.takeshi-the-enforcer.description}}. {{character.takeshi-the-enforcer.visualNotes}}. Style: {{style.cyberpunk-noir.visualStyle}}. Full body turnaround, imposing stance, white suit contrasts with dark background. High quality concept art.",
+        "negativePromptTemplate": "blurry, low quality, deformed hands, extra limbs",
+        "model": "flux-pro",
+        "aspectRatio": "3:4",
+        "referenceArtifactIds": []
+      },
+      "dependsOn": []
+    },
+    {
+      "id": "n04-scene-neon-alley",
+      "shotId": null,
+      "toolKind": "image_generate",
+      "label": "Neon Alley Environment Concept",
+      "params": {
+        "promptTemplate": "Environment concept art of {{scene.neon-alley.description}}. {{scene.neon-alley.lighting}}. Style: {{style.cyberpunk-noir.visualStyle}}. Wide establishing shot, cinematic composition. High quality environment concept art.",
+        "negativePromptTemplate": "blurry, low quality, characters, people",
+        "model": "flux-pro",
+        "aspectRatio": "16:9",
+        "referenceArtifactIds": []
+      },
+      "dependsOn": []
+    },
+    {
+      "id": "n05-scene-underground-garage",
+      "shotId": null,
+      "toolKind": "image_generate",
+      "label": "Underground Garage Environment Concept",
+      "params": {
+        "promptTemplate": "Environment concept art of {{scene.underground-garage.description}}. {{scene.underground-garage.lighting}}. Style: {{style.cyberpunk-noir.visualStyle}}. Wide establishing shot, warm workshop atmosphere. High quality environment concept art.",
+        "negativePromptTemplate": "blurry, low quality, characters, people",
+        "model": "flux-pro",
+        "aspectRatio": "16:9",
+        "referenceArtifactIds": []
+      },
+      "dependsOn": []
+    },
+    {
+      "id": "n06-scene-expressway",
+      "shotId": null,
+      "toolKind": "image_generate",
+      "label": "Expressway Overpass Environment Concept",
+      "params": {
+        "promptTemplate": "Environment concept art of {{scene.expressway-overpass.description}}. {{scene.expressway-overpass.lighting}}. Style: {{style.cyberpunk-noir.visualStyle}}. Epic wide shot, cinematic composition, golden hour. High quality environment concept art.",
+        "negativePromptTemplate": "blurry, low quality, characters, people, night",
+        "model": "flux-pro",
+        "aspectRatio": "16:9",
+        "referenceArtifactIds": []
+      },
+      "dependsOn": []
+    },
+    {
+      "id": "n07-shot-s01-opening",
+      "shotId": "s01-opening",
+      "toolKind": "image_generate",
+      "label": "Shot 01: Neon Alley Opening",
+      "params": {
+        "promptTemplate": "{{shot.s01-opening.description}} Camera: {{shot.s01-opening.cameraNotes}}. Lighting: {{shot.s01-opening.lightingNotes}}. Character Kai in car: {{character.kai-the-runner.visualNotes}}. Scene: {{scene.neon-alley.description}}. Style: {{style.cyberpunk-noir.visualStyle}}. Cinematic keyframe, high quality.",
+        "negativePromptTemplate": "blurry, low quality, deformed, extra limbs",
+        "model": "flux-pro",
+        "aspectRatio": "16:9",
+        "referenceArtifactIds": []
+      },
+      "dependsOn": ["n01-char-kai-concept", "n04-scene-neon-alley"]
+    },
+    {
+      "id": "n08-shot-s02-kai-defeat",
+      "shotId": "s02-kai-defeat",
+      "toolKind": "image_generate",
+      "label": "Shot 02: Kai's Defeat",
+      "params": {
+        "promptTemplate": "{{shot.s02-kai-defeat.description}} Camera: {{shot.s02-kai-defeat.cameraNotes}}. Lighting: {{shot.s02-kai-defeat.lightingNotes}}. Character Kai: {{character.kai-the-runner.visualNotes}}. Style: {{style.cyberpunk-noir.visualStyle}}. Emotional close-up, cinematic keyframe.",
+        "negativePromptTemplate": "blurry, low quality, deformed, extra limbs",
+        "model": "flux-pro",
+        "aspectRatio": "16:9",
+        "referenceArtifactIds": []
+      },
+      "dependsOn": ["n01-char-kai-concept"]
+    },
+    {
+      "id": "n09-shot-s03-takeshi",
+      "shotId": "s03-takeshi-arrives",
+      "toolKind": "image_generate",
+      "label": "Shot 03: Takeshi Arrives",
+      "params": {
+        "promptTemplate": "{{shot.s03-takeshi-arrives.description}} Camera: {{shot.s03-takeshi-arrives.cameraNotes}}. Lighting: {{shot.s03-takeshi-arrives.lightingNotes}}. Character Takeshi: {{character.takeshi-the-enforcer.visualNotes}}. Scene: {{scene.neon-alley.description}}. Style: {{style.cyberpunk-noir.visualStyle}}. Cinematic keyframe, high quality.",
+        "negativePromptTemplate": "blurry, low quality, deformed, extra limbs",
+        "model": "flux-pro",
+        "aspectRatio": "2:3",
+        "referenceArtifactIds": []
+      },
+      "dependsOn": ["n03-char-takeshi-concept", "n04-scene-neon-alley"]
+    },
+    {
+      "id": "n10-shot-s04-garage",
+      "shotId": "s04-garage-entrance",
+      "toolKind": "image_generate",
+      "label": "Shot 04: Garage Entrance",
+      "params": {
+        "promptTemplate": "{{shot.s04-garage-entrance.description}} Camera: {{shot.s04-garage-entrance.cameraNotes}}. Lighting: {{shot.s04-garage-entrance.lightingNotes}}. Characters Kai and Rei: {{character.kai-the-runner.visualNotes}} and {{character.rei-the-mechanic.visualNotes}}. Scene: {{scene.underground-garage.description}}. Style: {{style.cyberpunk-noir.visualStyle}}. Cinematic keyframe, high quality.",
+        "negativePromptTemplate": "blurry, low quality, deformed, extra limbs",
+        "model": "flux-pro",
+        "aspectRatio": "16:9",
+        "referenceArtifactIds": []
+      },
+      "dependsOn": ["n01-char-kai-concept", "n02-char-rei-concept", "n05-scene-underground-garage"]
+    },
+    {
+      "id": "n11-shot-s05-rei-plan",
+      "shotId": "s05-rei-plan",
+      "toolKind": "image_generate",
+      "label": "Shot 05: Rei's Plan",
+      "params": {
+        "promptTemplate": "{{shot.s05-rei-plan.description}} Camera: {{shot.s05-rei-plan.cameraNotes}}. Lighting: {{shot.s05-rei-plan.lightingNotes}}. Characters Kai and Rei at workbench with holographic engine schematic. Scene: {{scene.underground-garage.description}}. Style: {{style.cyberpunk-noir.visualStyle}}. Cinematic keyframe, high quality.",
+        "negativePromptTemplate": "blurry, low quality, deformed, extra limbs",
+        "model": "flux-pro",
+        "aspectRatio": "16:9",
+        "referenceArtifactIds": []
+      },
+      "dependsOn": ["n01-char-kai-concept", "n02-char-rei-concept", "n05-scene-underground-garage"]
+    },
+    {
+      "id": "n12-shot-s06-decision",
+      "shotId": "s06-decision",
+      "toolKind": "image_generate",
+      "label": "Shot 06: Kai's Decision",
+      "params": {
+        "promptTemplate": "{{shot.s06-decision.description}} Camera: {{shot.s06-decision.cameraNotes}}. Lighting: {{shot.s06-decision.lightingNotes}}. Character Kai close-up, cybernetic arm visible, holographic engine reflection in eyes. Style: {{style.cyberpunk-noir.visualStyle}}. Emotional portrait, cinematic keyframe.",
+        "negativePromptTemplate": "blurry, low quality, deformed, extra limbs",
+        "model": "flux-pro",
+        "aspectRatio": "16:9",
+        "referenceArtifactIds": []
+      },
+      "dependsOn": ["n01-char-kai-concept"]
+    },
+    {
+      "id": "n13-shot-s07-prep",
+      "shotId": "s07-race-prep",
+      "toolKind": "video_generate",
+      "label": "Shot 07: Race Prep Montage",
+      "params": {
+        "promptTemplate": "{{shot.s07-race-prep.description}} Dynamic montage in cyberpunk workshop. Characters Kai and Rei working on a futuristic race car. Welding sparks, holographic displays, time-lapse lighting. Scene: {{scene.underground-garage.description}}. Style: {{style.cyberpunk-noir.visualStyle}}.",
+        "negativePromptTemplate": "blurry, low quality, deformed faces, static shot",
+        "model": "kling-v2",
+        "aspectRatio": "16:9",
+        "duration": 10,
+        "referenceArtifactIds": []
+      },
+      "dependsOn": ["n01-char-kai-concept", "n02-char-rei-concept", "n05-scene-underground-garage"]
+    },
+    {
+      "id": "n14-shot-s08-cliffhanger",
+      "shotId": "s08-cliffhanger",
+      "toolKind": "image_generate",
+      "label": "Shot 08: Cliffhanger",
+      "params": {
+        "promptTemplate": "{{shot.s08-cliffhanger.description}} Camera: {{shot.s08-cliffhanger.cameraNotes}}. Lighting: {{shot.s08-cliffhanger.lightingNotes}}. Characters Kai in upgraded car and Takeshi watching from above. Scene: {{scene.expressway-overpass.description}}. Style: {{style.cyberpunk-noir.visualStyle}}. Epic cinematic keyframe, golden hour.",
+        "negativePromptTemplate": "blurry, low quality, deformed, extra limbs, night",
+        "model": "flux-pro",
+        "aspectRatio": "16:9",
+        "referenceArtifactIds": []
+      },
+      "dependsOn": ["n01-char-kai-concept", "n03-char-takeshi-concept", "n06-scene-expressway"]
+    }
+  ],
+  "edges": [
+    { "from": "n01-char-kai-concept", "to": "n07-shot-s01-opening", "relation": "character_ref" },
+    { "from": "n04-scene-neon-alley", "to": "n07-shot-s01-opening", "relation": "depends_on" },
+    { "from": "n01-char-kai-concept", "to": "n08-shot-s02-kai-defeat", "relation": "character_ref" },
+    { "from": "n03-char-takeshi-concept", "to": "n09-shot-s03-takeshi", "relation": "character_ref" },
+    { "from": "n04-scene-neon-alley", "to": "n09-shot-s03-takeshi", "relation": "depends_on" },
+    { "from": "n01-char-kai-concept", "to": "n10-shot-s04-garage", "relation": "character_ref" },
+    { "from": "n02-char-rei-concept", "to": "n10-shot-s04-garage", "relation": "character_ref" },
+    { "from": "n05-scene-underground-garage", "to": "n10-shot-s04-garage", "relation": "depends_on" }
+  ]
+}
