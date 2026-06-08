@@ -25,18 +25,8 @@
             @click="$emit('select', session.id)"
           >
             <q-item-section class="session-item__section">
-              <div class="session-item__row">
-                <q-item-label class="session-title">{{ session.title }}</q-item-label>
-                <div class="session-item__status">
-                  <span class="session-item__status-dot" />
-                  <span>{{ session.clockLabel }}</span>
-                </div>
-              </div>
+              <q-item-label class="session-title">{{ session.title }}</q-item-label>
               <q-item-label caption class="session-preview">{{ session.preview }}</q-item-label>
-              <div class="session-item__meta">
-                <span>{{ session.timeLabel }}</span>
-                <span>{{ session.meta }}</span>
-              </div>
             </q-item-section>
             <q-item-section side class="session-delete">
               <q-btn flat round dense icon="close" size="xs" color="grey-5" @click.stop="$emit('delete', session.id)" />
@@ -182,31 +172,7 @@ defineEmits<{
 }
 
 .session-item__section {
-  gap: 8px;
-}
-
-.session-item__row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.session-item__status {
-  display: inline-flex;
-  align-items: center;
   gap: 6px;
-  color: rgba(255, 255, 255, 0.44);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.session-item__status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: rgba(0, 240, 255, 0.8);
-  box-shadow: 0 0 10px rgba(0, 240, 255, 0.45);
 }
 
 .session-title {
@@ -225,13 +191,6 @@ defineEmits<{
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-
-.session-item__meta {
-  display: flex;
-  gap: 10px;
-  color: rgba(255, 255, 255, 0.34);
-  font-size: 11px;
 }
 
 .session-delete {
