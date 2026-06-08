@@ -3,16 +3,32 @@ import { Hono } from "hono"
 import { setup, teardown, COS_BASE_PATH } from "./helper"
 import { authRoutes } from "../src/auth/routes"
 import { projectRoutes } from "../src/project/routes"
+import { verificationStore } from "../src/auth/email-verification"
 import { stat } from "node:fs/promises"
 
 let app: Hono
 
 async function registerUser(username: string, email: string): Promise<string> {
+  // Step 1: Request verification code
+  const sendRes = await app.fetch(
+    new Request("http://localhost/auth/email-verification/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email }),
+    }),
+  )
+  expect(sendRes.status).toBe(200)
+
+  // Step 2: Retrieve the code from the in-memory store (dev mode)
+  const code = verificationStore.getCode(email)
+  if (!code) throw new Error(`No verification code found for ${email}`)
+
+  // Step 3: Register with the verification code
   const res = await app.fetch(
     new Request("http://localhost/auth/register", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ username, email, password: "password123" }),
+      body: JSON.stringify({ username, email, password: "password123", verificationCode: code }),
     }),
   )
   const body = await res.json() as Record<string, any>
@@ -302,10 +318,167 @@ test("GET /projects/:id another users project returns 403", async () => {
 
 // ---------------------------------------------------------------------------
 // 11. GET /projects/:id without auth → 401
-// ---------------------------------------------------------------------------
 test("GET /projects/:id without token returns 401", async () => {
   const res = await app.fetch(
     new Request("http://localhost/api/platform/projects/proj_xxx"),
   )
   expect(res.status).toBe(401)
+})
+
+// ---------------------------------------------------------------------------
+// 12. Project creation scaffolds AGENTS.md
+// ---------------------------------------------------------------------------
+test("project creation scaffolds AGENTS.md", async () => {
+  const token = await registerUser("dev12", "dev12@example.com")
+
+  const res = await app.fetch(
+    new Request("http://localhost/api/platform/projects", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ name: "ScaffoldTest" }),
+    }),
+  )
+  const body = (await res.json()) as Record<string, any>
+  expect(res.status).toBe(201)
+
+  const { readFile } = await import("node:fs/promises")
+  const { join } = await import("node:path")
+
+  const agentsContent = await readFile(join(body.project.directory, "AGENTS.md"), "utf-8")
+  expect(agentsContent).toContain("# ScaffoldTest")
+  expect(agentsContent).toContain("Canonical Layout")
+  expect(agentsContent).toContain("Rules for AI Agents")
+  expect(agentsContent).toContain("story/*.json")
+})
+
+// ---------------------------------------------------------------------------
+// 13. Project creation scaffolds openimago.json
+// ---------------------------------------------------------------------------
+test("project creation scaffolds openimago.json", async () => {
+  const token = await registerUser("dev13", "dev13@example.com")
+
+  const res = await app.fetch(
+    new Request("http://localhost/api/platform/projects", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ name: "ManifestTest" }),
+    }),
+  )
+  const body = (await res.json()) as Record<string, any>
+  expect(res.status).toBe(201)
+
+  const { readFile } = await import("node:fs/promises")
+  const { join } = await import("node:path")
+
+  const manifestContent = await readFile(join(body.project.directory, "openimago.json"), "utf-8")
+  const manifest = JSON.parse(manifestContent) as Record<string, unknown>
+  expect(manifest.schemaVersion).toBe(1)
+  expect(manifest.projectId).toBe(body.project.id)
+  expect(manifest.storyPath).toBe("story/")
+  expect(manifest.outputsPath).toBe("outputs/")
+  expect(typeof manifest.createdAt).toBe("string")
+})
+
+// ---------------------------------------------------------------------------
+// 14. Project creation scaffolds story JSON files
+// ---------------------------------------------------------------------------
+test("project creation scaffolds story JSON files", async () => {
+  const token = await registerUser("dev14", "dev14@example.com")
+
+  const res = await app.fetch(
+    new Request("http://localhost/api/platform/projects", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ name: "StoryTest" }),
+    }),
+  )
+  const body = (await res.json()) as Record<string, any>
+  expect(res.status).toBe(201)
+
+  const { readFile, access } = await import("node:fs/promises")
+  const { join } = await import("node:path")
+  const dir = body.project.directory
+
+  // Verify all story files exist
+  const storyFiles = [
+    "story/bible.json",
+    "story/series.json",
+    "story/episodes/ep_001.json",
+    "story/workflow/ep_001.workflow.json",
+    "story/runs/ep_001.runs.json",
+  ]
+
+  for (const relPath of storyFiles) {
+    const fullPath = join(dir, relPath)
+    // Should not throw — file exists
+    await access(fullPath)
+    const content = await readFile(fullPath, "utf-8")
+    const parsed = JSON.parse(content) as Record<string, unknown>
+    expect(parsed.schemaVersion).toBe(1)
+    // Each story file has either projectId, episodeId, or id as its identity field
+    expect(parsed.projectId ?? parsed.episodeId ?? parsed.id).toBeDefined()
+  }
+
+  // bible.json should have the project name as world name
+  const bibleContent = await readFile(join(dir, "story/bible.json"), "utf-8")
+  const bible = JSON.parse(bibleContent) as Record<string, unknown>
+  const world = bible.world as Record<string, unknown>
+  expect(world.name).toBe("StoryTest")
+})
+
+// ---------------------------------------------------------------------------
+// 15. Story JSON has valid schemaVersion field
+// ---------------------------------------------------------------------------
+test("scaffolded story JSON files have valid schemaVersion", async () => {
+  const token = await registerUser("dev15", "dev15@example.com")
+
+  const res = await app.fetch(
+    new Request("http://localhost/api/platform/projects", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ name: "SchemaVersionTest" }),
+    }),
+  )
+  const body = (await res.json()) as Record<string, any>
+  expect(res.status).toBe(201)
+
+  const { readFile } = await import("node:fs/promises")
+  const { join } = await import("node:path")
+  const dir = body.project.directory
+
+  // openimago.json
+  const m = JSON.parse(await readFile(join(dir, "openimago.json"), "utf-8"))
+  expect(m.schemaVersion).toBe(1)
+
+  // bible.json
+  const b = JSON.parse(await readFile(join(dir, "story/bible.json"), "utf-8"))
+  expect(b.schemaVersion).toBe(1)
+
+  // series.json
+  const s = JSON.parse(await readFile(join(dir, "story/series.json"), "utf-8"))
+  expect(s.schemaVersion).toBe(1)
+
+  // episode
+  const e = JSON.parse(await readFile(join(dir, "story/episodes/ep_001.json"), "utf-8"))
+  expect(e.schemaVersion).toBe(1)
+
+  // workflow
+  const w = JSON.parse(await readFile(join(dir, "story/workflow/ep_001.workflow.json"), "utf-8"))
+  expect(w.schemaVersion).toBe(1)
+
+  // runs
+  const r = JSON.parse(await readFile(join(dir, "story/runs/ep_001.runs.json"), "utf-8"))
+  expect(r.schemaVersion).toBe(1)
 })

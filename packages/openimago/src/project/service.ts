@@ -1,4 +1,5 @@
-import { mkdir } from "node:fs/promises"
+import { mkdir, writeFile, access } from "node:fs/promises"
+import path from "node:path"
 import { eq, and, sql, isNull } from "drizzle-orm"
 import { db } from "../db/client"
 import { projects, users } from "../db/schema"
@@ -78,6 +79,12 @@ export class ProjectService {
         })
     }
 
+    // Scaffold AI-readable project files.
+    // Non-fatal: project creation succeeds even if scaffolding partially fails.
+    await this.scaffoldProjectFiles(id, input.name.trim(), directory, now).catch((err) => {
+      logger.warn({ projectId: id, err }, "project.create: scaffold failed — continuing")
+    })
+
     logger.info({ userId: input.userId, projectId: id, name: input.name.trim(), directory }, "project.create: project created")
     return {
       project: {
@@ -90,6 +97,185 @@ export class ProjectService {
       },
       status: 201,
     } as const
+  }
+
+  /**
+   * Scaffold AI-readable project files in the project directory.
+   * Skips any file that already exists (no overwrite).
+   */
+  private async scaffoldProjectFiles(
+    projectId: string,
+    projectName: string,
+    directory: string,
+    createdAt: Date,
+  ) {
+    const now = createdAt.toISOString()
+
+    // --- AGENTS.md ---
+    const agentsPath = path.join(directory, "AGENTS.md")
+    if (!(await this.fileExists(agentsPath))) {
+      const agentsContent = [
+        `# ${projectName}`,
+        "",
+        "## Canonical Layout",
+        "",
+        "```",
+        `${directory}/`,
+        "  AGENTS.md              # this file — AI navigation/operating guide",
+        "  openimago.json         # machine manifest (schema version, paths)",
+        "  story/",
+        "    bible.json           # world settings, characters, scenes, style seeds",
+        "    series.json          # series/episode index and status",
+        "    episodes/ep_001.json # episode 1: script + storyboard",
+        "    workflow/ep_001.workflow.json  # episode 1 generation DAG",
+        "    runs/ep_001.runs.json          # episode 1 run history",
+        "  outputs/               # generated artifacts",
+        "  assets/                # uploaded references",
+        "```",
+        "",
+        "## Current Focus",
+        "",
+        "- **Status:** active",
+        `- **Project ID:** ${projectId}`,
+        `- **Created:** ${now}`,
+        "- **Current Focus:** Story planning / initial concept art",
+        "",
+        "## Rules for AI Agents",
+        "",
+        "1. Story state lives in `story/*.json` files — the filesystem is the canonical source of truth.",
+        "2. Do NOT duplicate story content into the database. Read/write JSON files directly.",
+        "3. Use stable slugs for all IDs (character IDs, scene IDs, shot IDs) — not auto-increment integers.",
+        "4. Every JSON file has a `schemaVersion` field. Increment on breaking changes.",
+        "5. Generated artifacts go into `outputs/`. Reference them by `artifactId` in run results.",
+        "6. Run history tracks every generation with full parameter snapshots. Never mutate old runs.",
+        "7. Template interpolation uses `{{resource.id.field}}` syntax (e.g., `{{character.kai.description}}`).",
+        "8. Keep this AGENTS.md up to date as the project evolves.",
+        "",
+      ].join("\n")
+      await writeFile(agentsPath, agentsContent, "utf-8")
+      logger.info({ projectId, file: "AGENTS.md" }, "project.create: scaffolded AGENTS.md")
+    }
+
+    // --- openimago.json ---
+    const manifestPath = path.join(directory, "openimago.json")
+    if (!(await this.fileExists(manifestPath))) {
+      const manifest = {
+        schemaVersion: 1,
+        projectId,
+        createdAt: now,
+        storyPath: "story/",
+        outputsPath: "outputs/",
+      }
+      await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf-8")
+      logger.info({ projectId, file: "openimago.json" }, "project.create: scaffolded openimago.json")
+    }
+
+    // --- story/ directory ---
+    const storyDir = path.join(directory, "story")
+    await mkdir(storyDir, { recursive: true })
+
+    // --- story/bible.json ---
+    const biblePath = path.join(storyDir, "bible.json")
+    if (!(await this.fileExists(biblePath))) {
+      const bible = {
+        schemaVersion: 1,
+        projectId,
+        world: {
+          name: projectName,
+          description: "",
+          era: "",
+          moodKeywords: [] as string[],
+          visualStyleNotes: "",
+        },
+        characters: [] as Record<string, unknown>[],
+        scenes: [] as Record<string, unknown>[],
+        styleSeeds: [] as Record<string, unknown>[],
+        updatedAt: now,
+      }
+      await writeFile(biblePath, JSON.stringify(bible, null, 2) + "\n", "utf-8")
+      logger.info({ projectId, file: "story/bible.json" }, "project.create: scaffolded story/bible.json")
+    }
+
+    // --- story/series.json ---
+    const seriesPath = path.join(storyDir, "series.json")
+    if (!(await this.fileExists(seriesPath))) {
+      const series = {
+        schemaVersion: 1,
+        projectId,
+        title: projectName,
+        description: "",
+        status: "planning" as const,
+        episodes: [] as Record<string, unknown>[],
+        updatedAt: now,
+      }
+      await writeFile(seriesPath, JSON.stringify(series, null, 2) + "\n", "utf-8")
+      logger.info({ projectId, file: "story/series.json" }, "project.create: scaffolded story/series.json")
+    }
+
+    // --- story/episodes/ ---
+    const episodesDir = path.join(storyDir, "episodes")
+    await mkdir(episodesDir, { recursive: true })
+
+    // --- story/episodes/ep_001.json ---
+    const ep001Path = path.join(episodesDir, "ep_001.json")
+    if (!(await this.fileExists(ep001Path))) {
+      const episode = {
+        schemaVersion: 1,
+        id: "ep_001",
+        episodeNumber: 1,
+        title: "",
+        logline: "",
+        synopsis: "",
+        status: "draft" as const,
+        shots: [] as Record<string, unknown>[],
+        updatedAt: now,
+      }
+      await writeFile(ep001Path, JSON.stringify(episode, null, 2) + "\n", "utf-8")
+      logger.info({ projectId, file: "story/episodes/ep_001.json" }, "project.create: scaffolded story/episodes/ep_001.json")
+    }
+
+    // --- story/workflow/ ---
+    const workflowDir = path.join(storyDir, "workflow")
+    await mkdir(workflowDir, { recursive: true })
+
+    // --- story/workflow/ep_001.workflow.json ---
+    const workflowPath = path.join(workflowDir, "ep_001.workflow.json")
+    if (!(await this.fileExists(workflowPath))) {
+      const workflow = {
+        schemaVersion: 1,
+        episodeId: "ep_001",
+        nodes: [] as Record<string, unknown>[],
+        edges: [] as Record<string, unknown>[],
+      }
+      await writeFile(workflowPath, JSON.stringify(workflow, null, 2) + "\n", "utf-8")
+      logger.info({ projectId, file: "story/workflow/ep_001.workflow.json" }, "project.create: scaffolded story/workflow/ep_001.workflow.json")
+    }
+
+    // --- story/runs/ ---
+    const runsDir = path.join(storyDir, "runs")
+    await mkdir(runsDir, { recursive: true })
+
+    // --- story/runs/ep_001.runs.json ---
+    const runsPath = path.join(runsDir, "ep_001.runs.json")
+    if (!(await this.fileExists(runsPath))) {
+      const runs = {
+        schemaVersion: 1,
+        episodeId: "ep_001",
+        runs: [] as Record<string, unknown>[],
+      }
+      await writeFile(runsPath, JSON.stringify(runs, null, 2) + "\n", "utf-8")
+      logger.info({ projectId, file: "story/runs/ep_001.runs.json" }, "project.create: scaffolded story/runs/ep_001.runs.json")
+    }
+  }
+
+  /** Check whether a file exists without throwing. */
+  private async fileExists(filePath: string): Promise<boolean> {
+    try {
+      await access(filePath)
+      return true
+    } catch {
+      return false
+    }
   }
 
   async list(input: { userId: string; status?: string }) {
