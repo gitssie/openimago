@@ -139,6 +139,70 @@ export interface WorkspaceFile extends Omit<MediaToolResultV1, 'access' | 'creat
   generationRun?: import('../components/session-workspace/types').GenerationRunMetadata
 }
 
+// ── Story Types (ADR 0004, openimago-1a3) ─────────────────────────────────────
+//
+// Mirror the scaffold JSON shapes from ProjectService.scaffoldProjectFiles().
+// These are read-only types used by the story API bridge.
+
+export interface OpenimagoStoryManifest {
+  schemaVersion: number
+  projectId: string
+  createdAt: string
+  storyPath: string
+  outputsPath: string
+}
+
+export interface OpenimagoStoryBible {
+  schemaVersion: number
+  projectId: string
+  world: {
+    name: string
+    description: string
+    era: string
+    moodKeywords: string[]
+    visualStyleNotes: string
+  }
+  characters: Record<string, unknown>[]
+  scenes: Record<string, unknown>[]
+  styleSeeds: Record<string, unknown>[]
+  updatedAt: string
+}
+
+export interface OpenimagoStorySeries {
+  schemaVersion: number
+  projectId: string
+  title: string
+  description: string
+  status: string
+  episodes: Record<string, unknown>[]
+  updatedAt: string
+}
+
+export interface OpenimagoStoryEpisode {
+  schemaVersion: number
+  id: string
+  episodeNumber: number
+  title: string
+  logline: string
+  synopsis: string
+  status: string
+  shots: Record<string, unknown>[]
+  updatedAt: string
+}
+
+export interface OpenimagoStoryWorkflow {
+  schemaVersion: number
+  episodeId: string
+  nodes: Record<string, unknown>[]
+  edges: Record<string, unknown>[]
+}
+
+export interface OpenimagoStoryRuns {
+  schemaVersion: number
+  episodeId: string
+  runs: Record<string, unknown>[]
+}
+
 // ── Billing ──────────────────────────────────────────────────────────────────
 
 export interface BillingAccount {
@@ -373,6 +437,41 @@ export const api = {
   // Project files — flat file listing for a project
   projectFiles: (projectId: string) =>
     request<{ files: WorkspaceFile[] }>(`/api/platform/projects/${projectId}/files`).then((r) => r.files ?? []),
+
+  // ── Story Data (read-only project scaffold files) ───────────────────────────
+  //
+  // Fetches story JSON files from the project directory (ADRs 0004+, openimago-1a3).
+  // Each method returns the raw data on success or null when the file is missing
+  // (project may not have been scaffolded yet, or the file was deleted).
+
+  projectStoryManifest: (projectId: string) =>
+    request<{ manifest: OpenimagoStoryManifest }>(`/api/platform/projects/${projectId}/story/manifest`)
+      .then((r) => r.manifest)
+      .catch(() => null),
+  projectStoryBible: (projectId: string) =>
+    request<{ bible: OpenimagoStoryBible }>(`/api/platform/projects/${projectId}/story/bible`)
+      .then((r) => r.bible)
+      .catch(() => null),
+  projectStorySeries: (projectId: string) =>
+    request<{ series: OpenimagoStorySeries }>(`/api/platform/projects/${projectId}/story/series`)
+      .then((r) => r.series)
+      .catch(() => null),
+  projectStoryEpisode: (projectId: string, episodeId: string) =>
+    request<{ episode: OpenimagoStoryEpisode }>(`/api/platform/projects/${projectId}/story/episodes/${episodeId}`)
+      .then((r) => r.episode)
+      .catch(() => null),
+  projectStoryWorkflow: (projectId: string, episodeId: string) =>
+    request<{ workflow: OpenimagoStoryWorkflow }>(`/api/platform/projects/${projectId}/story/episodes/${episodeId}/workflow`)
+      .then((r) => r.workflow)
+      .catch(() => null),
+  projectStoryRuns: (projectId: string, episodeId: string) =>
+    request<{ runs: OpenimagoStoryRuns }>(`/api/platform/projects/${projectId}/story/episodes/${episodeId}/runs`)
+      .then((r) => r.runs)
+      .catch(() => null),
+  projectStoryAgents: (projectId: string) =>
+    request(`/api/platform/projects/${projectId}/story/agents`)
+      .then(() => null)
+      .catch(() => null),
 
   // ── Rerun (stub, openimago-xkn / ADR 0003) ────────────────────────────
   //
