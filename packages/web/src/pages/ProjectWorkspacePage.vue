@@ -46,11 +46,10 @@
       @add-element="onAddElement"
       @add-to-group="onAddToGroup"
       @play-output="onPlayOutput"
-      @apply-prompt="onApplyPrompt"
       @session-select="onSessionSelect"
       @session-create="onSessionCreate"
     >
-      <template #assistant-chat>
+      <template #center-session>
         <SessionChatView
           ref="chatViewRef"
           :session-id="sessionId"
@@ -443,14 +442,6 @@ function onPlayOutput(id: string) {
   if (output) {
     $q.notify({ color: 'info', message: `播放 ${output.filename}（待接入）`, icon: 'play_circle' })
   }
-}
-
-function onApplyPrompt(value: string) {
-  // Forward the prompt into the active session via the existing input flow.
-  // The grid's `apply-prompt` is a UI shortcut; the real submission goes
-  // through submitDraftMessage so attachments / queueing stay consistent.
-  draftInputMessage.value = value
-  void submitDraftMessage(value)
 }
 
 async function onSessionSelect(sid: string) {

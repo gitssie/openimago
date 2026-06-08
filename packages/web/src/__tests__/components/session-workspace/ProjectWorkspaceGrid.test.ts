@@ -181,3 +181,101 @@ describe('ProjectWorkspaceGrid — left panel sessions', () => {
     expect(wrapper.find('.element-group').exists()).toBe(true)
   })
 })
+
+describe('ProjectWorkspaceGrid — center session content', () => {
+  it('renders center-session slot in the center column', () => {
+    const stubSessionContent = '<div class="session-content-stub">会话内容</div>'
+
+    const wrapper = mount(ProjectWorkspaceGrid, {
+      global: { plugins: [mockQuasarPlugin] },
+      props: {
+        projectName: '测试项目',
+        projectStatus: 'active',
+        sessions: [makeSessionCard({ active: true })],
+        activeSessionId: 'session-1',
+        hasSession: true,
+      },
+      slots: {
+        'center-session': stubSessionContent,
+      },
+    })
+
+    const center = wrapper.find('.grid-column--center')
+    expect(center.exists()).toBe(true)
+    expect(center.find('.session-content-stub').exists()).toBe(true)
+  })
+
+  it('renders slot content for active session in center area', () => {
+    const stubContent = '<div class="chat-view-mock">Chat View Content</div>'
+
+    const wrapper = mount(ProjectWorkspaceGrid, {
+      global: { plugins: [mockQuasarPlugin] },
+      props: {
+        projectName: '测试项目',
+        projectStatus: 'active',
+        sessions: [makeSessionCard({ id: 's1', active: true })],
+        activeSessionId: 's1',
+        hasSession: true,
+        sessionLabel: '当前会话',
+      },
+      slots: {
+        'center-session': stubContent,
+      },
+    })
+
+    expect(wrapper.find('.chat-view-mock').exists()).toBe(true)
+  })
+
+  it('shows no-session placeholder in center when no session is active', () => {
+    const wrapper = mount(ProjectWorkspaceGrid, {
+      global: { plugins: [mockQuasarPlugin] },
+      props: {
+        projectName: '测试项目',
+        projectStatus: 'active',
+        sessions: [],
+        activeSessionId: null,
+        hasSession: false,
+      },
+    })
+
+    const center = wrapper.find('.grid-column--center')
+    expect(center.find('.center-session-empty').exists()).toBe(true)
+    expect(center.find('.center-session-empty').text()).toContain('选择左侧会话')
+  })
+
+  it('keeps shot strip (outputs) visible at bottom of center area', () => {
+    const outputs: ShotOutputItem[] = [makeOutput({ id: 'o1', filename: 'test.png' })]
+
+    const wrapper = mount(ProjectWorkspaceGrid, {
+      global: { plugins: [mockQuasarPlugin] },
+      props: {
+        projectName: '测试项目',
+        projectStatus: 'active',
+        sessions: [makeSessionCard()],
+        activeSessionId: null,
+        hasSession: false,
+        outputs,
+      },
+    })
+
+    // Shot strip (outputs) should still be visible below the session area
+    expect(wrapper.find('.shot-strip').exists()).toBe(true)
+  })
+
+  it('does not show scaffold shot empty state when a session is active', () => {
+    const wrapper = mount(ProjectWorkspaceGrid, {
+      global: { plugins: [mockQuasarPlugin] },
+      props: {
+        projectName: '测试项目',
+        projectStatus: 'active',
+        sessions: [makeSessionCard({ active: true })],
+        activeSessionId: 'session-1',
+        hasSession: true,
+        sessionLabel: '当前会话',
+      },
+    })
+
+    // The old "选择或生成一个镜头" empty state should not be visible
+    expect(wrapper.find('.shot-feature__empty').exists()).toBe(false)
+  })
+})

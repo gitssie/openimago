@@ -271,185 +271,38 @@
         </div>
       </aside>
 
-      <!-- CENTER: shot / output workspace ──────────────────────────── -->
+      <!-- CENTER: active session conversation workspace ────────────── -->
       <section
         class="grid-column grid-column--center"
         role="main"
-        :aria-label="`${WORKSPACE_TAB_LABEL[activeWorkspaceTab] || '工作区'} 视图`"
+        :aria-label="'活跃会话工作区'"
       >
-        <!-- Selected output feature preview — always present (placeholder when none) -->
-        <div class="shot-feature" :aria-label="'当前镜头 / 产出预览'">
-          <div class="shot-feature__frame">
-            <img
-              v-if="selectedOutput && selectedOutput.kind === 'image' && selectedOutput.url"
-              :src="selectedOutput.url"
-              :alt="selectedOutput.filename || '当前产出'"
-              class="shot-feature__image"
-            >
-            <div
-              v-else-if="selectedOutput && selectedOutput.kind === 'video' && selectedOutput.url"
-              class="shot-feature__video"
-              role="img"
-              :aria-label="`视频预览 — ${selectedOutput.filename || '当前产出'}`"
-            >
-              <img :src="selectedOutput.url" :alt="''" class="shot-feature__image">
-              <button
-                type="button"
-                class="shot-feature__play"
-                :aria-label="'播放视频'"
-                @click="handlePlaySelected"
-              >
-                <q-icon name="play_circle" size="56px" color="white" />
-              </button>
-            </div>
-            <div v-else class="shot-feature__empty">
-              <div class="shot-feature__empty-art" aria-hidden="true">
-                <div class="shot-feature__empty-ring" />
-                <q-icon name="auto_awesome" size="28px" color="grey-6" />
+        <!--
+          Slot: center session content
+          ──────────────────────────────
+          Parent (ProjectWorkspacePage) injects <SessionChatView> here, with
+          all the existing useAgentSession props wired up. This is the primary
+          work surface for the active project session.
+        -->
+        <div class="center-session-area">
+          <slot name="center-session">
+            <div class="center-session-empty" :aria-busy="isAssistantBusy">
+              <div class="center-session-empty__art" aria-hidden="true">
+                <div class="center-session-empty__ring" />
+                <q-icon name="forum" size="28px" color="grey-6" />
               </div>
-              <div class="shot-feature__empty-title">选择或生成一个镜头</div>
-              <div class="shot-feature__empty-hint">
-                在右侧 AI 助手中描述你的想法，或从左侧故事元素中拖入素材。
+              <div class="center-session-empty__title">选择左侧会话</div>
+              <div class="center-session-empty__hint">
+                在左侧选择一个会话，或创建新会话开始对话。
               </div>
             </div>
-          </div>
-
-          <div class="shot-feature__body">
-            <div class="shot-feature__meta-row">
-              <span v-if="selectedOutput" class="shot-feature__filename">
-                {{ selectedOutput.filename || '未命名产出' }}
-              </span>
-              <span v-else class="shot-feature__filename shot-feature__filename--placeholder">
-                暂无选中产出
-              </span>
-              <span v-if="selectedOutput && selectedOutput.kind" class="shot-feature__kind">
-                {{ kindLabel(selectedOutput.kind) }}
-              </span>
-              <!-- TODO: provider / model meta when data lands -->
-              <span
-                v-if="selectedOutput && selectedOutput.model"
-                class="shot-feature__model"
-                :aria-label="`使用模型 ${selectedOutput.model}`"
-              >
-                {{ selectedOutput.model }}
-              </span>
-              <!-- TODO: resolution / duration placeholders, render only when data exists -->
-              <span
-                v-if="selectedOutput && selectedOutput.resolution"
-                class="shot-feature__resolution"
-              >
-                {{ selectedOutput.resolution }}
-              </span>
-              <span
-                v-if="selectedOutput && selectedOutput.durationLabel"
-                class="shot-feature__duration"
-              >
-                {{ selectedOutput.durationLabel }}
-              </span>
-            </div>
-            <div v-if="selectedOutput && selectedOutput.promptText" class="shot-feature__prompt">
-              {{ selectedOutput.promptText }}
-            </div>
-          </div>
-        </div>
-
-        <!-- Center tabs: 提示词 / 镜头参数 / 运动控制 / 风格参考 / 负面提示 -->
-        <nav class="center-tabs" role="tablist" aria-label="镜头编辑标签">
-          <button
-            v-for="tab in CENTER_TABS"
-            :key="tab.id"
-            type="button"
-            role="tab"
-            :id="`center-tab-${tab.id}`"
-            :aria-selected="activeCenterTab === tab.id"
-            :aria-controls="`center-tabpanel-${tab.id}`"
-            :tabindex="activeCenterTab === tab.id ? 0 : -1"
-            class="center-tab"
-            :class="{ 'center-tab--active': activeCenterTab === tab.id }"
-            @click="handleCenterTabSelect(tab.id)"
-          >
-            {{ tab.label }}
-          </button>
-        </nav>
-
-        <!-- Center tab panels — only the prompt editor is wired in this scaffold -->
-        <div
-          class="center-panel"
-          :id="`center-tabpanel-${activeCenterTab}`"
-          role="tabpanel"
-          :aria-labelledby="`center-tab-${activeCenterTab}`"
-        >
-          <div v-if="activeCenterTab === 'prompt'" class="center-panel__prompt">
-            <label class="center-panel__field-label" for="shot-prompt-input">
-              提示词
-            </label>
-            <textarea
-              id="shot-prompt-input"
-              v-model="promptDraft"
-              class="center-panel__prompt-input"
-              rows="4"
-              :placeholder="'描述你想要的镜头、运镜、风格、光照…'"
-              :aria-label="'镜头提示词编辑器'"
-              @input="handlePromptDraftInput"
-            />
-            <div class="center-panel__prompt-footer">
-              <span class="center-panel__prompt-hint">
-                <!-- TODO: Show negative prompt or last-used prompt from session history -->
-                将作为下次生成的主提示词
-              </span>
-              <button
-                type="button"
-                class="center-panel__prompt-apply"
-                :disabled="!promptDraft.trim() || isApplyingPrompt"
-                @click="handleApplyPrompt"
-              >
-                <q-icon v-if="isApplyingPrompt" name="hourglass_top" size="14px" class="q-mr-xs" />
-                <span>{{ isApplyingPrompt ? '已应用' : '应用到生成' }}</span>
-              </button>
-            </div>
-          </div>
-
-          <div v-else-if="activeCenterTab === 'camera'" class="center-panel__placeholder">
-            <q-icon name="camera" size="22px" color="grey-6" class="q-mb-sm" />
-            <div class="center-panel__placeholder-title">镜头参数</div>
-            <div class="center-panel__placeholder-hint">
-              <!-- TODO: bind to camera / lens / focal / aperture data when schema lands -->
-              景别、视角、镜头类型等参数将基于产出模型自动推断。
-            </div>
-          </div>
-
-          <div v-else-if="activeCenterTab === 'motion'" class="center-panel__placeholder">
-            <q-icon name="directions_run" size="22px" color="grey-6" class="q-mb-sm" />
-            <div class="center-panel__placeholder-title">运动控制</div>
-            <div class="center-panel__placeholder-hint">
-              <!-- TODO: bind to motion / camera-trajectory fields when supported -->
-              运镜轨迹、主体运动将在视频模型支持时呈现。
-            </div>
-          </div>
-
-          <div v-else-if="activeCenterTab === 'style'" class="center-panel__placeholder">
-            <q-icon name="palette" size="22px" color="grey-6" class="q-mb-sm" />
-            <div class="center-panel__placeholder-title">风格参考</div>
-            <div class="center-panel__placeholder-hint">
-              <!-- TODO: bind to style / reference-image set when supported -->
-              可从左侧故事元素拖入参考图，约束本次生成风格。
-            </div>
-          </div>
-
-          <div v-else-if="activeCenterTab === 'negative'" class="center-panel__placeholder">
-            <q-icon name="block" size="22px" color="grey-6" class="q-mb-sm" />
-            <div class="center-panel__placeholder-title">负面提示</div>
-            <div class="center-panel__placeholder-hint">
-              <!-- TODO: bind to negative-prompt editor -->
-              描述需要避免的元素、风格与构图问题。
-            </div>
-          </div>
+          </slot>
         </div>
 
         <!-- Bottom shot strip — outputs from the active project, shot-like thumbnails -->
         <div class="shot-strip" :aria-label="'项目产出 — 镜头序列'">
           <header class="shot-strip__header">
-            <h3 class="shot-strip__title">镜头序列</h3>
+            <h3 class="shot-strip__title">产出</h3>
             <span class="shot-strip__count">{{ outputs.length }}</span>
           </header>
 
@@ -472,7 +325,7 @@
               :aria-selected="selectedOutputId === item.id"
               class="shot-thumb"
               :class="{ 'shot-thumb--active': selectedOutputId === item.id }"
-              :aria-label="`镜头 ${index + 1} — ${item.filename || '产出'}`"
+              :aria-label="`产出 ${index + 1} — ${item.filename || '产出'}`"
               @click="handleOutputSelect(item.id)"
             >
               <div class="shot-thumb__frame">
@@ -496,71 +349,94 @@
 
           <div v-else class="shot-strip__empty" :aria-label="'暂无产出'">
             <q-icon name="image" size="18px" color="grey-7" />
-            <span>暂无产出 — 在右侧 AI 助手中生成第一个镜头</span>
+            <span>暂无产出</span>
           </div>
         </div>
       </section>
 
-      <!-- RIGHT: AI 制作助手 ──────────────────────────────────────── -->
+      <!-- RIGHT: 产出预览 + 状态 ──────────────────────────────────── -->
       <aside
         class="grid-column grid-column--right"
-        :aria-label="'AI 制作助手'"
+        :aria-label="'产出预览与项目状态'"
         role="complementary"
       >
         <div class="grid-column__header">
           <div class="grid-column__title-block">
-            <h2 class="grid-column__title">AI 制作助手</h2>
+            <h2 class="grid-column__title">产出预览</h2>
             <p class="grid-column__subtitle">
-              会话状态与生产流程
+              项目输出与资源概览
             </p>
           </div>
           <span
             v-if="assistantStatus"
             class="grid-column__status"
             :class="`grid-column__status--${assistantStatus.tone}`"
-            :aria-label="`助手状态 — ${assistantStatus.label}`"
+            :aria-label="`当前状态 — ${assistantStatus.label}`"
           >
             <span class="grid-column__status-dot" aria-hidden="true" />
             {{ assistantStatus.label }}
           </span>
         </div>
 
-        <!-- Session preview — reuses the existing SessionChatView with the same props -->
-        <div class="assistant-chat" :aria-label="'当前会话消息预览'">
-          <div v-if="hasSession" class="assistant-chat__session-meta">
-            <q-icon name="forum" size="13px" class="assistant-chat__session-icon" />
-            <span class="assistant-chat__session-name">{{ sessionLabel || '当前会话' }}</span>
+        <!-- Selected output feature preview — moved from center -->
+        <div class="output-preview" :aria-label="'产出预览'">
+          <div class="output-preview__frame">
+            <img
+              v-if="selectedOutput && selectedOutput.kind === 'image' && selectedOutput.url"
+              :src="selectedOutput.url"
+              :alt="selectedOutput.filename || '当前产出'"
+              class="output-preview__image"
+            >
+            <div
+              v-else-if="selectedOutput && selectedOutput.kind === 'video' && selectedOutput.url"
+              class="output-preview__video"
+              role="img"
+              :aria-label="`视频预览 — ${selectedOutput.filename || '当前产出'}`"
+            >
+              <img :src="selectedOutput.url" :alt="''" class="output-preview__image">
+              <button
+                type="button"
+                class="output-preview__play"
+                :aria-label="'播放视频'"
+                @click="handlePlaySelected"
+              >
+                <q-icon name="play_circle" size="40px" color="white" />
+              </button>
+            </div>
+            <div v-else class="output-preview__empty">
+              <q-icon name="image" size="24px" color="grey-6" />
+              <div class="output-preview__empty-text">暂无选中产出</div>
+            </div>
           </div>
-          <div v-else class="assistant-chat__no-session">
-            <q-icon name="chat_bubble_outline" size="16px" color="grey-6" />
-            <span>尚无活动会话</span>
-          </div>
-          <!--
-            Slot: assistant chat surface
-            ────────────────────────────
-            Parent (ProjectWorkspacePage) injects <SessionChatView> here, with
-            all the existing useAgentSession props wired up. The scaffold is
-            responsible only for layout, padding, and visual treatment.
 
-            If the slot is empty, fall back to a minimal placeholder so the
-            visual rhythm of the right column is preserved.
-          -->
-          <div class="assistant-chat__surface">
-            <slot name="assistant-chat">
-              <div class="assistant-chat__placeholder" :aria-busy="isAssistantBusy">
-                <q-icon name="auto_awesome" size="20px" color="grey-6" />
-                <div class="assistant-chat__placeholder-title">会话消息</div>
-                <div class="assistant-chat__placeholder-hint">
-                  父级组件未注入 SessionChatView
-                </div>
-              </div>
-            </slot>
+          <div class="output-preview__body">
+            <div class="output-preview__meta-row">
+              <span v-if="selectedOutput" class="output-preview__filename">
+                {{ selectedOutput.filename || '未命名产出' }}
+              </span>
+              <span v-else class="output-preview__filename output-preview__filename--placeholder">
+                选择产出查看详情
+              </span>
+              <span v-if="selectedOutput && selectedOutput.kind" class="output-preview__kind">
+                {{ kindLabel(selectedOutput.kind) }}
+              </span>
+              <span
+                v-if="selectedOutput && selectedOutput.model"
+                class="output-preview__model"
+                :aria-label="`使用模型 ${selectedOutput.model}`"
+              >
+                {{ selectedOutput.model }}
+              </span>
+            </div>
+            <div v-if="selectedOutput && selectedOutput.promptText" class="output-preview__prompt">
+              {{ selectedOutput.promptText }}
+            </div>
           </div>
         </div>
 
-        <!-- Project status / production workflow — scaffold only, no real data -->
+        <!-- Project status / production workflow -->
         <div class="production-status" :aria-label="'项目生产状态'">
-          <h3 class="production-status__title">生产状态</h3>
+          <h3 class="production-status__title">项目状态</h3>
           <dl class="production-status__metrics">
             <div class="production-status__metric">
               <dt class="production-status__metric-label">会话</dt>
@@ -579,36 +455,6 @@
               <dd class="production-status__metric-value">{{ fileCount }}</dd>
             </div>
           </dl>
-
-          <div class="production-status__workflow">
-            <!--
-              TODO: Production workflow cards must NOT be presented as real data.
-              They are scaffold placeholders. Coder should source these from real
-              loading/sync/export state (e.g., isLoading + pendingQuestion, asset
-              upload progress, projectOutputs refresh) or remove the section.
-            -->
-            <div class="workflow-card workflow-card--scaffold" aria-label="工作流卡片 — 占位">
-              <q-icon name="movie_creation" size="16px" color="grey-6" />
-              <div class="workflow-card__body">
-                <div class="workflow-card__title">分镜脚本</div>
-                <div class="workflow-card__hint">未配置 — 需要后续接入</div>
-              </div>
-            </div>
-            <div class="workflow-card workflow-card--scaffold" aria-label="工作流卡片 — 占位">
-              <q-icon name="animation" size="16px" color="grey-6" />
-              <div class="workflow-card__body">
-                <div class="workflow-card__title">镜头生成</div>
-                <div class="workflow-card__hint">未配置 — 需要后续接入</div>
-              </div>
-            </div>
-            <div class="workflow-card workflow-card--scaffold" aria-label="工作流卡片 — 占位">
-              <q-icon name="graphic_eq" size="16px" color="grey-6" />
-              <div class="workflow-card__body">
-                <div class="workflow-card__title">音频合成</div>
-                <div class="workflow-card__hint">未配置 — 需要后续接入</div>
-              </div>
-            </div>
-          </div>
         </div>
       </aside>
     </div>
@@ -616,7 +462,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 // ── Types (match existing OutputItem in ProjectWorkspacePage.vue) ────────────
 //
@@ -733,7 +579,6 @@ const emit = defineEmits<{
   (e: 'add-element'): void
   (e: 'add-to-group', group: StoryElementKind): void
   (e: 'play-output', id: string): void
-  (e: 'apply-prompt', value: string): void
   (e: 'session-select', id: string): void
   (e: 'session-create'): void
 }>()
@@ -741,25 +586,7 @@ const emit = defineEmits<{
 // ── Local state (UI-only, no business logic) ─────────────────────────────────
 
 const activeWorkspaceTab = ref<WorkspaceTabId>('storyboard')
-const activeCenterTab = ref<CenterTabId>('prompt')
-const promptDraft = ref('')
-const isApplyingPrompt = ref(false)
 const storyElementsExpanded = ref(false)
-
-watch(
-  () => props.selectedOutputId,
-  (id) => {
-    // When the user selects a different output in the page (e.g. from the right
-    // panel), pre-fill the prompt editor with that output's prompt. Pure UI.
-    if (!id) {
-      promptDraft.value = ''
-      return
-    }
-    const next = props.outputs.find((item) => item.id === id)
-    promptDraft.value = next?.promptText ?? ''
-  },
-  { immediate: true },
-)
 
 // ── Static tab definitions (table-driven to keep template tidy) ──────────────
 
@@ -777,23 +604,6 @@ const WORKSPACE_TABS: ReadonlyArray<TabDescriptor<WorkspaceTabId>> = [
   { id: 'audio', label: '音频' },
   { id: 'exports', label: '导出记录' },
 ]
-
-const CENTER_TABS: ReadonlyArray<TabDescriptor<CenterTabId>> = [
-  { id: 'prompt', label: '提示词' },
-  { id: 'camera', label: '镜头参数' },
-  { id: 'motion', label: '运动控制' },
-  { id: 'style', label: '风格参考' },
-  { id: 'negative', label: '负面提示' },
-]
-
-const WORKSPACE_TAB_LABEL: Readonly<Record<WorkspaceTabId, string>> = {
-  overview: '概览',
-  storyboard: '故事板',
-  timeline: '时间线',
-  edit: '剪辑',
-  audio: '音频',
-  exports: '导出记录',
-}
 
 const STORY_ELEMENT_GROUPS: ReadonlyArray<{
   id: StoryElementKind
@@ -840,10 +650,6 @@ function handleWorkspaceTabSelect(tab: WorkspaceTabId): void {
   emit('workspace-tab-change', tab)
 }
 
-function handleCenterTabSelect(tab: CenterTabId): void {
-  activeCenterTab.value = tab
-}
-
 function handleOutputSelect(id: string): void {
   emit('output-select', id)
 }
@@ -872,24 +678,6 @@ function handlePlaySelected(): void {
   if (props.selectedOutputId) emit('play-output', props.selectedOutputId)
 }
 
-function handlePromptDraftInput(event: Event): void {
-  const target = event.target as HTMLTextAreaElement | null
-  if (!target) return
-  promptDraft.value = target.value
-}
-
-function handleApplyPrompt(): void {
-  const value = promptDraft.value.trim()
-  if (!value || isApplyingPrompt.value) return
-  isApplyingPrompt.value = true
-  emit('apply-prompt', value)
-  // Reset the spinner after a short delay; real success/error handling belongs
-  // to the coder (driven by the parent's generation result).
-  window.setTimeout(() => {
-    isApplyingPrompt.value = false
-  }, 600)
-}
-
 function syncLabel(state: NonNullable<StoryElement['syncState']>): string {
   if (state === 'synced') return '已同步'
   if (state === 'pending') return '同步中'
@@ -908,9 +696,6 @@ function kindLabel(kind: ShotOutputItem['kind']): string {
 defineExpose({
   setActiveWorkspaceTab: (tab: WorkspaceTabId) => {
     activeWorkspaceTab.value = tab
-  },
-  setActiveCenterTab: (tab: CenterTabId) => {
-    activeCenterTab.value = tab
   },
 })
 </script>
@@ -1820,7 +1605,206 @@ defineExpose({
   overflow: hidden;
 }
 
-// ── CENTER: shot feature / tabs / shot strip ────────────────────────────────
+// ── CENTER: Session conversation workspace ─────────────────────────────────
+
+.center-session-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.center-session-area > :slotted(*) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.center-session-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  padding: 32px 24px;
+  text-align: center;
+}
+
+.center-session-empty__art {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.center-session-empty__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--imago-border-cyan);
+  box-shadow: var(--imago-glow-cyan-soft);
+  animation: empty-pulse 3.5s ease-in-out infinite;
+}
+
+.center-session-empty__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--imago-text-secondary);
+}
+
+.center-session-empty__hint {
+  max-width: 320px;
+  font-size: 13px;
+  color: var(--imago-text-dim);
+  line-height: 1.55;
+}
+
+// ── RIGHT: Output preview ───────────────────────────────────────────────────
+
+.output-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 18px 12px;
+  flex-shrink: 0;
+}
+
+.output-preview__frame {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--imago-radius-lg);
+  border: 1px solid var(--imago-border-soft);
+  background: var(--imago-bg-surface);
+}
+
+.output-preview__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.output-preview__video {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.output-preview__play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity var(--imago-ease-fast), transform var(--imago-ease-fast),
+    background var(--imago-ease-fast);
+
+  &:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.55);
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--imago-neon-cyan);
+    outline-offset: 2px;
+  }
+}
+
+.output-preview__empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  background: var(--imago-bg-deep);
+}
+
+.output-preview__empty-text {
+  font-size: 12px;
+  color: var(--imago-text-dim);
+}
+
+.output-preview__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.output-preview__meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--imago-text-dim);
+}
+
+.output-preview__filename {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--imago-text-primary);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.output-preview__filename--placeholder {
+  color: var(--imago-text-faint);
+  font-weight: 500;
+}
+
+.output-preview__kind,
+.output-preview__model {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: var(--imago-radius-pill);
+  font-size: 10px;
+  font-weight: 500;
+  background: var(--imago-bg-raised);
+  color: var(--imago-text-muted);
+  border: 1px solid var(--imago-border-light);
+}
+
+.output-preview__kind {
+  color: var(--imago-neon-cyan);
+  border-color: var(--imago-border-cyan);
+  background: var(--imago-cyan-06);
+}
+
+.output-preview__prompt {
+  font-size: 11.5px;
+  color: var(--imago-text-dim);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+// ── OLD: Shot feature styles (kept for backward compat, used by right panel now) ─
 
 .shot-feature {
   display: flex;
@@ -2329,99 +2313,10 @@ defineExpose({
   background: var(--imago-cyan-04);
 }
 
-// ── RIGHT: AI assistant ──────────────────────────────────────────────────────
-.assistant-chat {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 0 18px 16px;
-  flex-shrink: 0;
-}
+// ── RIGHT: output preview + status ───────────────────────────────────────────
 
-.assistant-chat__session-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border: 1px solid var(--imago-border-soft);
-  border-radius: var(--imago-radius-md);
-  background: var(--imago-bg-raised);
-  color: var(--imago-text-secondary);
-  font-size: 11.5px;
-  font-weight: 500;
-  align-self: flex-start;
-  max-width: 100%;
-}
-
-.assistant-chat__session-icon { color: var(--imago-neon-cyan); opacity: 0.85; }
-
-.assistant-chat__session-name {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 220px;
-}
-
-.assistant-chat__no-session {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border: 1px dashed var(--imago-border-light);
-  border-radius: var(--imago-radius-md);
-  color: var(--imago-text-faint);
-  font-size: 11.5px;
-  align-self: flex-start;
-}
-
-.assistant-chat__placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 20px 16px;
-  border: 1px dashed var(--imago-border-light);
-  border-radius: var(--imago-radius-lg);
-  background: var(--imago-bg-surface);
-  text-align: center;
-}
-
-.assistant-chat__placeholder-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--imago-text-secondary);
-}
-
-.assistant-chat__placeholder-hint {
-  font-size: 11.5px;
-  color: var(--imago-text-dim);
-  line-height: 1.5;
-  max-width: 240px;
-}
-
-// Surface that hosts the slot-injected chat (SessionChatView, etc.)
-.assistant-chat__surface {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  flex: 1 1 auto;
-  border: 1px solid var(--imago-border-light);
-  border-radius: var(--imago-radius-lg);
-  background: var(--imago-bg-surface);
-  overflow: hidden;
-}
-
-.assistant-chat__surface > :slotted(*) {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-}
-
-// Right column internal layout: header + (flex) chat + production status.
-// The right column is the only scrolling container when its content exceeds
-// the viewport; production status stays at the bottom.
+// Right column internal layout: header + (flex) output preview + production status.
+// Production status stays at the bottom.
 .grid-column--right {
   display: flex;
   flex-direction: column;
@@ -2432,14 +2327,13 @@ defineExpose({
   flex-shrink: 0;
 }
 
-.grid-column--right .assistant-chat {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
+.grid-column--right .output-preview {
+  flex-shrink: 0;
 }
 
 .grid-column--right .production-status {
   flex-shrink: 0;
+  margin-top: auto;
 }
 
 // Production status
