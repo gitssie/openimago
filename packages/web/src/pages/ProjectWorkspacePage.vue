@@ -1,190 +1,99 @@
 <template>
+  <!--
+    DESIGN NOTE — page-level composition (Designer → Coder hand-off)
+    ────────────────────────────────────────────────────────────────
+    This page is a *thin* data shell. All of its previous left-sidebar /
+    preview-panel scaffolding has been removed in favor of the new
+    ProjectWorkspaceGrid component, which now owns the three-column visual
+    layout (story elements · shot/output workspace · AI assistant).
+
+    Responsibilities retained by the page:
+      • Owns the useAgentSession composable and the project output/file state
+      • Owns the PromptInput footer (bottom composer) and AgentQuestion slot
+      • Fetches project data, archives / edits the project
+      • Computes derived data (sidebarSessions, storyElements, outputCount)
+        and forwards them as props to the new grid
+      • Injects <SessionChatView> into the grid's `assistant-chat` slot
+
+    The grid's emit handlers are wired 1:1 to existing page handlers below
+    so the existing routing, archive, and message-send flows keep working.
+  -->
   <q-page :style-fn="pageHeightFn" class="project-workspace" style="padding: 0; overflow: hidden;">
-    <UILayout class="project-layout relative full-height" view="hhh lpr lfr" container>
-      <UILayoutDrawer :model-value="!sidebarCollapsed" side="left" :width="256" :breakpoint="1024" bordered show-if-above @update:model-value="sidebarCollapsed = !$event">
-        <div class="sidebar-with-tabs">
-          <q-tabs v-model="activeTab" dense no-caps active-color="grey-4" indicator-color="grey-7" class="project-tabs" narrow-indicator>
-            <q-tab name="chat" icon="chat" label="会话" />
-            <q-tab name="outputs" icon="image" label="产出" />
-            <q-tab name="files" icon="folder" label="文件" />
-          </q-tabs>
+    <ProjectWorkspaceGrid
+      :project-name="projectName"
+      :project-status="projectStatus"
+      :outputs="gridOutputs"
+      :outputs-loading="projectOutputsLoading"
+      :selected-output-id="selectedOutputId"
+      :story-elements="storyElements"
+      :session-count="sessionList.length"
+      :output-count="projectOutputs.length"
+      :file-count="projectFiles.length"
+      :has-session="Boolean(sessionId)"
+      :session-label="currentSessionLabel"
+      :is-assistant-busy="isLoading"
+      :assistant-status="assistantStatus"
+      :credits-label="creditsLabel"
+      :sessions="sidebarSessions"
+      :active-session-id="sessionId"
+      :is-session-switching="isSessionSwitching"
+      @back="onBackToProjects"
+      @open-assets="onOpenAssets"
+      @open-export="onOpenExport"
+      @workspace-tab-change="onWorkspaceTabChange"
+      @output-select="onGridOutputSelect"
+      @element-select="onGridElementSelect"
+      @add-element="onAddElement"
+      @add-to-group="onAddToGroup"
+      @play-output="onPlayOutput"
+      @apply-prompt="onApplyPrompt"
+      @session-select="onSessionSelect"
+      @session-create="onSessionCreate"
+    >
+      <template #assistant-chat>
+        <SessionChatView
+          ref="chatViewRef"
+          :session-id="sessionId"
+          :display-messages="displayMessages"
+          :part-text="partText"
+          :is-loading="isLoading"
+          :session-status="sessionStatus"
+          :history-exhausted="historyExhausted"
+          :history-loading="historyLoading"
+          :current-session-item="currentSessionItem"
+          :active-attention-call-id="activeAttentionCallId"
+          @load-history="onLoadHistory"
+          @switch-session="handleSwitchSession"
+          @revert-turn="(msgId) => void revertMessage(msgId)"
+          @use-suggestion="useSuggestion"
+        />
+      </template>
+    </ProjectWorkspaceGrid>
 
-          <div v-if="activeTab === 'chat'" class="sidebar-tab-content">
-            <SessionWorkspaceSidebar
-              :sessions="sidebarSessions"
-              :session-count="sidebarSessions.length"
-              :collapsed="sidebarCollapsed"
-              :project-id="projectId"
-              @create="createNewSession"
-              @select="handleSwitchSession"
-              @delete="deleteSession"
-              @toggle-collapse="sidebarCollapsed = !sidebarCollapsed"
-            />
-          </div>
-
-          <div v-else-if="activeTab === 'outputs'" class="sidebar-tab-content">
-            <div class="outputs-sidebar">
-              <div class="outputs-sidebar__title">项目产出</div>
-              <div v-if="projectOutputsLoading" class="flex flex-center q-py-lg">
-                <q-spinner-dots size="24px" color="grey-5" />
-              </div>
-              <div v-else-if="projectOutputs.length > 0" class="outputs-grid">
-                <button
-                  v-for="item in projectOutputs"
-                  :key="item.id"
-                  type="button"
-                  class="output-card"
-                  :class="{ 'output-card--active': selectedOutputId === item.id }"
-                  @click="selectedOutputId = item.id"
-                >
-                  <div class="output-card__frame">
-                    <img v-if="item.kind === 'image'" :src="item.url" :alt="item.filename" class="output-card__image">
-                    <div v-else-if="item.kind === 'video'" class="output-card__video-frame">
-                      <img v-if="item.url" :src="item.url" :alt="item.filename" class="output-card__image">
-                      <q-icon name="play_circle" size="22px" color="white" class="output-card__play-icon" />
-                    </div>
-                    <div v-else class="output-card__generic-frame">
-                      <q-icon name="description" size="28px" color="grey-6" />
-                    </div>
-                  </div>
-                  <div class="output-card__body">
-                    <div class="output-card__title ellipsis">{{ item.filename || '生成结果' }}</div>
-                    <div class="output-card__meta">
-                      <span>{{ item.timeLabel }}</span>
-                    </div>
-                  </div>
-                </button>
-              </div>
-              <div v-else class="outputs-empty">
-                <q-icon name="image" size="28px" color="grey-7" class="q-mb-sm" />
-                <div class="text-caption text-grey-7">暂无产出</div>
-                <div class="text-caption text-grey-6">在会话中生成内容后会显示在这里</div>
-              </div>
-            </div>
-          </div>
-
-          <div v-else-if="activeTab === 'files'" class="sidebar-tab-content">
-            <div class="files-sidebar">
-              <div class="files-sidebar__title">项目文件</div>
-              <div v-if="projectFilesLoading" class="flex flex-center q-py-lg">
-                <q-spinner-dots size="24px" color="grey-5" />
-              </div>
-              <q-list v-else-if="projectFiles.length > 0" class="files-list">
-                <q-item
-                  v-for="file in projectFiles"
-                  :key="file.id"
-                  clickable
-                  class="file-item"
-                  @click="selectedFileId = file.id"
-                >
-                  <q-item-section avatar>
-                    <q-icon :name="file.kind === 'image' ? 'image' : file.kind === 'video' ? 'movie' : 'description'" color="grey-5" />
-                  </q-item-section>
-                  <q-item-section>
-                    <q-item-label class="file-item__name">{{ file.filename || '文件' }}</q-item-label>
-                    <q-item-label caption>{{ file.timeLabel }}</q-item-label>
-                  </q-item-section>
-                </q-item>
-              </q-list>
-              <div v-else class="outputs-empty">
-                <q-icon name="folder" size="28px" color="grey-7" class="q-mb-sm" />
-                <div class="text-caption text-grey-7">暂无文件</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </UILayoutDrawer>
-
-      <UILayoutPageContainer>
-        <UILayoutPage class="workspace-page">
-          <ProjectHeader
-            :project-name="projectName"
-            :project-status="projectStatus"
-            @edit="onEditProject"
-            @toggle-archive="onToggleArchive"
-          />
-
-          <main class="workspace-main">
-            <!-- Output/File Preview Panel -->
-            <div v-if="activeTab === 'outputs' && selectedOutput" class="output-preview imago-surface q-ma-md">
-              <div class="output-preview__frame">
-                <img v-if="selectedOutput.kind === 'image'" :src="selectedOutput.url" :alt="selectedOutput.filename" class="output-preview__image">
-                <div v-else-if="selectedOutput.kind === 'video'" class="output-preview__video">
-                  <img v-if="selectedOutput.url" :src="selectedOutput.url" :alt="selectedOutput.filename" class="output-preview__image">
-                  <q-icon name="play_circle" size="48px" color="white" class="output-preview__play" />
-                </div>
-                <div v-else class="output-preview__generic flex flex-center">
-                  <q-icon name="description" size="48px" color="grey-6" />
-                </div>
-              </div>
-              <div class="output-preview__body">
-                <div class="output-preview__title">{{ selectedOutput.filename }}</div>
-                <div class="output-preview__prompt">{{ selectedOutput.promptText || '生成结果' }}</div>
-              </div>
-            </div>
-
-            <div v-else-if="activeTab === 'files' && selectedFileItem" class="output-preview imago-surface q-ma-md">
-              <div class="output-preview__frame">
-                <img v-if="selectedFileItem.kind === 'image'" :src="selectedFileItem.url" :alt="selectedFileItem.filename" class="output-preview__image">
-                <div v-else class="output-preview__generic flex flex-center">
-                  <q-icon name="description" size="48px" color="grey-6" />
-                </div>
-              </div>
-              <div class="output-preview__body">
-                <div class="output-preview__title">{{ selectedFileItem.filename }}</div>
-                <div class="output-preview__prompt">{{ selectedFileItem.promptText || '' }}</div>
-              </div>
-            </div>
-
-            <!-- Chat Tab: SessionChatView -->
-            <div v-if="activeTab === 'chat'" class="chat-tab-content">
-              <SessionChatView
-                ref="chatViewRef"
-                :session-id="sessionId"
-                :display-messages="displayMessages"
-                :part-text="partText"
-                :is-loading="isLoading"
-                :session-status="sessionStatus"
-                :history-exhausted="historyExhausted"
-                :history-loading="historyLoading"
-                :current-session-item="currentSessionItem"
-                :active-attention-call-id="activeAttentionCallId"
-                @load-history="onLoadHistory"
-                @switch-session="handleSwitchSession"
-                @revert-turn="(msgId) => void revertMessage(msgId)"
-                @use-suggestion="useSuggestion"
-              />
-            </div>
-          </main>
-        </UILayoutPage>
-      </UILayoutPageContainer>
-
-      <UILayoutFooter bordered>
-        <div v-if="activeTab === 'chat'" class="input-area">
-          <div class="input-container">
-            <AgentQuestion
-              v-if="pendingQuestion"
-              :request="pendingQuestion"
-              :on-reply="replyToQuestion"
-              :on-reject="rejectQuestion"
-            />
-            <PromptInput
-              ref="inputRef"
-              v-model="draftInputMessage"
-              :placeholder="t('agent.askAnythingPlaceholder')"
-              :loading="isLoading"
-              :connected="isConnected"
-              :disabled="isSessionSwitching"
-              :attachments="pendingAttachments"
-              @submit="submitDraftMessage"
-              @abort="abortSession"
-              @remove-attachment="removeAttachment"
-              @attach-files="onFilesSelected"
-            />
-          </div>
-        </div>
-      </UILayoutFooter>
-    </UILayout>
+    <!-- Bottom composer — kept at page level so PromptInput can focus on mount -->
+    <div class="input-dock">
+      <div class="input-container">
+        <AgentQuestion
+          v-if="pendingQuestion"
+          :request="pendingQuestion"
+          :on-reply="replyToQuestion"
+          :on-reject="rejectQuestion"
+        />
+        <PromptInput
+          ref="inputRef"
+          v-model="draftInputMessage"
+          :placeholder="t('agent.askAnythingPlaceholder')"
+          :loading="isLoading"
+          :connected="isConnected"
+          :disabled="isSessionSwitching"
+          :attachments="pendingAttachments"
+          @submit="submitDraftMessage"
+          @abort="abortSession"
+          @remove-attachment="removeAttachment"
+          @attach-files="onFilesSelected"
+        />
+      </div>
+    </div>
   </q-page>
 </template>
 
@@ -193,25 +102,23 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useQuasar } from 'quasar'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import ProjectHeader from 'src/components/session-workspace/ProjectHeader.vue'
 import SessionChatView from 'src/components/session-workspace/SessionChatView.vue'
-import SessionWorkspaceSidebar from 'src/components/session-workspace/SessionWorkspaceSidebar.vue'
+import ProjectWorkspaceGrid, {
+  type ShotOutputItem,
+  type StoryElement,
+  type StoryElementKind,
+  type AssistantStatus,
+  type WorkspaceTabId,
+  type SessionCardItem,
+} from 'src/components/session-workspace/ProjectWorkspaceGrid.vue'
 import AgentQuestion from 'src/components/AgentQuestion.vue'
 import PromptInput from 'src/components/PromptInput.vue'
-import { UILayout, UILayoutDrawer, UILayoutFooter, UILayoutPage, UILayoutPageContainer } from 'src/components/ui/layout'
-import { useAgentSession } from 'src/composables/useAgentSession'
+import { useAgentSession, type DisplayMessage } from 'src/composables/useAgentSession'
 import type { SessionItem } from 'src/services/agents'
 import { api, type OpenimagoProject } from 'src/api/client'
+import type { TextPart } from '@opencode-ai/sdk/v2'
 
-type SidebarSessionItem = {
-  id: string
-  title: string
-  preview: string
-  timeLabel: string
-  clockLabel: string
-  meta: string
-  active: boolean
-}
+// ── Local shapes (unchanged from previous version) ───────────────────────────
 
 type OutputItem = {
   id: string
@@ -220,6 +127,9 @@ type OutputItem = {
   kind: 'image' | 'video' | 'audio'
   timeLabel: string
   promptText: string
+  model?: string | null
+  resolution?: string | null
+  durationLabel?: string | null
 }
 
 // ── UI refs ───────────────────────────────────────────────────────────────────
@@ -230,8 +140,6 @@ const route = useRoute()
 const router = useRouter()
 const chatViewRef = ref<InstanceType<typeof SessionChatView> | null>(null)
 const inputRef = ref<{ focus: () => void; setDraft: (value: string) => void } | null>(null)
-const sidebarCollapsed = ref(false)
-const activeTab = ref('chat')
 const draftInputMessage = ref('')
 const isSessionSwitching = ref(false)
 
@@ -245,14 +153,7 @@ const projectOutputsLoading = ref(false)
 const selectedOutputId = ref<string | null>(null)
 const projectFiles = ref<OutputItem[]>([])
 const projectFilesLoading = ref(false)
-const selectedFileId = ref<string | null>(null)
-
-const selectedOutput = computed(() =>
-  projectOutputs.value.find((item) => item.id === selectedOutputId.value) ?? null
-)
-const selectedFileItem = computed(() =>
-  projectFiles.value.find((item) => item.id === selectedFileId.value) ?? null
-)
+const selectedElementId = ref<string | null>(null)
 
 function pageHeightFn(offset: number) {
   return { minHeight: `${window.innerHeight - offset}px`, height: `${window.innerHeight - offset}px` }
@@ -270,6 +171,7 @@ const {
   sessionId,
   sessionStatus,
   sessionList,
+  childSessions,
   sessionMessages,
   pendingAttachments,
   partText,
@@ -281,7 +183,6 @@ const {
   loadOlderMessages,
   switchSession,
   createNewSession,
-  deleteSession,
   addAttachment,
   removeAttachment,
   sendMessage,
@@ -300,43 +201,124 @@ const {
   () => void nextTick(() => inputRef.value?.focus()),
 )
 
-// ── Computed ──────────────────────────────────────────────────────────────────
+// ── Derived: shape data for the new grid ──────────────────────────────────────
+
+const gridOutputs = computed<ShotOutputItem[]>(() => projectOutputs.value.map((item) => ({
+  id: item.id,
+  url: item.url,
+  filename: item.filename,
+  kind: item.kind,
+  timeLabel: item.timeLabel,
+  promptText: item.promptText,
+  model: item.model ?? null,
+  resolution: item.resolution ?? null,
+  durationLabel: item.durationLabel ?? null,
+})))
+
+// TODO: derive story elements from real data. For the scaffold, we surface
+// the most visually obvious mapping (project outputs → scenes, project image
+// files → references) so the left column has something to show. Proper
+// classification (character, prop) needs the assets API to expose a tag/role
+// field — that is not available yet, hence the empty groups.
+const storyElements = computed<StoryElement[]>(() => {
+  const items: StoryElement[] = []
+
+  for (const output of projectOutputs.value) {
+    if (output.kind === 'image' && output.url) {
+      items.push({
+        id: `scene-${output.id}`,
+        title: output.filename || '场景镜头',
+        preview: output.promptText || '',
+        thumbnailUrl: output.url,
+        kind: 'scene',
+        timeLabel: output.timeLabel,
+        syncState: 'synced',
+      })
+    }
+  }
+
+  for (const file of projectFiles.value) {
+    if (file.kind === 'image' && file.url) {
+      items.push({
+        id: `ref-${file.id}`,
+        title: file.filename || '参考图',
+        preview: file.promptText || '',
+        thumbnailUrl: file.url,
+        kind: 'reference',
+        timeLabel: file.timeLabel,
+        syncState: 'synced',
+      })
+    }
+  }
+
+  return items
+})
+
+const currentSessionItem = computed<SessionItem | null>(() => {
+  if (!sessionId.value) return null
+  return sessionList.value.find((session) => session.id === sessionId.value) ?? null
+})
+
+const currentSessionLabel = computed(() => {
+  const session = currentSessionItem.value
+  if (!session) return null
+  const title = session.title?.trim()
+  if (!title) return t('agent.untitled')
+  return title.replace(/\s+\(@[^)]+ subagent\)$/, '')
+})
 
 const activeAttentionCallId = computed(() => {
   return pendingPermission.value?.tool?.callID ?? pendingQuestion.value?.tool?.callID ?? null
 })
 
-const currentSessionItem = computed<SessionItem | null>(() => {
-  if (!sessionId.value) return null
-  return getAllSessions().find((session) => session.id === sessionId.value) ?? null
+const assistantStatus = computed<AssistantStatus>(() => {
+  if (isLoading.value) return { label: '生成中', tone: 'busy' }
+  if (isConnected.value) return { label: '已连接', tone: 'connected' }
+  return { label: '就绪', tone: 'idle' }
 })
 
+// ── Session helpers (ported from SessionWorkspacePage) ─────────────────────
+
 function getAllSessions(): SessionItem[] {
-  return sessionList.value
+  const nested = Object.values(childSessions.value).flatMap((items) => items)
+  return [...sessionList.value, ...nested]
 }
 
-function getSessionLabel(session: SessionItem): string {
-  const title = session.title?.trim()
-  if (!title) return t('agent.untitled')
-  return title.replace(/\s+\(@[^)]+ subagent\)$/, '')
-}
+function getChildTaskDescription(session: SessionItem): string {
+  const parentId = session.parentID
+  if (!parentId) return ''
 
-function getSessionPreview(session: SessionItem): string {
-  const entries = sessionMessages.value[session.id] ?? []
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index]
-    if (!entry || entry.info.role !== 'user') continue
-    const preview = entry.parts
-      .filter((part) => (part as { type?: string; synthetic?: boolean }).type === 'text' && !(part as { synthetic?: boolean }).synthetic)
-      .map((part) => (part as { text?: string }).text?.trim())
-      .find(Boolean)
-    if (preview) return clipText(preview, 42)
+  const parentEntries = sessionMessages.value[parentId] ?? []
+  for (let entryIndex = parentEntries.length - 1; entryIndex >= 0; entryIndex -= 1) {
+    const parts = parentEntries[entryIndex]?.parts ?? []
+    for (let partIndex = parts.length - 1; partIndex >= 0; partIndex -= 1) {
+      const part = parts[partIndex]
+      if (part?.type !== 'tool' || part.tool !== 'task') continue
+
+      const state = part.state as {
+        metadata?: Record<string, unknown>
+        input?: Record<string, unknown>
+      }
+      const metadataSessionId = typeof state.metadata?.sessionId === 'string' ? state.metadata.sessionId : undefined
+      if (metadataSessionId !== session.id) continue
+
+      const description = state.input?.description
+      if (typeof description === 'string' && description.trim()) {
+        return description.trim()
+      }
+    }
   }
+
   return ''
 }
 
-function getSessionMeta(): string {
-  return '对话工作流'
+function getSessionLabel(session: SessionItem): string {
+  const childDescription = getChildTaskDescription(session)
+  if (childDescription) return childDescription
+
+  const title = session.title?.trim()
+  if (!title) return t('agent.untitled')
+  return title.replace(/\s+\(@[^)]+ subagent\)$/, '')
 }
 
 function isSessionActive(session: SessionItem): boolean {
@@ -344,12 +326,41 @@ function isSessionActive(session: SessionItem): boolean {
   return session.id === sessionId.value
 }
 
+function getSessionPreview(session: SessionItem): string {
+  const entries = sessionMessages.value[session.id] ?? []
+
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]
+    if (!entry || entry.info.role !== 'user') continue
+
+    const preview = entry.parts
+      .filter((part): part is TextPart => part.type === 'text' && !(part as { synthetic?: boolean }).synthetic)
+      .map((part) => part.text.trim())
+      .find(Boolean)
+
+    if (preview) return clipText(preview, 42)
+  }
+
+  return ''
+}
+
+function getSessionMeta(session: SessionItem): string {
+  const messages = sessionMessages.value[session.id] ?? []
+  const imageCount = messages.reduce((count, entry) => count + entry.parts.filter((part) => {
+    if (part.type !== 'file') return false
+    const mime = (part as { mime?: string }).mime?.toLowerCase() ?? ''
+    const filename = (part as { filename?: string }).filename || ''
+    return mime.includes('image') || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(filename)
+  }).length, 0)
+
+  return imageCount > 0 ? `${imageCount} 张结果` : '对话工作流'
+}
+
 function formatSessionTime(date: Date): string {
-  const now = new Date()
-  const diff = now.getTime() - date.getTime()
-  if (diff < 60_000) return t('agent.justNow')
-  if (diff < 3_600_000) return t('agent.minutesAgo', { count: Math.floor(diff / 60_000) })
-  if (diff < 86_400_000) return t('agent.hoursAgo', { count: Math.floor(diff / 3_600_000) })
+  const diff = Date.now() - date.getTime()
+  if (diff < 60_000) return '刚刚'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`
   return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
 
@@ -363,7 +374,7 @@ function clipText(value: string, max = 48): string {
   return `${normalized.slice(0, Math.max(0, max - 1))}…`
 }
 
-const sidebarSessions = computed<SidebarSessionItem[]>(() => sessionList.value
+const sidebarSessions = computed<SessionCardItem[]>(() => sessionList.value
   .slice()
   .sort((left, right) => right.time.getTime() - left.time.getTime())
   .map((session) => ({
@@ -372,9 +383,94 @@ const sidebarSessions = computed<SidebarSessionItem[]>(() => sessionList.value
     preview: getSessionPreview(session),
     timeLabel: formatSessionTime(session.time),
     clockLabel: formatClock(session.time),
-    meta: getSessionMeta(),
+    meta: getSessionMeta(session),
     active: isSessionActive(session),
   })))
+
+// TODO: integrate with billing API to show real credits. Scaffold uses a
+// dash placeholder so the command bar's credits chip always renders.
+const creditsLabel = '—'
+
+// ── Grid event handlers ───────────────────────────────────────────────────────
+
+function onBackToProjects() {
+  void router.push('/projects')
+}
+
+function onOpenAssets() {
+  // TODO: navigate to project assets page when the route lands
+  $q.notify({ color: 'info', message: '素材库即将上线', icon: 'info' })
+}
+
+function onOpenExport() {
+  // TODO: open export dialog wired to api.projectExports(...) when supported
+  $q.notify({ color: 'info', message: '导出流程即将上线', icon: 'info' })
+}
+
+function onWorkspaceTabChange(tab: WorkspaceTabId) {
+  // TODO: route to the right deep-link per workspace tab
+  // (e.g. /projects/:id/storyboard, /projects/:id/timeline, /projects/:id/edit)
+  // For now we only log + show a notice so the user sees the tab reacts.
+  $q.notify({ color: 'info', message: `切换到 ${tab} 视图（待接入）`, icon: 'info', timeout: 1200 })
+}
+
+function onGridOutputSelect(id: string) {
+  selectedOutputId.value = id
+}
+
+function onGridElementSelect(id: string) {
+  // TODO: when assets have classification metadata, route to the right
+  // workspace tab. For now, treat the click as "select for prompt context".
+  $q.notify({ color: 'info', message: '已选择元素 — 等待提示词编辑器接入', icon: 'info', timeout: 1200 })
+  // Stash the id on a ref so the coder can wire it into the prompt editor.
+  selectedElementId.value = id
+}
+
+function onAddElement() {
+  // TODO: open asset upload dialog and then refresh storyElements
+  $q.notify({ color: 'info', message: '添加故事元素（待接入）', icon: 'info' })
+}
+
+function onAddToGroup(group: StoryElementKind) {
+  // TODO: scoped add per group; same handler as onAddElement for now
+  $q.notify({ color: 'info', message: `向 ${group} 添加元素（待接入）`, icon: 'info' })
+}
+
+function onPlayOutput(id: string) {
+  // TODO: open the video in a player overlay. The grid already shows a play
+  // button for video outputs; coder needs to wire up playback.
+  const output = projectOutputs.value.find((item) => item.id === id)
+  if (output) {
+    $q.notify({ color: 'info', message: `播放 ${output.filename}（待接入）`, icon: 'play_circle' })
+  }
+}
+
+function onApplyPrompt(value: string) {
+  // Forward the prompt into the active session via the existing input flow.
+  // The grid's `apply-prompt` is a UI shortcut; the real submission goes
+  // through submitDraftMessage so attachments / queueing stay consistent.
+  draftInputMessage.value = value
+  void submitDraftMessage(value)
+}
+
+async function onSessionSelect(sid: string) {
+  await handleSwitchSession(sid)
+}
+
+async function onSessionCreate() {
+  const pid = projectId.value
+  if (!pid) return
+  isSessionSwitching.value = true
+  try {
+    createNewSession()
+    const created = await api.createSession({ projectId: pid })
+    if (created?.id) {
+      await handleSwitchSession(created.id)
+    }
+  } finally {
+    isSessionSwitching.value = false
+  }
+}
 
 // ── Session handlers ──────────────────────────────────────────────────────────
 
@@ -415,24 +511,6 @@ function onFilesSelected(files: File[]) {
   })
 }
 
-// ── Project actions ───────────────────────────────────────────────────────────
-
-function onEditProject() {
-  // Placeholder — will be implemented with a dialog later
-  $q.notify({ color: 'info', message: '编辑功能即将上线', icon: 'info' })
-}
-
-async function onToggleArchive() {
-  if (!project.value) return
-  const newStatus = project.value.status === 'archived' ? 'active' : 'archived'
-  try {
-    await api.updateProject(projectId.value, { status: newStatus })
-    project.value = { ...project.value, status: newStatus }
-  } catch {
-    $q.notify({ color: 'negative', message: '归档操作失败', icon: 'error' })
-  }
-}
-
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
 async function fetchProjectData() {
@@ -455,7 +533,17 @@ async function fetchProjectOutputs() {
       kind: wf.kind,
       timeLabel: formatResultTime(new Date(wf.createdAt)),
       promptText: wf.prompt ?? '',
+      // Optional richer fields — WorkspaceFile already exposes model and
+      // prompt; render-time metadata is left undefined until the API
+      // exposes resolution / duration.
+      model: wf.model ?? null,
+      resolution: null,
+      durationLabel: null,
     }))
+    // Auto-select the most recent output the first time we load.
+    if (!selectedOutputId.value && projectOutputs.value.length > 0) {
+      selectedOutputId.value = projectOutputs.value[0]!.id
+    }
   } catch {
     projectOutputs.value = []
   } finally {
@@ -496,6 +584,11 @@ onMounted(() => {
   void loadAgents()
   void loadCommands()
   void fetchProjectData()
+  // Eagerly fetch outputs/files so the shot strip and story elements have
+  // something to show on first paint. The previous version only fetched on
+  // tab change; the new grid renders outputs and elements at all times.
+  void fetchProjectOutputs()
+  void fetchProjectFiles()
   void loadSessionList().then(() => {
     const paramSessionId = route.params.sessionId
     if (paramSessionId && typeof paramSessionId === 'string' && paramSessionId !== sessionId.value) {
@@ -515,18 +608,14 @@ watch(
   },
 )
 
-// Fetch outputs/files when tab changes
-watch(activeTab, (tab) => {
-  if (tab === 'outputs' && projectOutputs.value.length === 0) void fetchProjectOutputs()
-  if (tab === 'files' && projectFiles.value.length === 0) void fetchProjectFiles()
-})
-
 onUnmounted(() => {
   stopEventSubscription()
 })
 </script>
 
 <style scoped>
+/* ── Page-level chrome ─────────────────────────────────────────────────── */
+
 :global(body) {
   background: var(--imago-bg-void);
 }
@@ -535,132 +624,21 @@ onUnmounted(() => {
   position: relative;
   width: 100%;
   height: 100%;
+  display: flex;
+  flex-direction: column;
   color: var(--imago-text-primary);
   background: var(--imago-bg-void);
 }
 
-.project-layout {
-  z-index: 1;
-  width: 100%;
-}
+/* ── Input dock (bottom composer) ───────────────────────────────────────── */
 
-.project-layout :deep(.ui-layout__drawer) {
-  background: var(--imago-bg-void) !important;
-  color: var(--imago-text-primary);
-  border-color: var(--imago-border-light);
-}
-
-.project-layout :deep(.ui-layout__drawer--left) {
-  border-right: 1px solid var(--imago-border-light);
-}
-
-.sidebar-with-tabs {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.project-tabs {
+.input-dock {
   flex-shrink: 0;
-  padding: 8px 12px 0;
-  color: var(--imago-text-dim);
-}
-
-.sidebar-tab-content {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.workspace-page {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.workspace-main {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.chat-tab-content {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.output-preview {
-  padding: 16px;
-  margin: 16px;
-  background: linear-gradient(180deg, rgba(15, 17, 30, 0.9), rgba(10, 11, 21, 0.82));
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.output-preview__frame {
-  overflow: hidden;
-  border-radius: 16px;
-  border: 1px solid rgba(0, 240, 255, 0.14);
-  background: rgba(255, 255, 255, 0.02);
-  aspect-ratio: 4 / 3;
-  position: relative;
-}
-
-.output-preview__image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.output-preview__video {
-  position: relative;
-  width: 100%;
-  height: 100%;
-}
-
-.output-preview__play {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  opacity: 0.85;
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.6));
-}
-
-.output-preview__generic {
-  width: 100%;
-  height: 100%;
-  background: var(--imago-bg-code);
-}
-
-.output-preview__body {
-  padding: 12px 4px 2px;
-}
-
-.output-preview__title {
-  color: var(--imago-text-secondary);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.output-preview__prompt {
-  margin-top: 6px;
-  color: var(--imago-text-dim);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-/* ── Input area ─────────────────────────────────────────────────────────── */
-
-.input-area {
-  padding: 12px 20px 14px;
-  background: var(--imago-bg-void);
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--imago-border-light);
+  background: linear-gradient(180deg, var(--imago-bg-void), var(--imago-bg-deep));
+  backdrop-filter: var(--imago-blur-panel);
+  -webkit-backdrop-filter: var(--imago-blur-panel);
 }
 
 .input-container {
@@ -668,140 +646,9 @@ onUnmounted(() => {
   margin: 0 auto;
 }
 
-/* ── Outputs sidebar grid ───────────────────────────────────────────────── */
-
-.outputs-sidebar,
-.files-sidebar {
-  padding: 14px 12px 14px 16px;
-}
-
-.outputs-sidebar__title,
-.files-sidebar__title {
-  color: var(--imago-text-dim);
-  font-size: 12px;
-  font-weight: 500;
-  margin-bottom: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.outputs-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.output-card {
-  display: flex;
-  flex-direction: column;
-  padding: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.02);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color var(--imago-ease-default), box-shadow var(--imago-ease-default);
-}
-
-.output-card:hover {
-  border-color: rgba(0, 240, 255, 0.16);
-  box-shadow: 0 0 20px rgba(0, 240, 255, 0.06);
-}
-
-.output-card--active {
-  border-color: rgba(0, 240, 255, 0.28);
-  box-shadow: inset 0 0 0 1px rgba(0, 240, 255, 0.1), 0 0 24px rgba(0, 240, 255, 0.08);
-}
-
-.output-card__frame {
-  overflow: hidden;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.02);
-  aspect-ratio: 1 / 1;
-}
-
-.output-card__image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.output-card__video-frame {
-  width: 100%;
-  height: 100%;
-  display: grid;
-  place-items: center;
-  background: var(--imago-bg-code);
-  position: relative;
-}
-
-.output-card__play-icon {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  opacity: 0.85;
-}
-
-.output-card__generic-frame {
-  width: 100%;
-  height: 100%;
-  display: grid;
-  place-items: center;
-  background: var(--imago-bg-code);
-}
-
-.output-card__body {
-  padding: 6px 2px 2px;
-}
-
-.output-card__title {
-  color: var(--imago-text-secondary);
-  font-size: 11px;
-}
-
-.output-card__meta {
-  color: rgba(255, 255, 255, 0.34);
-  font-size: 10px;
-  margin-top: 2px;
-}
-
-.outputs-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 4px;
-  min-height: 180px;
-  justify-content: center;
-  border: 1px dashed rgba(255, 255, 255, 0.08);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.02);
-}
-
-/* ── Files sidebar ──────────────────────────────────────────────────────── */
-
-.files-list {
-  display: grid;
-  gap: 4px;
-}
-
-.file-item {
-  padding: 8px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(255, 255, 255, 0.02);
-  color: var(--imago-text-muted);
-  transition: border-color var(--imago-ease-default);
-}
-
-.file-item:hover {
-  border-color: rgba(0, 240, 255, 0.12);
-}
-
-.file-item__name {
-  font-size: 12px;
-  color: var(--imago-text-secondary);
+@media (max-width: 768px) {
+  .input-dock {
+    padding: 10px 14px 14px;
+  }
 }
 </style>
