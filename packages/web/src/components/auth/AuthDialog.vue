@@ -72,18 +72,21 @@ function onDismiss() {
 </script>
 
 <style scoped>
-/* ── Dialog backdrop: dark blur to match the auth aesthetic ───────── */
-:deep(.q-dialog__backdrop) {
-  background: rgb(2 6 15 / 78%);
-  backdrop-filter: blur(8px) saturate(120%);
-  -webkit-backdrop-filter: blur(8px) saturate(120%);
-}
-
 /* ── Dialog content container — center and let panel size itself ───── */
 :deep(.q-dialog__inner) > .q-dialog__inner--minimized > div,
 :deep(.q-dialog__inner) > div {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+</style>
+
+<style>
+/* ── Dialog backdrop: dark blur (unscoped — Quasar teleports the dialog) ── */
+.auth-dialog-host + .q-dialog__backdrop,
+.q-dialog__backdrop:has(+ .auth-dialog-host) {
+  background: rgb(2 6 15 / 78%) !important;
+  backdrop-filter: blur(8px) saturate(120%);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
 }
 </style>
