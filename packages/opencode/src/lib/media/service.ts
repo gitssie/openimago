@@ -2,6 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import {
   type GenerateImageParams,
   type GenerateVideoParams,
+  type GenerateAudioParams,
   type GenerateResult,
   GenerateError,
   type MediaKind,
@@ -33,6 +34,16 @@ export interface MediaGenerationServiceInterface {
    */
   readonly generateVideo: (
     params: GenerateVideoParams,
+  ) => Effect.Effect<GenerateResult, GenerateError | ResolveError | BillingError>
+
+  /**
+   * Generate audio (TTS) using the provider that handles the requested model.
+   *
+   * Pre-charge: validates billing eligibility before calling the provider.
+   * Refunds on provider failure after a successful pre-charge.
+   */
+  readonly generateAudio: (
+    params: GenerateAudioParams,
   ) => Effect.Effect<GenerateResult, GenerateError | ResolveError | BillingError>
 }
 
@@ -192,6 +203,61 @@ export const layer = Layer.effect(
           }
         })
 
-    return { generateImage, generateVideo }
+    const generateAudio: MediaGenerationServiceInterface["generateAudio"] =
+      (params) =>
+        Effect.gen(function* () {
+          const provider = yield* router.resolve(params.model, "audio")
+          yield* Effect.log(
+            `Generating audio with provider "${provider.id}" (model: ${params.model})`,
+          )
+
+          // Build estimated usage from pricing table
+          const estimatedUsage = buildEstimatedUsage(
+            provider.id,
+            params.model,
+            "audio",
+          )
+
+          // Pre-charge: validate eligibility BEFORE calling provider
+          const { sourceId } = yield* billing.reportPrecharge({
+            usage: estimatedUsage,
+            toolName: "imago_generate_audio",
+            sessionId: params.sessionId ?? "",
+            directory: params.directory ?? "",
+          })
+
+          // Provider must have generateAudio; fail clearly if missing
+          if (!provider.generateAudio) {
+            return yield* Effect.fail(
+              new GenerateError(
+                provider.id,
+                `Provider "${provider.id}" does not support audio generation`,
+              ),
+            )
+          }
+
+          try {
+            const result = yield* provider.generateAudio(params)
+            return result
+          } catch (error) {
+            // Provider failed after pre-charge — refund
+            yield* billing.reportRefund({
+              usage: estimatedUsage,
+              toolName: "imago_generate_audio",
+              sessionId: params.sessionId ?? "",
+              directory: params.directory ?? "",
+              originalChargeSourceId: sourceId,
+            }).pipe(
+              Effect.catchAll((refundError) =>
+                Effect.logError(
+                  `Refund failed after provider error: ${(refundError as Error).message}`,
+                ),
+              ),
+            )
+            throw error
+          }
+        })
+
+    return { generateImage, generateVideo, generateAudio }
   }),
 )

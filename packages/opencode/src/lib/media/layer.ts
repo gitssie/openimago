@@ -3,6 +3,7 @@ import { Layer, Effect } from "effect"
 import {
   mockImageProvider,
   mockVideoProvider,
+  mockAudioProvider,
 } from "./provider.js"
 import {
   MediaProviderRegistry,
@@ -56,6 +57,7 @@ export const mediaDefaultLayer = Layer.suspend(() => {
       // Register mock providers for testing
       yield* registry.register(mockImageProvider)
       yield* registry.register(mockVideoProvider)
+      yield* registry.register(mockAudioProvider)
 
       // Register Google provider (API key validated at execute time)
       const google = createGoogleProvider(config)

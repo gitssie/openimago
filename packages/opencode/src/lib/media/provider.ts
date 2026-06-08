@@ -152,3 +152,31 @@ export const mockVideoProvider: MediaProvider = {
     })
   },
 }
+
+/** Mock audio provider — returns placeholder audio URLs for testing. */
+export const mockAudioProvider: MediaProvider = {
+  id: "mock-audio",
+  label: "Mock Audio Provider",
+  kind: "audio",
+  models: ["mock-audio-model"],
+
+  generateImage() {
+    return Effect.fail(
+      new GenerateError("mock-audio", "This provider does not support images"),
+    )
+  },
+
+  generateVideo() {
+    return Effect.fail(
+      new GenerateError("mock-audio", "This provider does not support video"),
+    )
+  },
+
+  generateAudio(params: GenerateAudioParams) {
+    return Effect.succeed({
+      url:
+        `mock://audio?text=${encodeURIComponent(params.text)}&model=${params.model}`,
+      metadata: { provider: "mock-audio", model: params.model },
+    })
+  },
+}
