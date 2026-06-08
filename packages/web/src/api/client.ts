@@ -77,6 +77,9 @@ export interface OpenimagoProject {
   description?: string
   directory: string
   status: 'active' | 'archived'
+  sessionCount?: number
+  totalCost?: number
+  lastActivityAt?: string | null
   createdAt: string
   updatedAt: string
 }

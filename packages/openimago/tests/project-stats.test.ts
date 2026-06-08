@@ -52,12 +52,12 @@ async function createProject(token: string, name: string): Promise<string> {
 }
 
 // Helper: insert a session record
-async function insertSession(directory: string, overrides?: Partial<typeof SessionTable.$inferInsert>) {
+async function insertSession(projectId: string, overrides?: Partial<typeof SessionTable.$inferInsert>) {
   const id = `ses_${crypto.randomUUID().slice(0, 8)}`
   await db.insert(SessionTable).values({
     id,
-    project_id: "global",
-    directory,
+    project_id: projectId,
+    directory: overrides?.directory ?? `/cos/test/path/${id}`,
     slug: "",
     title: "Test Session",
     version: "",
@@ -83,18 +83,8 @@ test("GET /projects/:id/stats returns session count and token totals", async () 
   const { token } = await registerUser("statsuser1", "stats1@example.com")
   const projId = await createProject(token, "Stats Project")
 
-  // Get the project's full path
-  const listRes = await app.fetch(
-    new Request("http://localhost/api/platform/projects", {
-      headers: { authorization: `Bearer ${token}` },
-    }),
-  )
-  const listBody = await listRes.json() as Record<string, any>
-  const project = listBody.projects.find((p: any) => p.id === projId)
-  const directory = project.directory
-
-  await insertSession(directory, { tokens_input: 2000, tokens_output: 800, cost: 0.1 })
-  await insertSession(directory, { tokens_input: 3000, tokens_output: 1200, cost: 0.15 })
+  await insertSession(projId, { tokens_input: 2000, tokens_output: 800, cost: 0.1 })
+  await insertSession(projId, { tokens_input: 3000, tokens_output: 1200, cost: 0.15 })
 
   const res = await app.fetch(
     new Request(`http://localhost/api/platform/projects/${projId}/stats`, {
@@ -137,17 +127,8 @@ test("GET /projects/:id/stats excludes archived sessions", async () => {
   const { token } = await registerUser("statsuser3", "stats3@example.com")
   const projId = await createProject(token, "Archived Project")
 
-  const listRes = await app.fetch(
-    new Request("http://localhost/api/platform/projects", {
-      headers: { authorization: `Bearer ${token}` },
-    }),
-  )
-  const listBody = await listRes.json() as Record<string, any>
-  const project = listBody.projects.find((p: any) => p.id === projId)
-  const directory = project.directory
-
-  await insertSession(directory, { tokens_input: 1000, cost: 0.05 })
-  await insertSession(directory, { tokens_input: 2000, cost: 0.1, time_archived: Date.now() })
+  await insertSession(projId, { tokens_input: 1000, cost: 0.05 })
+  await insertSession(projId, { tokens_input: 2000, cost: 0.1, time_archived: Date.now() })
 
   const res = await app.fetch(
     new Request(`http://localhost/api/platform/projects/${projId}/stats`, {
@@ -199,16 +180,7 @@ test("project list includes sessionCount and lastActivityAt", async () => {
   const { token } = await registerUser("statslist", "statslist@example.com")
   const projId = await createProject(token, "List Stats Project")
 
-  const listRes = await app.fetch(
-    new Request("http://localhost/api/platform/projects", {
-      headers: { authorization: `Bearer ${token}` },
-    }),
-  )
-  const listBody = await listRes.json() as Record<string, any>
-  const project = listBody.projects.find((p: any) => p.id === projId)
-  const directory = project.directory
-
-  await insertSession(directory, { tokens_input: 500, cost: 0.02 })
+  await insertSession(projId, { tokens_input: 500, cost: 0.02 })
 
   const res = await app.fetch(
     new Request("http://localhost/api/platform/projects", {
@@ -232,18 +204,9 @@ test("GET /projects/:id/stats totalCost sums correctly across sessions", async (
   const { token } = await registerUser("statscost", "statscost@example.com")
   const projId = await createProject(token, "Cost Project")
 
-  const listRes = await app.fetch(
-    new Request("http://localhost/api/platform/projects", {
-      headers: { authorization: `Bearer ${token}` },
-    }),
-  )
-  const listBody = await listRes.json() as Record<string, any>
-  const project = listBody.projects.find((p: any) => p.id === projId)
-  const directory = project.directory
-
-  await insertSession(directory, { cost: 0.05 })
-  await insertSession(directory, { cost: 0.15 })
-  await insertSession(directory, { cost: 0.008 }) // 3 decimal places
+  await insertSession(projId, { cost: 0.05 })
+  await insertSession(projId, { cost: 0.15 })
+  await insertSession(projId, { cost: 0.008 }) // 3 decimal places
 
   const res = await app.fetch(
     new Request(`http://localhost/api/platform/projects/${projId}/stats`, {

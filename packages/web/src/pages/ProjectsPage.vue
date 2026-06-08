@@ -57,7 +57,7 @@
             <div class="project-card__meta row items-center no-wrap">
               <OiIcon name="chat" size="14px" class="meta-icon q-mr-xs" />
               <span>会话数量</span>
-              <span class="meta-val q-mr-sm">{{ sessionCount(p, index) }}</span>
+              <span class="meta-val q-mr-sm">{{ p.sessionCount ?? 0 }}</span>
               <span class="meta-divider">|</span>
               <OiIcon name="clock" size="15px" class="meta-icon q-ml-sm q-mr-xs" />
               <span>最近活跃</span>
@@ -142,10 +142,6 @@ async function handleCreate() {
 
 function projectName(project: OpenimagoProject) {
   return project.name || project.directory?.split('/').filter(Boolean).pop() || '未命名项目'
-}
-
-function sessionCount(project: OpenimagoProject, index: number) {
-  return (project.id.charCodeAt(0) + index * 7) % 30 + 12
 }
 
 // Deterministic gradient palette for placeholder thumbnails

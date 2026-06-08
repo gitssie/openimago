@@ -106,7 +106,7 @@ export class ProjectService {
 
     const result = await Promise.all(
       rows.map(async (p) => {
-        const stats = await this.queryProjectStats(p.directory)
+        const stats = await this.queryProjectStats(p.id)
         return {
           id: p.id,
           name: p.name,
@@ -141,11 +141,11 @@ export class ProjectService {
       return { error: { code: "FORBIDDEN", message: "Not project owner" }, status: 403 } as const
     }
 
-    const stats = await this.queryProjectStats(project.directory)
+    const stats = await this.queryProjectStats(project.id)
     return { stats, status: 200 } as const
   }
 
-  private async queryProjectStats(directory: string) {
+    private async queryProjectStats(projectId: string) {
     const result = await db
       .select({
         sessionCount: sql<number>`COUNT(*)::int`,
@@ -160,7 +160,7 @@ export class ProjectService {
       .from(SessionTable)
       .where(
         and(
-          eq(SessionTable.directory, directory),
+          eq(SessionTable.project_id, projectId),
           isNull(SessionTable.time_archived),
         ),
       )
