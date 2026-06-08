@@ -53,6 +53,14 @@ export interface ProviderConfig {
   apiKey?: string
   /** Custom endpoint URL for this provider (e.g. gateway proxy). */
   endpoint?: string
+  /** Tencent Cloud SecretId (for TC3-HMAC-SHA256 signing). */
+  secretId?: string
+  /** Tencent Cloud SecretKey (for TC3-HMAC-SHA256 signing). */
+  secretKey?: string
+  /** Tencent Cloud region (e.g. "ap-guangzhou"). */
+  region?: string
+  /** Tencent Cloud AppId (required for audio/TTS). */
+  appId?: string
 }
 
 // ── Service Tag ────────────────────────────────────────────────────────
@@ -78,6 +86,10 @@ export class MediaConfig extends Context.Tag("openimago/MediaConfig")<
  *   - GOOGLE_API_KEY              → providers.google.apiKey
  *   - OPENAI_API_KEY              → providers.openai.apiKey
  *   - FAL_API_KEY                 → providers.fal.apiKey
+ *   - TENCENT_CLOUD_SECRET_ID     → providers["tencent-cloud"].secretId
+ *   - TENCENT_CLOUD_SECRET_KEY    → providers["tencent-cloud"].secretKey
+ *   - TENCENT_CLOUD_REGION        → providers["tencent-cloud"].region
+ *   - TENCENT_CLOUD_APP_ID        → providers["tencent-cloud"].appId
  */
 export const layer: Layer.Layer<MediaConfig> = Layer.succeed(MediaConfig, {
   backendUrl:
@@ -121,6 +133,24 @@ export const layer: Layer.Layer<MediaConfig> = Layer.succeed(MediaConfig, {
       apiKey:
         typeof process !== "undefined"
           ? process.env.FAL_KEY
+          : undefined,
+    },
+    "tencent-cloud": {
+      secretId:
+        typeof process !== "undefined"
+          ? process.env.TENCENT_CLOUD_SECRET_ID
+          : undefined,
+      secretKey:
+        typeof process !== "undefined"
+          ? process.env.TENCENT_CLOUD_SECRET_KEY
+          : undefined,
+      region:
+        typeof process !== "undefined"
+          ? process.env.TENCENT_CLOUD_REGION
+          : undefined,
+      appId:
+        typeof process !== "undefined"
+          ? process.env.TENCENT_CLOUD_APP_ID
           : undefined,
     },
   },

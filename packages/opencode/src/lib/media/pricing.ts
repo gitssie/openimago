@@ -27,6 +27,10 @@ const IMAGE_PRICING: Record<string, PricingEntry> = {
   "flux-schnell": { amountMicros: -100, unit: "image" },
   "fal-ai/flux/dev": { amountMicros: -150, unit: "image" },
   "fal-ai/flux/schnell": { amountMicros: -100, unit: "image" },
+  // TODO: Replace with real Tencent Cloud pricing
+  "hy-image-v3.0": { amountMicros: -200, unit: "image" },
+  "HY-Image-V3.0": { amountMicros: -200, unit: "image" },
+  "hy-image-lite": { amountMicros: -120, unit: "image" },
 }
 
 const VIDEO_PRICING: Record<string, PricingEntry> = {
@@ -34,10 +38,14 @@ const VIDEO_PRICING: Record<string, PricingEntry> = {
   "seedance-2.0": { amountMicros: -1000, unit: "video" },
   "bytedance/seedance-2.0/text-to-video": { amountMicros: -1000, unit: "video" },
   "bytedance/seedance-2.0/fast/text-to-video": { amountMicros: -800, unit: "video" },
+  // TODO: Replace with real Tencent Cloud pricing
+  "hy-video-1.5": { amountMicros: -800, unit: "video" },
 }
 
 const AUDIO_PRICING: Record<string, PricingEntry> = {
   "mock-audio-model": { amountMicros: -50, unit: "second" },
+  // TODO: Replace with real Tencent Cloud TTS pricing
+  "tencent-tts": { amountMicros: -20, unit: "second" },
 }
 
 const PRICING_TABLE: Record<string, Record<string, PricingEntry>> = {

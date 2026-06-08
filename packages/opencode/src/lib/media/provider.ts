@@ -38,6 +38,20 @@ export interface GenerateVideoParams {
   directory?: string
 }
 
+/** Parameters for audio (TTS) generation requests. */
+export interface GenerateAudioParams {
+  model: string
+  text: string
+  /** Voice ID for TTS. Provider-specific. */
+  voiceId?: string
+  /** Output audio format (e.g. "mp3", "wav"). */
+  outputFormat?: string
+  /** Session ID for billing context. Required when billing is active. */
+  sessionId?: string
+  /** Workspace/project directory for billing context. Required when billing is active. */
+  directory?: string
+}
+
 /** Result returned by a media generation provider. */
 export interface GenerateResult {
   url: string
@@ -79,6 +93,11 @@ export interface MediaProvider {
 
   generateVideo(
     params: GenerateVideoParams,
+  ): Effect.Effect<GenerateResult, GenerateError>
+
+  /** Optional: generate audio (TTS). Providers that do not support audio omit this method. */
+  generateAudio?(
+    params: GenerateAudioParams,
   ): Effect.Effect<GenerateResult, GenerateError>
 }
 
