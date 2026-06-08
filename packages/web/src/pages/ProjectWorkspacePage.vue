@@ -112,7 +112,7 @@ import ProjectWorkspaceGrid, {
 } from 'src/components/session-workspace/ProjectWorkspaceGrid.vue'
 import AgentQuestion from 'src/components/AgentQuestion.vue'
 import PromptInput from 'src/components/PromptInput.vue'
-import { useAgentSession, type DisplayMessage } from 'src/composables/useAgentSession'
+import { useAgentSession } from 'src/composables/useAgentSession'
 import type { SessionItem } from 'src/services/agents'
 import { api, type OpenimagoProject } from 'src/api/client'
 import type { TextPart } from '@opencode-ai/sdk/v2'
@@ -170,7 +170,6 @@ const {
   sessionId,
   sessionStatus,
   sessionList,
-  childSessions,
   sessionMessages,
   pendingAttachments,
   partText,
@@ -277,11 +276,6 @@ const assistantStatus = computed<AssistantStatus>(() => {
 })
 
 // ── Session helpers (ported from SessionWorkspacePage) ─────────────────────
-
-function getAllSessions(): SessionItem[] {
-  const nested = Object.values(childSessions.value).flatMap((items) => items)
-  return [...sessionList.value, ...nested]
-}
 
 function getChildTaskDescription(session: SessionItem): string {
   const parentId = session.parentID
