@@ -69,6 +69,29 @@
       </template>
     </ProjectWorkspaceGrid>
 
+    <!-- Story panel — rendered alongside the grid for storyboard/timeline/edit tabs -->
+    <ProjectWorkspaceStoryPanel
+      v-if="activeWorkspaceTabIsStoryTab && storyBibleSummary"
+      class="story-panel-overlay"
+      :series-title="storySeries?.title ?? ''"
+      :series-description="storySeries?.description ?? ''"
+      :episodes="storyEpisodeSummaries"
+      :current-episode-id="currentStoryEpisodeId"
+      :current-shot-id="currentStoryShotId"
+      :current-scene-id="currentStorySceneId"
+      :shots="currentStoryShots"
+      :workflow-nodes="currentStoryWorkflowNodes"
+      :runs="currentStoryRuns"
+      :bible="storyBibleSummary"
+      :selected-character-id="storySelectedCharacterId"
+      :selected-style-seed-id="storySelectedStyleSeedId"
+      :is-loading="storyPanelLoading"
+      :error-message="storyPanelError"
+      @select="onStorySelect"
+      @episode-change="onStoryEpisodeChange"
+      @intent="onStoryIntent"
+    />
+
     <!-- ── WorkspaceArtifactsPanel overlay (project scope, ADR 0003) ────────── -->
     <!-- TODO (openimago-s55): integrate this panel into the grid's right column
          when the grid layout supports a collapsible right panel natively.
@@ -145,15 +168,33 @@ import ProjectWorkspaceGrid, {
   type WorkspaceTabId,
   type SessionCardItem,
 } from 'src/components/session-workspace/ProjectWorkspaceGrid.vue'
+import ProjectWorkspaceStoryPanel from 'src/components/session-workspace/ProjectWorkspaceStoryPanel.vue'
 import AgentQuestion from 'src/components/AgentQuestion.vue'
 import PromptInput from 'src/components/PromptInput.vue'
 import { useAgentSession } from 'src/composables/useAgentSession'
 import type { SessionItem } from 'src/services/agents'
-import { api, type OpenimagoProject, type OpenimagoStoryBible, type OpenimagoStorySeries, type OpenimagoStoryEpisode } from 'src/api/client'
+import { api, type OpenimagoProject, type OpenimagoStoryBible, type OpenimagoStorySeries, type OpenimagoStoryEpisode, type OpenimagoStoryWorkflow, type OpenimagoStoryRuns } from 'src/api/client'
 import type { TextPart } from '@opencode-ai/sdk/v2'
 import WorkspaceArtifactsPanel from 'src/components/session-workspace/WorkspaceArtifactsPanel.vue'
-import type { WorkspaceArtifact, GenerationRunMetadata } from 'src/components/session-workspace/types'
+import type {
+  WorkspaceArtifact,
+  GenerationRunMetadata,
+  StoryBibleSummary,
+  StoryEpisodeSummary,
+  StorySelection,
+  StoryEditIntent,
+  StoryShotSummary,
+  StoryWorkflowNodeSummary,
+  StoryRunSummary,
+} from 'src/components/session-workspace/types'
 import { storiesFromBible, storiesFromEpisodes } from 'src/utils/story-mapping'
+import {
+  rawBibleToSummary,
+  rawSeriesToEpisodeSummaries,
+  rawEpisodeToShotSummaries,
+  rawWorkflowToNodeSummaries,
+  rawRunsToRunSummaries,
+} from 'src/utils/story-summary-mapper'
 
 // ── Local shapes (unchanged from previous version) ───────────────────────────
 
@@ -195,6 +236,17 @@ const projectFilesLoading = ref(false)
 const storyBible = ref<OpenimagoStoryBible | null>(null)
 const storySeries = ref<OpenimagoStorySeries | null>(null)
 const storyEpisodes = ref<OpenimagoStoryEpisode[]>([])
+
+// Story panel state — selected episode/shot/scene for the story UI
+const currentStoryEpisodeId = ref<string | null>(null)
+const currentStoryShotId = ref<string | null>(null)
+const currentStorySceneId = ref<string | null>(null)
+const storySelectedCharacterId = ref<string | null>(null)
+const storySelectedStyleSeedId = ref<string | null>(null)
+const storyWorkflow = ref<OpenimagoStoryWorkflow | null>(null)
+const storyRuns = ref<OpenimagoStoryRuns | null>(null)
+const storyPanelLoading = ref(false)
+const storyPanelError = ref<string | null>(null)
 const selectedElementId = ref<string | null>(null)
 const showArtifactsPanel = ref(false)
 const artifactsPanelTab = ref('result')
@@ -324,6 +376,43 @@ const storyElements = computed<StoryElement[]>(() => {
 
   return items
 })
+
+// ── Story summary projections (ADR 0004, openimago-9so) ──────────────────────
+
+const storyBibleSummary = computed<StoryBibleSummary | null>(() => {
+  if (!storyBible.value) return null
+  return rawBibleToSummary(storyBible.value)
+})
+
+const storyEpisodeSummaries = computed<StoryEpisodeSummary[]>(() => {
+  if (!storySeries.value) return []
+  return rawSeriesToEpisodeSummaries(storySeries.value)
+})
+
+const currentStoryShots = computed<StoryShotSummary[]>(() => {
+  const epId = currentStoryEpisodeId.value
+  if (!epId) return []
+  const episode = storyEpisodes.value.find((ep) => ep.id === epId)
+  if (!episode) return []
+  return rawEpisodeToShotSummaries(episode)
+})
+
+const currentStoryWorkflowNodes = computed<StoryWorkflowNodeSummary[]>(() => {
+  if (!storyWorkflow.value) return []
+  return rawWorkflowToNodeSummaries(storyWorkflow.value)
+})
+
+const currentStoryRuns = computed<StoryRunSummary[]>(() => {
+  if (!storyRuns.value) return []
+  return rawRunsToRunSummaries(storyRuns.value)
+})
+
+// Track workspace tab for story panel visibility
+const activeWorkspaceTabRef = ref<string | null>(null)
+const STORY_TAB_IDS = new Set<string>(['storyboard', 'timeline', 'edit'])
+const activeWorkspaceTabIsStoryTab = computed(() =>
+  activeWorkspaceTabRef.value !== null && STORY_TAB_IDS.has(activeWorkspaceTabRef.value),
+)
 
 // ── Derived: WorkspaceArtifact[] for WorkspaceArtifactsPanel (ADR 0003) ─────
 // Maps project outputs + files into the unified artifact shape used by the
@@ -522,6 +611,7 @@ function onOpenExport() {
 }
 
 function onWorkspaceTabChange(tab: WorkspaceTabId) {
+  activeWorkspaceTabRef.value = tab
   // TODO: route to the right deep-link per workspace tab
   // (e.g. /projects/:id/storyboard, /projects/:id/timeline, /projects/:id/edit)
   // For now we only log + show a notice so the user sees the tab reacts.
@@ -556,6 +646,81 @@ function onPlayOutput(id: string) {
   const output = projectOutputs.value.find((item) => item.id === id)
   if (output) {
     $q.notify({ color: 'info', message: `播放 ${output.filename}（待接入）`, icon: 'play_circle' })
+  }
+}
+
+// ── Story panel event handlers (ADR 0004, openimago-9so) ──────────────────
+
+function onStorySelect(selection: StorySelection): void {
+  switch (selection.kind) {
+    case 'episode':
+      break
+    case 'scene':
+      currentStorySceneId.value = selection.id
+      break
+    case 'shot': {
+      currentStoryShotId.value = selection.id
+      const shot = currentStoryShots.value.find((s) => s.id === selection.id)
+      if (shot && shot.referenceArtifactIds.length > 0 && projectOutputs.value.length > 0) {
+        const firstRef = shot.referenceArtifactIds[0]!
+        const outputMatch = projectOutputs.value.find(
+          (o) => o.id === firstRef || o.filename?.includes(firstRef),
+        )
+        if (outputMatch) {
+          selectedOutputId.value = outputMatch.id
+        }
+      }
+      break
+    }
+    case 'character':
+      storySelectedCharacterId.value = selection.id
+      break
+    case 'styleSeed':
+      storySelectedStyleSeedId.value = selection.id
+      break
+  }
+}
+
+function onStoryEpisodeChange(episodeId: string): void {
+  if (!episodeId || episodeId === currentStoryEpisodeId.value) return
+  currentStoryEpisodeId.value = episodeId
+  currentStoryShotId.value = null
+  storyWorkflow.value = null
+  storyRuns.value = null
+  const pid = projectId.value
+  void Promise.all([
+    api.projectStoryWorkflow(pid, episodeId),
+    api.projectStoryRuns(pid, episodeId),
+  ]).then(([wf, runs]) => {
+    storyWorkflow.value = wf
+    storyRuns.value = runs
+  }).catch(() => {
+    storyWorkflow.value = null
+    storyRuns.value = null
+  })
+}
+
+function onStoryIntent(intent: StoryEditIntent): void {
+  switch (intent.kind) {
+    case 'edit-shot':
+      $q.notify({ color: 'info', message: '编辑镜头功能即将上线（编辑模式）', icon: 'edit', timeout: 1500 })
+      break
+    case 'regenerate-shot':
+      $q.notify({ color: 'info', message: '重新生成镜头功能即将上线（工作流执行）', icon: 'refresh', timeout: 1500 })
+      break
+    case 'regenerate-run':
+      $q.notify({ color: 'info', message: '重新执行运行功能即将上线', icon: 'refresh', timeout: 1500 })
+      break
+    case 'open-artifact': {
+      const output = projectOutputs.value.find((o) => o.id === intent.artifactId)
+      if (output) {
+        selectedOutputId.value = output.id
+        $q.notify({ color: 'info', message: `已选中关联产出 ${output.filename || intent.artifactId}`, icon: 'check', timeout: 1200 })
+      } else {
+        $q.notify({ color: 'info', message: '关联产出未找到，可能需要先生成', icon: 'info', timeout: 1500 })
+      }
+      break
+    }
   }
 }
 
@@ -672,6 +837,8 @@ async function fetchProjectData() {
 
 async function fetchStoryData() {
   const pid = projectId.value
+  storyPanelLoading.value = true
+  storyPanelError.value = null
   try {
     // Fetch bible + series in parallel as they are the most valuable for
     // populating storyElements. Individual episode fetches follow series data.
@@ -693,9 +860,28 @@ async function fetchStoryData() {
         epIds.map((epId) => api.projectStoryEpisode(pid, epId)),
       )
       storyEpisodes.value = episodes.filter((ep): ep is OpenimagoStoryEpisode => ep !== null)
+
+      // Select the first episode by default
+      if (epIds.length > 0 && !currentStoryEpisodeId.value) {
+        const firstEpId = epIds[0]!
+        currentStoryEpisodeId.value = firstEpId
+        // Fetch workflow + runs for the initially selected episode
+        void Promise.all([
+          api.projectStoryWorkflow(pid, firstEpId),
+          api.projectStoryRuns(pid, firstEpId),
+        ]).then(([wf, runs]) => {
+          storyWorkflow.value = wf
+          storyRuns.value = runs
+        }).catch(() => {
+          storyWorkflow.value = null
+          storyRuns.value = null
+        })
+      }
     }
   } catch {
     // Silent — story data is optional; grid falls back to outputs/files.
+  } finally {
+    storyPanelLoading.value = false
   }
 }
 
@@ -922,5 +1108,14 @@ onUnmounted(() => {
   color: rgba(0, 240, 255, 0.9);
   font-size: 11px;
   font-weight: 600;
+}
+
+/* ── Story panel overlay (ADR 0004, openimago-9so) ─────────────────────── */
+
+.story-panel-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background: var(--imago-bg-void);
 }
 </style>

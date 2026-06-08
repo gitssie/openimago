@@ -1,0 +1,209 @@
+/**
+ * Story summary mapper — converts raw story API JSON (openimago-1a3)
+ * into the Story*Summary projection types that ProjectWorkspaceStoryPanel
+ * consumes (ADR 0004, openimago-9so).
+ *
+ * All functions are pure: raw data in, summary out. No side effects.
+ */
+import type {
+  OpenimagoStoryBible,
+  OpenimagoStoryEpisode,
+  OpenimagoStoryRuns,
+  OpenimagoStorySeries,
+  OpenimagoStoryWorkflow,
+} from '../api/client'
+import type {
+  StoryBibleSummary,
+  StoryCharacterSummary,
+  StoryEpisodeSummary,
+  StoryRunSummary,
+  StorySceneSummary,
+  StoryShotDialog,
+  StoryShotSummary,
+  StoryStyleSeedSummary,
+  StoryWorkflowNodeSummary,
+} from '../components/session-workspace/types'
+
+/** Guard: extract string value safely. */
+function safeStr(v: unknown): string {
+  return typeof v === 'string' ? v : ''
+}
+
+/** Guard: extract number value safely, returns null for non-numbers. */
+function safeNum(v: unknown): number | null {
+  return typeof v === 'number' ? v : null
+}
+
+/** Guard: extract number value with default, returns number always. */
+function safeNumD(v: unknown, fallback: number): number {
+  return typeof v === 'number' ? v : fallback
+}
+
+/** Guard: extract string array safely. */
+function safeStrArr(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []
+}
+
+/** Guard: number from unknown (parseInt fallback). */
+function parseNum(v: unknown, fallback: number): number {
+  if (typeof v === 'number') return Math.round(v)
+  if (typeof v === 'string') {
+    const n = parseInt(v, 10)
+    return Number.isNaN(n) ? fallback : n
+  }
+  return fallback
+}
+
+/** Guard: check if value is a known literal in a tuple. */
+function isStatus<T extends readonly string[]>(v: unknown, allowed: T): T[number] | undefined {
+  return typeof v === 'string' ? (allowed as readonly string[]).find((s) => s === v) : undefined
+}
+
+// ── Bible ─────────────────────────────────────────────────────────────────────
+
+function mapCharacter(raw: Record<string, unknown>, _idx: number): StoryCharacterSummary {
+  return {
+    id: safeStr(raw['id']) || safeStr(raw['slug']) || `char-${_idx}`,
+    displayName: safeStr(raw['name']) || safeStr(raw['displayName']) || '未命名角色',
+    role: isStatus(raw['role'], ['protagonist', 'antagonist', 'supporting', 'extra'] as const) ?? 'supporting',
+    description: safeStr(raw['description']) || safeStr(raw['bio']) || '',
+    visualNotes: safeStr(raw['visualNotes']) || safeStr(raw['appearanceNotes']) || '',
+    thumbnailUrl: safeStr(raw['thumbnailUrl']) || safeStr(raw['portraitUrl']) || null,
+    referenceArtifactIds: safeStrArr(raw['referenceArtifactIds']),
+    tags: safeStrArr(raw['tags']) || safeStrArr(raw['keywords']),
+  }
+}
+
+function mapScene(raw: Record<string, unknown>, _idx: number): StorySceneSummary {
+  return {
+    id: safeStr(raw['id']) || safeStr(raw['slug']) || `scene-${_idx}`,
+    displayName: safeStr(raw['name']) || safeStr(raw['displayName']) || '未命名场景',
+    type: safeStr(raw['type']) || safeStr(raw['location']) || 'interior',
+    description: safeStr(raw['description']) || '',
+    mood: safeStr(raw['mood']) || safeStr(raw['atmosphere']) || '',
+    lighting: safeStr(raw['lighting']) || safeStr(raw['lightingNotes']) || '',
+    thumbnailUrl: safeStr(raw['thumbnailUrl']) || safeStr(raw['bgRef']) || null,
+    referenceArtifactIds: safeStrArr(raw['referenceArtifactIds']),
+    tags: safeStrArr(raw['tags']),
+  }
+}
+
+function mapStyleSeed(raw: Record<string, unknown>, _idx: number): StoryStyleSeedSummary {
+  return {
+    id: safeStr(raw['id']) || safeStr(raw['slug']) || `style-${_idx}`,
+    displayName: safeStr(raw['name']) || safeStr(raw['displayName']) || '未命名风格',
+    description: safeStr(raw['description']) || '',
+    visualStyle: safeStr(raw['visualStyle']) || safeStr(raw['stylePrompt']) || '',
+    colorPalette: Array.isArray(raw['colorPalette'])
+      ? (raw['colorPalette'] as unknown[]).filter((c): c is string => typeof c === 'string')
+      : [],
+    thumbnailUrl: safeStr(raw['thumbnailUrl']) || safeStr(raw['previewUrl']) || null,
+    referenceArtifactIds: safeStrArr(raw['referenceArtifactIds']),
+  }
+}
+
+export function rawBibleToSummary(bible: OpenimagoStoryBible): StoryBibleSummary {
+  return {
+    schemaVersion: bible.schemaVersion,
+    worldName: bible.world?.name ?? '',
+    worldDescription: bible.world?.description ?? '',
+    era: bible.world?.era ?? '',
+    moodKeywords: bible.world?.moodKeywords ?? [],
+    visualStyleNotes: bible.world?.visualStyleNotes ?? '',
+    characters: (bible.characters ?? []).map((c, idx) => mapCharacter(c, idx)),
+    scenes: (bible.scenes ?? []).map((s, idx) => mapScene(s, idx)),
+    styleSeeds: (bible.styleSeeds ?? []).map((ss, idx) => mapStyleSeed(ss, idx)),
+    updatedAt: bible.updatedAt ?? null,
+  }
+}
+
+// ── Series → episodes ─────────────────────────────────────────────────────────
+
+export function rawSeriesToEpisodeSummaries(series: OpenimagoStorySeries): StoryEpisodeSummary[] {
+  return (series.episodes ?? []).map((ep) => {
+    return {
+      id: safeStr(ep['id']) || '',
+      episodeNumber: parseNum(ep['episodeNumber'], 0),
+      title: safeStr(ep['title']) || `集数 ${safeStr(ep['episodeNumber'])}`,
+      status: isStatus(ep['status'], ['draft', 'storyboard', 'generating', 'review', 'done'] as const) ?? 'draft',
+      shotCount: parseNum(ep['shotCount'], Array.isArray(ep['shots']) ? (ep['shots'] as unknown[]).length : 0),
+      durationEstimate: safeNum(ep['durationEstimate']) ?? safeNum(ep['duration']) ?? null,
+      logline: safeStr(ep['logline']) || safeStr(ep['summary']) || '',
+      synopsis: safeStr(ep['synopsis']) || safeStr(ep['description']) || '',
+      updatedAt: safeStr(ep['updatedAt']) || null,
+    }
+  })
+}
+
+// ── Episode → shots ───────────────────────────────────────────────────────────
+
+function mapDialog(raw: Record<string, unknown>): StoryShotDialog {
+  return {
+    characterId: safeStr(raw['characterId']) || safeStr(raw['speaker']) || '',
+    text: safeStr(raw['text']) || safeStr(raw['line']) || '',
+    emotion: safeStr(raw['emotion']) || safeStr(raw['tone']) || null,
+  }
+}
+
+export function rawEpisodeToShotSummaries(episode: OpenimagoStoryEpisode): StoryShotSummary[] {
+  const shots = episode.shots ?? []
+  return shots.map((shot, sIdx) => {
+    const rawDialog = shot['dialog'] as unknown[] | undefined
+    return {
+      id: safeStr(shot['id']) || safeStr(shot['slug']) || `shot-${sIdx}`,
+      shotNumber: safeNumD(shot['shotNumber'], sIdx + 1),
+      sceneId: safeStr(shot['sceneId']) || safeStr(shot['location']) || '',
+      description: safeStr(shot['description']) || safeStr(shot['prompt']) || '',
+      visualPrompt: safeStr(shot['visualPrompt']) || safeStr(shot['desc']) || '',
+      cameraNotes: safeStr(shot['cameraNotes']) || safeStr(shot['camera']) || '',
+      lightingNotes: safeStr(shot['lightingNotes']) || safeStr(shot['lighting']) || '',
+      dialog: rawDialog
+        ? rawDialog.map((d) => mapDialog(d as Record<string, unknown>))
+        : [],
+      characterIds: safeStrArr(shot['characterIds']) ?? safeStrArr(shot['characters']),
+      referenceArtifactIds: safeStrArr(shot['referenceArtifactIds']),
+      status: isStatus(shot['status'], ['pending', 'in_progress', 'generated', 'review', 'approved'] as const) ?? 'pending',
+      durationEstimate: safeNum(shot['durationEstimate']) ?? safeNum(shot['duration']) ?? null,
+      latestRunId: safeStr(shot['latestRunId']) || safeStr(shot['lastRunId']) || null,
+    }
+  })
+}
+
+// ── Workflow → nodes ──────────────────────────────────────────────────────────
+
+export function rawWorkflowToNodeSummaries(
+  workflow: OpenimagoStoryWorkflow,
+): StoryWorkflowNodeSummary[] {
+  return (workflow.nodes ?? []).map((node) => {
+    return {
+      id: safeStr(node['id']) || '',
+      shotId: safeStr(node['shotId']) || '',
+      toolKind: isStatus(node['toolKind'] ?? node['tool'], ['image_generate', 'video_generate', 'image_edit'] as const) ?? 'image_generate',
+      label: safeStr(node['label']) || safeStr(node['name']) || '',
+      promptTemplate: safeStr(node['promptTemplate']) || safeStr(node['prompt']) || '',
+      model: safeStr(node['model']) || null,
+      aspectRatio: safeStr(node['aspectRatio']) || safeStr(node['aspect']) || null,
+      dependsOn: safeStrArr(node['dependsOn']) ?? safeStrArr(node['inputsFrom']),
+      latestRunId: safeStr(node['latestRunId']) || safeStr(node['lastRunId']) || null,
+    }
+  })
+}
+
+// ── Runs → run summaries ──────────────────────────────────────────────────────
+
+export function rawRunsToRunSummaries(runs: OpenimagoStoryRuns): StoryRunSummary[] {
+  return (runs.runs ?? []).map((run) => {
+    return {
+      id: safeStr(run['id']) || '',
+      nodeId: safeStr(run['nodeId']) || safeStr(run['toolNodeId']) || '',
+      shotId: safeStr(run['shotId']) || '',
+      status: isStatus(run['status'], ['queued', 'running', 'completed', 'failed'] as const) ?? 'queued',
+      startedAt: safeStr(run['startedAt']) || safeStr(run['createdAt']) || '',
+      completedAt: safeStr(run['completedAt']) || safeStr(run['finishedAt']) || null,
+      model: safeStr(run['model']) || '',
+      prompt: safeStr(run['prompt']) || safeStr(run['inputPrompt']) || '',
+      resultArtifactId: safeStr(run['resultArtifactId']) || safeStr(run['artifactId']) || null,
+      error: safeStr(run['error']) || safeStr(run['errorMessage']) || null,
+    }
+  })
+}

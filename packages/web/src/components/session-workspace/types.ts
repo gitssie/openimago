@@ -72,3 +72,156 @@ export interface ArtifactRerunPayload {
 }
 
 export type WorkspaceScope = 'session' | 'project'
+
+// ── Story UI shapes (ADR 0004, openimago-ntd) ─────────────────────────────
+//
+// These are *read-only* summary projections that the ProjectWorkspaceStoryPanel
+// renders. They are intentionally *not* the on-disk story JSON shape (see
+// docs/adr/0004-story-state-json-schema.md) — they are the flattened, UI-ready
+// shape that the page derives before handing them to the panel.
+//
+// Naming convention:
+//   `Story*Summary` — read-only view models (UI consumes, never mutates)
+//   `Story*Intent`   — emit payloads for future edit/regenerate affordances
+//
+// The coder is expected to:
+//   1. Fetch raw story JSON via `api.projectStoryBible/Series/Episode/...`
+//   2. Map raw fields into the `Story*Summary` shapes below
+//   3. Pass them as props; the panel does not know about the filesystem
+
+/** Lightweight bible character projection (ADR 0004 BibleCharacter, flattened). */
+export interface StoryCharacterSummary {
+  id: string
+  displayName: string
+  role: 'protagonist' | 'antagonist' | 'supporting' | 'extra'
+  description: string
+  visualNotes: string
+  thumbnailUrl: string | null
+  referenceArtifactIds: string[]
+  tags: string[]
+}
+
+/** Lightweight bible scene projection (ADR 0004 BibleScene, flattened). */
+export interface StorySceneSummary {
+  id: string
+  displayName: string
+  /** ADR 0004 enumerates 'interior' | 'exterior' | 'abstract'. The panel is
+   *  permissive on the read path because on-disk JSON may have free-form
+   *  variants as the schema evolves. */
+  type: string
+  description: string
+  mood: string
+  lighting: string
+  thumbnailUrl: string | null
+  referenceArtifactIds: string[]
+  tags: string[]
+}
+
+/** Lightweight style-seed projection (ADR 0004 StyleSeed, flattened). */
+export interface StoryStyleSeedSummary {
+  id: string
+  displayName: string
+  description: string
+  visualStyle: string
+  colorPalette: string[]
+  thumbnailUrl: string | null
+  referenceArtifactIds: string[]
+}
+
+/** Lightweight bible container — the canon reference. */
+export interface StoryBibleSummary {
+  schemaVersion: number
+  worldName: string
+  worldDescription: string
+  era: string
+  moodKeywords: string[]
+  visualStyleNotes: string
+  characters: StoryCharacterSummary[]
+  scenes: StorySceneSummary[]
+  styleSeeds: StoryStyleSeedSummary[]
+  updatedAt: string | null
+}
+
+/** Series/episode index entry (ADR 0004 SeriesEpisodeEntry, flattened). */
+export interface StoryEpisodeSummary {
+  id: string
+  episodeNumber: number
+  title: string
+  status: 'draft' | 'storyboard' | 'generating' | 'review' | 'done'
+  shotCount: number
+  durationEstimate: number | null
+  logline: string
+  synopsis: string
+  updatedAt: string | null
+}
+
+/** Single dialog line within a shot (ADR 0004 ShotDialog, flattened). */
+export interface StoryShotDialog {
+  characterId: string
+  text: string
+  emotion: string | null
+}
+
+/** Single shot within an episode (ADR 0004 EpisodeShot, flattened). */
+export interface StoryShotSummary {
+  id: string
+  shotNumber: number
+  sceneId: string
+  description: string
+  visualPrompt: string
+  cameraNotes: string
+  lightingNotes: string
+  dialog: StoryShotDialog[]
+  characterIds: string[]
+  referenceArtifactIds: string[]
+  status: 'pending' | 'in_progress' | 'generated' | 'review' | 'approved'
+  durationEstimate: number | null
+  /** Optional: latest run for this shot (most-recent first). */
+  latestRunId: string | null
+}
+
+/** Single workflow node (ADR 0004 WorkflowNode, flattened). */
+export interface StoryWorkflowNodeSummary {
+  id: string
+  shotId: string
+  toolKind: 'image_generate' | 'video_generate' | 'image_edit'
+  label: string
+  promptTemplate: string
+  model: string | null
+  aspectRatio: string | null
+  dependsOn: string[]
+  /** Optional latest run for this node. */
+  latestRunId: string | null
+}
+
+/** Single run entry (ADR 0004 GenerationRun, flattened). */
+export interface StoryRunSummary {
+  id: string
+  nodeId: string
+  shotId: string
+  status: 'queued' | 'running' | 'completed' | 'failed'
+  startedAt: string
+  completedAt: string | null
+  model: string
+  prompt: string
+  resultArtifactId: string | null
+  error: string | null
+}
+
+/** Selection emitted when the user picks a story entity. */
+export type StorySelection =
+  | { kind: 'episode'; id: string }
+  | { kind: 'scene'; id: string }
+  | { kind: 'shot'; id: string }
+  | { kind: 'character'; id: string }
+  | { kind: 'styleSeed'; id: string }
+
+/**
+ * Future-affordance intent — read-only MVP emits these for the coder to wire.
+ * The panel itself does not perform edits or rerun generations.
+ */
+export type StoryEditIntent =
+  | { kind: 'edit-shot'; episodeId: string; shotId: string }
+  | { kind: 'regenerate-shot'; episodeId: string; shotId: string }
+  | { kind: 'regenerate-run'; episodeId: string; runId: string }
+  | { kind: 'open-artifact'; episodeId: string; artifactId: string }
