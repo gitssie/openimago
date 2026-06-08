@@ -258,6 +258,7 @@ import SessionChatView from 'src/components/session-workspace/SessionChatView.vu
 import SessionWorkspaceSidebar from 'src/components/session-workspace/SessionWorkspaceSidebar.vue'
 import WorkspaceArtifactsPanel from 'src/components/session-workspace/WorkspaceArtifactsPanel.vue'
 import type { WorkspaceArtifact } from 'src/components/session-workspace/types'
+import { api } from 'src/api/client'
 import { UILayout, UILayoutDrawer, UILayoutFooter, UILayoutPage, UILayoutPageContainer } from 'src/components/ui/layout'
 import { useAgentSession, type DisplayMessage } from 'src/composables/useAgentSession'
 import type { SessionItem } from 'src/services/agents'
@@ -632,17 +633,35 @@ function handleSelectResult(id: string) {
   selectedResultId.value = id
 }
 
-// ── WorkspaceArtifactsPanel event stubs (ADR 0003) ──────────────────────────
-// TODO: wire to parameter editor / rerun backend when available (openimago-xkn)
+// ── WorkspaceArtifactsPanel event stubs (ADR 0003, openimago-nhp) ────────
+// The panel now handles parameter editing inline; these handlers react to
+// panel emits (select, edit-params, rerun, delete).
 
 function handleEditArtifactParams(_id: string) {
-  // TODO: open parameter editor inline in the panel
-  $q.notify({ color: 'info', message: '参数编辑器即将上线（编辑模式）', icon: 'edit', timeout: 1500 })
+  // Parameter editor is now inline in the panel (openimago-nhp).
+  // This emit still fires for backward compat; no page-level action needed.
 }
 
-function handleRerunArtifact(_payload: unknown) {
-  // TODO: create new generation run with updated params (immutable) — openimago-xkn
-  $q.notify({ color: 'info', message: '重新生成即将上线（会话作用域）', icon: 'refresh', timeout: 1500 })
+async function handleRerunArtifact(payload: unknown) {
+  // Call stub API placeholder (openimago-xkn / openimago-nhp)
+  try {
+    const result = await api.rerunArtifact(payload as {
+      artifactId: string
+      prompt?: string
+      model?: string
+      aspectRatio?: string
+      duration?: number
+      seed?: number
+      inputArgs?: Record<string, unknown>
+    })
+    if (result.ok) {
+      $q.notify({ color: 'positive', message: '重新生成已提交', icon: 'check', timeout: 1500 })
+    } else {
+      $q.notify({ color: 'info', message: result.message || '重新生成即将上线', icon: 'refresh', timeout: 2000 })
+    }
+  } catch {
+    $q.notify({ color: 'info', message: '重新生成即将上线', icon: 'refresh', timeout: 1500 })
+  }
 }
 
 function handleDeleteArtifact(_id: string) {

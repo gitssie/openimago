@@ -64,7 +64,8 @@
                 icon="edit"
                 label="编辑参数"
                 class="result-action-btn"
-                @click="$emit('edit-params', selected.id)"
+                :class="{ 'result-action-btn--disabled': !hasGenRun }"
+                @click="openParamEditor"
               />
               <q-btn
                 v-if="selectedUrl"
@@ -77,6 +78,115 @@
                 download
               />
             </div>
+            <!-- Legacy notice when no genRun metadata -->
+            <div v-if="!hasGenRun" class="result-feature__legacy">
+              <q-icon name="info" size="14px" color="grey-6" />
+              <span>此制品由旧版工具生成，缺少参数信息，无法编辑重生成。</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Parameter editor (openimago-nhp) ──────────────────────────────── -->
+        <div v-if="showParamEditor && selected && hasGenRun" class="param-editor imago-surface">
+          <div class="param-editor__header">
+            <span class="param-editor__title">编辑生成参数</span>
+            <span class="param-editor__subtitle">{{ selected.filename || selected.kind }}</span>
+          </div>
+
+          <!-- Prompt-first form -->
+          <div class="param-editor__form">
+            <label class="param-field">
+              <span class="param-field__label">提示词 *</span>
+              <textarea
+                v-model="paramForm.prompt"
+                class="param-field__textarea"
+                rows="3"
+                placeholder="输入生成提示词..."
+              />
+            </label>
+
+            <label class="param-field">
+              <span class="param-field__label">反向提示词</span>
+              <textarea
+                v-model="paramForm.negativePrompt"
+                class="param-field__textarea param-field__textarea--small"
+                rows="2"
+                placeholder="排除不需要的内容..."
+              />
+            </label>
+
+            <div class="param-field-row">
+              <label class="param-field param-field--half">
+                <span class="param-field__label">模型</span>
+                <input
+                  v-model="paramForm.model"
+                  class="param-field__input"
+                  placeholder="模型名称"
+                />
+              </label>
+              <label class="param-field param-field--half">
+                <span class="param-field__label">比例</span>
+                <select v-model="paramForm.aspectRatio" class="param-field__select">
+                  <option value="">默认</option>
+                  <option v-for="ratio in ASPECT_RATIOS" :key="ratio" :value="ratio">{{ ratio }}</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="param-field-row">
+              <label class="param-field param-field--half">
+                <span class="param-field__label">时长 (秒)</span>
+                <input
+                  v-model.number="paramForm.duration"
+                  class="param-field__input"
+                  type="number"
+                  min="1"
+                  max="300"
+                  placeholder="自动"
+                />
+              </label>
+              <label class="param-field param-field--half">
+                <span class="param-field__label">种子</span>
+                <input
+                  v-model.number="paramForm.seed"
+                  class="param-field__input"
+                  type="number"
+                  placeholder="随机"
+                />
+              </label>
+            </div>
+          </div>
+
+          <!-- Advanced JSON editor -->
+          <details class="param-editor__advanced">
+            <summary class="param-editor__advanced-toggle">
+              <q-icon name="code" size="16px" color="grey-6" />
+              <span>高级参数 (JSON)</span>
+            </summary>
+            <div class="param-editor__advanced-body">
+              <textarea
+                class="param-editor__json-input"
+                :value="advancedJson"
+                rows="8"
+                spellcheck="false"
+                placeholder="{\n  &quot;model&quot;: &quot;...&quot;,\n  &quot;prompt&quot;: &quot;...&quot;\n}"
+                @input="handleAdvancedJsonInput(($event.target as HTMLTextAreaElement).value)"
+              />
+              <div v-if="jsonError" class="param-editor__json-error">
+                <q-icon name="error" size="14px" />
+                <span>{{ jsonError }}</span>
+              </div>
+            </div>
+          </details>
+
+          <!-- Action bar -->
+          <div class="param-editor__actions">
+            <button type="button" class="param-editor__cancel" @click="closeParamEditor">
+              取消
+            </button>
+            <button type="button" class="param-editor__submit" @click="submitRerun">
+              重新生成
+            </button>
           </div>
         </div>
 
@@ -184,7 +294,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import type { WorkspaceArtifact, ArtifactRerunPayload, WorkspaceScope } from './types'
 
 // ── Props ──────────────────────────────────────────────────────────────────────
@@ -242,6 +352,123 @@ const scopeLabel = computed(() => {
   if (props.scope === 'project') return '项目范围下最近产出'
   return '当前会话最近产出'
 })
+
+// ── Parameter editor state (ADR 0003, openimago-nhp) ──────────────────────────
+
+const showParamEditor = ref(false)
+const hasGenRun = computed(() => selected.value?.genRun !== undefined)
+
+interface ParamForm {
+  prompt: string
+  negativePrompt: string
+  model: string
+  aspectRatio: string
+  duration: number | undefined
+  seed: number | undefined
+}
+
+const paramForm = reactive<ParamForm>({
+  prompt: '',
+  negativePrompt: '',
+  model: '',
+  aspectRatio: '',
+  duration: undefined,
+  seed: undefined,
+})
+
+const advancedJson = ref('')
+const jsonError = ref('')
+
+const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:2'] as const
+
+function extractParam(value: unknown, fallback: string): string {
+  return typeof value === 'string' ? value : fallback
+}
+
+function extractNumberParam(value: unknown): number | undefined {
+  if (typeof value === 'number' && !Number.isNaN(value)) return value
+  return undefined
+}
+
+function openParamEditor(): void {
+  const sel = selected.value
+  if (!sel?.genRun) return
+
+  const args = sel.genRun.inputArgs
+
+  paramForm.prompt = extractParam(args.prompt, sel.prompt ?? '')
+  paramForm.negativePrompt = extractParam(args.negative_prompt ?? args.negativePrompt, '')
+  paramForm.model = extractParam(args.model, sel.model ?? '')
+  paramForm.aspectRatio = extractParam(args.aspect_ratio ?? args.aspectRatio, '')
+  paramForm.duration = extractNumberParam(args.duration ?? args.duration_seconds ?? sel.duration)
+  paramForm.seed = extractNumberParam(args.seed ?? sel.seed)
+
+  advancedJson.value = JSON.stringify(args, null, 2)
+  jsonError.value = ''
+
+  showParamEditor.value = true
+
+  // Also emit for external consumers (backward compat)
+  emit('edit-params', sel.id)
+}
+
+function closeParamEditor(): void {
+  showParamEditor.value = false
+  jsonError.value = ''
+}
+
+function handleAdvancedJsonInput(value: string): void {
+  advancedJson.value = value
+  validateJson()
+}
+
+function validateJson(): boolean {
+  jsonError.value = ''
+  if (!advancedJson.value.trim()) {
+    jsonError.value = 'JSON 不能为空'
+    return false
+  }
+  try {
+    const parsed = JSON.parse(advancedJson.value)
+    if (typeof parsed !== 'object' || parsed === null) {
+      jsonError.value = 'JSON 必须是一个对象'
+      return false
+    }
+    return true
+  } catch (e) {
+    jsonError.value = `JSON 解析错误: ${e instanceof Error ? e.message : '格式无效'}`
+    return false
+  }
+}
+
+function submitRerun(): void {
+  const sel = selected.value
+  if (!sel) return
+
+  let inputArgs: Record<string, unknown> | undefined
+  if (advancedJson.value.trim()) {
+    if (!validateJson()) return
+    try {
+      inputArgs = JSON.parse(advancedJson.value) as Record<string, unknown>
+    } catch {
+      return // validated above, shouldn't reach
+    }
+  }
+
+  const payload: ArtifactRerunPayload = {
+    artifactId: sel.id,
+    ...(paramForm.prompt ? { prompt: paramForm.prompt } : {}),
+    ...(paramForm.negativePrompt ? { negativePrompt: paramForm.negativePrompt } : {}),
+    ...(paramForm.model ? { model: paramForm.model } : {}),
+    ...(paramForm.aspectRatio ? { aspectRatio: paramForm.aspectRatio } : {}),
+    ...(paramForm.duration !== undefined ? { duration: paramForm.duration } : {}),
+    ...(paramForm.seed !== undefined ? { seed: paramForm.seed } : {}),
+    ...(inputArgs ? { inputArgs } : {}),
+  }
+
+  emit('rerun', payload)
+  closeParamEditor()
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -599,5 +826,242 @@ function kindChip(kind: WorkspaceArtifact['kind']): string {
   justify-content: space-between;
   gap: 8px;
   margin-top: 12px;
+}
+
+/* ── Result detail actions ─────────────────────────────────────────── */
+
+.result-action-btn--disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.result-feature__legacy {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--imago-text-dim);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* ── Parameter editor (openimago-nhp) ─────────────────────────────── */
+
+.param-editor {
+  padding: 14px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(15, 17, 30, 0.92), rgba(10, 11, 21, 0.84));
+  border: 1px solid rgba(0, 240, 255, 0.1);
+}
+
+.param-editor__header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.param-editor__title {
+  color: var(--imago-text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.param-editor__subtitle {
+  color: var(--imago-text-dim);
+  font-size: 11px;
+}
+
+.param-editor__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.param-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.param-field__label {
+  color: var(--imago-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.param-field__textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--imago-text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  transition: border-color var(--imago-ease-default);
+  font-family: inherit;
+}
+
+.param-field__textarea:focus {
+  border-color: rgba(0, 240, 255, 0.35);
+}
+
+.param-field__textarea--small {
+  font-size: 12px;
+}
+
+.param-field__input,
+.param-field__select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--imago-text-primary);
+  font-size: 12px;
+  outline: none;
+  transition: border-color var(--imago-ease-default);
+  font-family: inherit;
+}
+
+.param-field__input:focus,
+.param-field__select:focus {
+  border-color: rgba(0, 240, 255, 0.35);
+}
+
+.param-field__select {
+  appearance: none;
+  cursor: pointer;
+}
+
+.param-field-row {
+  display: flex;
+  gap: 10px;
+}
+
+.param-field--half {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Advanced JSON editor ──────────────────────────────────────────── */
+
+.param-editor__advanced {
+  margin-top: 14px;
+}
+
+.param-editor__advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--imago-text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+.param-editor__advanced-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.param-editor__advanced[open] .param-editor__advanced-toggle {
+  border-color: rgba(0, 240, 255, 0.16);
+  color: var(--imago-text-secondary);
+}
+
+.param-editor__advanced-body {
+  margin-top: 8px;
+}
+
+.param-editor__json-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+  color: rgba(0, 240, 255, 0.85);
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  tab-size: 2;
+}
+
+.param-editor__json-input:focus {
+  border-color: rgba(0, 240, 255, 0.35);
+}
+
+.param-editor__json-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(244, 67, 54, 0.1);
+  border: 1px solid rgba(244, 67, 54, 0.2);
+  color: rgba(244, 67, 54, 0.9);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* ── Action bar ─────────────────────────────────────────────────────── */
+
+.param-editor__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.param-editor__cancel {
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: var(--imago-text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color var(--imago-ease-default), color var(--imago-ease-default);
+}
+
+.param-editor__cancel:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--imago-text-secondary);
+}
+
+.param-editor__submit {
+  padding: 8px 20px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, rgba(0, 240, 255, 0.2), rgba(168, 85, 247, 0.2));
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  color: rgba(0, 240, 255, 0.9);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--imago-ease-default), background var(--imago-ease-default);
+}
+
+.param-editor__submit:hover {
+  border-color: rgba(0, 240, 255, 0.5);
+  background: linear-gradient(135deg, rgba(0, 240, 255, 0.28), rgba(168, 85, 247, 0.28));
 }
 </style>

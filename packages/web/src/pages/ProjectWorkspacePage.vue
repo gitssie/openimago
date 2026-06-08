@@ -149,7 +149,7 @@ import AgentQuestion from 'src/components/AgentQuestion.vue'
 import PromptInput from 'src/components/PromptInput.vue'
 import { useAgentSession } from 'src/composables/useAgentSession'
 import type { SessionItem } from 'src/services/agents'
-import { api, type OpenimagoProject } from 'src/api/client'
+import { api, type OpenimagoProject, type OpenimagoStoryBible, type OpenimagoStorySeries, type OpenimagoStoryEpisode } from 'src/api/client'
 import type { TextPart } from '@opencode-ai/sdk/v2'
 import WorkspaceArtifactsPanel from 'src/components/session-workspace/WorkspaceArtifactsPanel.vue'
 import type { WorkspaceArtifact, GenerationRunMetadata } from 'src/components/session-workspace/types'
@@ -191,6 +191,9 @@ const projectOutputsLoading = ref(false)
 const selectedOutputId = ref<string | null>(null)
 const projectFiles = ref<OutputItem[]>([])
 const projectFilesLoading = ref(false)
+const storyBible = ref<OpenimagoStoryBible | null>(null)
+const storySeries = ref<OpenimagoStorySeries | null>(null)
+const storyEpisodes = ref<OpenimagoStoryEpisode[]>([])
 const selectedElementId = ref<string | null>(null)
 const showArtifactsPanel = ref(false)
 const artifactsPanelTab = ref('result')
@@ -255,40 +258,132 @@ const gridOutputs = computed<ShotOutputItem[]>(() => projectOutputs.value.map((i
   durationLabel: item.durationLabel ?? null,
 })))
 
-// TODO: derive story elements from real data. For the scaffold, we surface
-// the most visually obvious mapping (project outputs → scenes, project image
-// files → references) so the left column has something to show. Proper
-// classification (character, prop) needs the assets API to expose a tag/role
-// field — that is not available yet, hence the empty groups.
-const storyElements = computed<StoryElement[]>(() => {
+// ── Story elements derived from story JSON (bible + episodes) with fallback
+// to project outputs/files when story data is missing (ADR 0004, openimago-1a3).
+function safeStr(v: unknown): string {
+  return typeof v === "string" ? v : ""
+}
+
+function storiesFromBible(bible: OpenimagoStoryBible): StoryElement[] {
+  const items: StoryElement[] = []
+
+  // Characters
+  for (let idx = 0; idx < bible.characters.length; idx++) {
+    const ch = bible.characters[idx]!
+    const id = safeStr(ch.id) || safeStr(ch.slug) || `ci-${idx}`
+    const title = safeStr(ch.name) || "未命名角色"
+    const preview = safeStr(ch.description)
+    const thumb = safeStr(ch.thumbnailUrl) || null
+    items.push({ id: `char-${id}`, title, preview, thumbnailUrl: thumb, kind: "character", syncState: "synced" })
+  }
+
+  // Scenes
+  for (let idx = 0; idx < bible.scenes.length; idx++) {
+    const sc = bible.scenes[idx]!
+    const id = safeStr(sc.id) || safeStr(sc.slug) || `si-${idx}`
+    const title = safeStr(sc.name) || "未命名场景"
+    const preview = safeStr(sc.description)
+    const thumb = safeStr(sc.thumbnailUrl) || null
+    items.push({ id: `scene-${id}`, title, preview, thumbnailUrl: thumb, kind: "scene", syncState: "synced" })
+  }
+
+  // Style seeds → references
+  for (let idx = 0; idx < bible.styleSeeds.length; idx++) {
+    const seed = bible.styleSeeds[idx]!
+    const id = safeStr(seed.id) || safeStr(seed.slug) || `ss-${idx}`
+    const title = safeStr(seed.name) || "风格参考"
+    const preview = safeStr(seed.description)
+    const thumb = safeStr(seed.thumbnailUrl) || null
+    items.push({ id: `ref-${id}`, title, preview, thumbnailUrl: thumb, kind: "reference", syncState: "synced" })
+  }
+
+  return items
+}
+
+function storiesFromEpisodes(episodes: OpenimagoStoryEpisode[]): StoryElement[] {
+  const items: StoryElement[] = []
+  for (const ep of episodes) {
+    const shots = (ep.shots as Record<string, unknown>[]) ?? []
+    for (let sIdx = 0; sIdx < shots.length; sIdx++) {
+      const shot = shots[sIdx]!
+      const id = safeStr(shot.id) || safeStr(shot.slug) || `sh-${sIdx}`
+      const desc = safeStr(shot.description) || safeStr(shot.visualPrompt)
+      const title = safeStr(shot.title) || desc.slice(0, 40) || "镜头"
+      const thumb = safeStr(shot.thumbnailUrl) || safeStr(shot.posterUrl) || null
+      const status = safeStr(shot.status)
+      const timeLabel = safeStr(shot.timeLabel)
+      items.push({
+        id: `shot-${id}`,
+        title,
+        preview: desc,
+        thumbnailUrl: thumb,
+        kind: "scene",
+        ...(timeLabel ? { timeLabel } : {}),
+        syncState: status === "generated" ? "synced" : "pending",
+      })
+    }
+  }
+  return items
+}
+
+function storiesFromFallback(): StoryElement[] {
   const items: StoryElement[] = []
 
   for (const output of projectOutputs.value) {
-    if (output.kind === 'image' && output.url) {
+    if (output.kind === "image" && output.url) {
       items.push({
         id: `scene-${output.id}`,
-        title: output.filename || '场景镜头',
-        preview: output.promptText || '',
+        title: output.filename || "场景镜头",
+        preview: output.promptText || "",
         thumbnailUrl: output.url,
-        kind: 'scene',
+        kind: "scene",
         timeLabel: output.timeLabel,
-        syncState: 'synced',
+        syncState: "synced",
       })
     }
   }
 
   for (const file of projectFiles.value) {
-    if (file.kind === 'image' && file.url) {
+    if (file.kind === "image" && file.url) {
       items.push({
         id: `ref-${file.id}`,
-        title: file.filename || '参考图',
-        preview: file.promptText || '',
+        title: file.filename || "参考图",
+        preview: file.promptText || "",
         thumbnailUrl: file.url,
-        kind: 'reference',
+        kind: "reference",
         timeLabel: file.timeLabel,
-        syncState: 'synced',
+        syncState: "synced",
       })
     }
+  }
+
+  return items
+}
+
+const storyElements = computed<StoryElement[]>(() => {
+  const items: StoryElement[] = []
+  let hasStoryData = false
+
+  // Primary: derive from story JSON files
+  if (storyBible.value) {
+    items.push(...storiesFromBible(storyBible.value))
+    if (
+      storyBible.value.characters.length > 0 ||
+      storyBible.value.scenes.length > 0 ||
+      storyBible.value.styleSeeds.length > 0
+    ) {
+      hasStoryData = true
+    }
+  }
+
+  if (storyEpisodes.value.length > 0) {
+    items.push(...storiesFromEpisodes(storyEpisodes.value))
+    hasStoryData = true
+  }
+
+  // Fallback: derive from project outputs/files when no story data is present
+  if (!hasStoryData) {
+    items.push(...storiesFromFallback())
   }
 
   return items
@@ -528,20 +623,37 @@ function onPlayOutput(id: string) {
   }
 }
 
-// ── WorkspaceArtifactsPanel event handlers (ADR 0003) ──────────────────────
+// ── WorkspaceArtifactsPanel event handlers (ADR 0003, openimago-nhp) ──────
+// The panel now handles parameter editing inline; these react to panel emits.
 
 function onArtifactSelect(id: string) {
   artifactsPanelSelectedId.value = id
 }
 
 function onArtifactEditParams(_id: string) {
-  // TODO: open parameter editor inline (openimago-xkn)
-  $q.notify({ color: 'info', message: '参数编辑器即将上线（编辑模式）', icon: 'edit', timeout: 1500 })
+  // Parameter editor is now inline in the panel (openimago-nhp).
+  // No page-level action needed.
 }
 
-function onArtifactRerun(_payload: unknown) {
-  // TODO: create new generation run against project story workflow (openimago-xkn)
-  $q.notify({ color: 'info', message: '重新生成即将上线（项目作用域）', icon: 'refresh', timeout: 1500 })
+async function onArtifactRerun(payload: unknown) {
+  try {
+    const result = await api.rerunArtifact(payload as {
+      artifactId: string
+      prompt?: string
+      model?: string
+      aspectRatio?: string
+      duration?: number
+      seed?: number
+      inputArgs?: Record<string, unknown>
+    })
+    if (result.ok) {
+      $q.notify({ color: 'positive', message: '重新生成已提交', icon: 'check', timeout: 1500 })
+    } else {
+      $q.notify({ color: 'info', message: result.message || '重新生成即将上线（项目作用域）', icon: 'refresh', timeout: 2000 })
+    }
+  } catch {
+    $q.notify({ color: 'info', message: '重新生成即将上线（项目作用域）', icon: 'refresh', timeout: 1500 })
+  }
 }
 
 function onArtifactDelete(_id: string) {
@@ -622,6 +734,35 @@ async function fetchProjectData() {
   }
 }
 
+async function fetchStoryData() {
+  const pid = projectId.value
+  try {
+    // Fetch bible + series in parallel as they are the most valuable for
+    // populating storyElements. Individual episode fetches follow series data.
+    const [bible, series] = await Promise.all([
+      api.projectStoryBible(pid),
+      api.projectStorySeries(pid),
+    ])
+    storyBible.value = bible
+    storySeries.value = series
+
+    // Load episodes listed in series (up to first 10 to avoid excessive fetches)
+    if (series && series.episodes.length > 0) {
+      const epIds = series.episodes
+        .slice(0, 10)
+        .map((e: unknown) => (e as Record<string, unknown>).id as string | undefined)
+        .filter((id): id is string => Boolean(id))
+
+      const episodes = await Promise.all(
+        epIds.map((epId) => api.projectStoryEpisode(pid, epId)),
+      )
+      storyEpisodes.value = episodes.filter((ep): ep is OpenimagoStoryEpisode => ep !== null)
+    }
+  } catch {
+    // Silent — story data is optional; grid falls back to outputs/files.
+  }
+}
+
 async function fetchProjectOutputs() {
   projectOutputsLoading.value = true
   try {
@@ -687,10 +828,12 @@ onMounted(() => {
   void loadCommands()
   void fetchProjectData()
   // Eagerly fetch outputs/files so the shot strip and story elements have
-  // something to show on first paint. The previous version only fetched on
-  // tab change; the new grid renders outputs and elements at all times.
+  // something to show on first paint. The new grid renders outputs and elements at all times.
   void fetchProjectOutputs()
   void fetchProjectFiles()
+  // Fetch story data for storyElements derivation (ADR 0004, openimago-1a3).
+  // Non-blocking — grid falls back to outputs/files when story files are missing.
+  void fetchStoryData()
   void loadSessionList().then(() => {
     const paramSessionId = route.params.sessionId
     if (paramSessionId && typeof paramSessionId === 'string' && paramSessionId !== sessionId.value) {

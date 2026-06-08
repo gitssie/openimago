@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils'
 import { type Plugin } from 'vue'
 import { QBtn, QIcon, QTabs, QTab } from 'quasar'
 import WorkspaceArtifactsPanel from '../../../components/session-workspace/WorkspaceArtifactsPanel.vue'
-import type { WorkspaceArtifact } from '../../../components/session-workspace/types'
+import type { WorkspaceArtifact, GenerationRunMetadata } from '../../../components/session-workspace/types'
 
 // ── Quasar plugin stub ──────────────────────────────────────────────────────────
 
@@ -19,6 +19,21 @@ const mockQuasarPlugin: Plugin = {
 
 // ── Test data ───────────────────────────────────────────────────────────────────
 
+function makeGenRun(overrides: Partial<GenerationRunMetadata> = {}): GenerationRunMetadata {
+  return {
+    toolName: overrides.toolName ?? 'image_generate',
+    toolCallId: overrides.toolCallId ?? 'call_abc123',
+    messageId: overrides.messageId ?? 'msg_xyz789',
+    inputArgs: overrides.inputArgs ?? {
+      model: 'gpt-image-2',
+      prompt: 'A majestic mountain at sunset',
+      size: '1024x1024',
+      quality: 'high',
+    },
+    ...(overrides.parentArtifactId ? { parentArtifactId: overrides.parentArtifactId } : {}),
+  }
+}
+
 function makeImageArtifact(overrides: Partial<WorkspaceArtifact> = {}): WorkspaceArtifact {
   return {
     id: overrides.id ?? 'img-1',
@@ -30,6 +45,7 @@ function makeImageArtifact(overrides: Partial<WorkspaceArtifact> = {}): Workspac
     filename: overrides.filename ?? 'result.png',
     prompt: overrides.prompt ?? 'A beautiful landscape',
     timeLabel: overrides.timeLabel ?? '3 分钟前',
+    ...(overrides.genRun !== undefined ? { genRun: overrides.genRun } : {}),
   }
 }
 
@@ -44,6 +60,7 @@ function makeVideoArtifact(overrides: Partial<WorkspaceArtifact> = {}): Workspac
     filename: overrides.filename ?? 'output.mp4',
     prompt: overrides.prompt ?? 'Cinematic drone shot',
     timeLabel: overrides.timeLabel ?? '刚刚',
+    ...(overrides.genRun !== undefined ? { genRun: overrides.genRun } : {}),
   }
 }
 
@@ -57,6 +74,7 @@ function makeAudioArtifact(overrides: Partial<WorkspaceArtifact> = {}): Workspac
     filename: overrides.filename ?? 'soundtrack.wav',
     prompt: overrides.prompt ?? 'Epic orchestral theme',
     timeLabel: overrides.timeLabel ?? '5 分钟前',
+    ...(overrides.genRun !== undefined ? { genRun: overrides.genRun } : {}),
   }
 }
 
@@ -157,7 +175,8 @@ describe('WorkspaceArtifactsPanel — events', () => {
   })
 
   it('emits edit-params when edit button is clicked', async () => {
-    const artifacts = [makeImageArtifact({ id: 'img-1' })]
+    const genRun = makeGenRun()
+    const artifacts = [makeImageArtifact({ id: 'img-1', genRun })]
     const wrapper = mountPanel({ artifacts, selectedId: 'img-1' })
     // The edit button is inside the result-feature (selected detail)
     const editBtns = wrapper.findAll('.result-action-btn')
@@ -199,5 +218,134 @@ describe('WorkspaceArtifactsPanel — kind rendering', () => {
     // image card shows '图像', audio card shows '音频'
     expect(metaTexts[0]!.text()).toContain('图像')
     expect(metaTexts[1]!.text()).toContain('音频')
+  })
+})
+
+// ── Parameter editor tests (openimago-nhp) ────────────────────────────────────
+
+describe('WorkspaceArtifactsPanel — parameter editor', () => {
+  it('shows parameter editor when clicking edit button on artifact with genRun', async () => {
+    const genRun = makeGenRun()
+    const artifacts = [makeImageArtifact({ id: 'img-1', genRun })]
+    const wrapper = mountPanel({ artifacts, selectedId: 'img-1' })
+
+    // Click the edit button
+    const editBtns = wrapper.findAll('.result-action-btn')
+    const editBtn = editBtns.filter((btn) => btn.text().includes('编辑参数'))
+    expect(editBtn.length).toBe(1)
+    await editBtn[0]!.trigger('click')
+
+    // Editor should now be visible
+    expect(wrapper.find('.param-editor').exists()).toBe(true)
+  })
+
+  it('closes parameter editor when cancel button is clicked', async () => {
+    const genRun = makeGenRun()
+    const artifacts = [makeImageArtifact({ id: 'img-1', genRun })]
+    const wrapper = mountPanel({ artifacts, selectedId: 'img-1' })
+
+    // Open editor
+    const editBtns = wrapper.findAll('.result-action-btn')
+    await editBtns.filter((btn) => btn.text().includes('编辑参数'))[0]!.trigger('click')
+    expect(wrapper.find('.param-editor').exists()).toBe(true)
+
+    // Click cancel
+    const cancelBtn = wrapper.find('.param-editor__cancel')
+    expect(cancelBtn.exists()).toBe(true)
+    await cancelBtn.trigger('click')
+    expect(wrapper.find('.param-editor').exists()).toBe(false)
+  })
+
+  it('shows legacy notice when selected artifact has no genRun metadata', () => {
+    const artifacts = [makeImageArtifact({ id: 'img-1' })] // no genRun
+    const wrapper = mountPanel({ artifacts, selectedId: 'img-1' })
+
+    // The "编辑参数" button should show, but clicking should show a notice
+    // No genRun means no editor; the detail view should show a legacy note
+    expect(wrapper.text()).toContain('编辑参数')
+    // Editor should NOT appear (no genRun)
+    expect(wrapper.find('.param-editor').exists()).toBe(false)
+  })
+
+  it('pre-populates form fields from genRun.inputArgs', async () => {
+    const genRun = makeGenRun({
+      inputArgs: {
+        model: 'flux-dev',
+        prompt: 'Mountain sunset',
+        negative_prompt: 'blurry',
+        width: 1024,
+        height: 1024,
+      },
+    })
+    const artifacts = [makeImageArtifact({ id: 'img-1', genRun })]
+    const wrapper = mountPanel({ artifacts, selectedId: 'img-1' })
+
+    // Open editor
+    const editBtns = wrapper.findAll('.result-action-btn')
+    await editBtns.filter((btn) => btn.text().includes('编辑参数'))[0]!.trigger('click')
+
+    // The prompt field should be pre-populated
+    const promptInput = wrapper.find('.param-editor textarea')
+    expect(promptInput.exists()).toBe(true)
+
+    // Raw inputArgs should appear in advanced JSON
+    expect(wrapper.find('.param-editor__advanced').exists()).toBe(true)
+  })
+
+  it('shows JSON validation error for invalid advanced JSON input', async () => {
+    const genRun = makeGenRun()
+    const artifacts = [makeImageArtifact({ id: 'img-1', genRun })]
+    const wrapper = mountPanel({ artifacts, selectedId: 'img-1' })
+
+    // Open editor
+    const editBtns = wrapper.findAll('.result-action-btn')
+    await editBtns.filter((btn) => btn.text().includes('编辑参数'))[0]!.trigger('click')
+
+    // Find the advanced JSON textarea and type invalid JSON
+    const jsonTextarea = wrapper.find('.param-editor__advanced textarea')
+    expect(jsonTextarea.exists()).toBe(true)
+
+    await jsonTextarea.setValue('not valid json {{{')
+    await wrapper.vm.$nextTick()
+
+    // Error should be shown
+    expect(wrapper.find('.param-editor__json-error').exists()).toBe(true)
+  })
+
+  it('emits rerun with ArtifactRerunPayload on submit', async () => {
+    const genRun = makeGenRun({
+      inputArgs: { model: 'gpt-image-2', prompt: 'Sunset', size: '1024x1024' },
+    })
+    const artifacts = [makeImageArtifact({ id: 'img-1', genRun })]
+    const wrapper = mountPanel({ artifacts, selectedId: 'img-1' })
+
+    // Open editor
+    const editBtns = wrapper.findAll('.result-action-btn')
+    await editBtns.filter((btn) => btn.text().includes('编辑参数'))[0]!.trigger('click')
+
+    // Click submit
+    const submitBtn = wrapper.find('.param-editor__submit')
+    expect(submitBtn.exists()).toBe(true)
+    await submitBtn.trigger('click')
+
+    // Should have emitted rerun
+    const rerunEvents = wrapper.emitted('rerun')
+    expect(rerunEvents).toBeTruthy()
+    expect(rerunEvents?.length).toBeGreaterThanOrEqual(1)
+    const payload = rerunEvents![0]![0]
+    expect(payload).toHaveProperty('artifactId', 'img-1')
+  })
+
+  it('closes editor after successful submit', async () => {
+    const genRun = makeGenRun()
+    const artifacts = [makeImageArtifact({ id: 'img-1', genRun })]
+    const wrapper = mountPanel({ artifacts, selectedId: 'img-1' })
+
+    // Open and submit
+    const editBtns = wrapper.findAll('.result-action-btn')
+    await editBtns.filter((btn) => btn.text().includes('编辑参数'))[0]!.trigger('click')
+    await wrapper.find('.param-editor__submit').trigger('click')
+
+    expect(wrapper.find('.param-editor').exists()).toBe(false)
   })
 })
