@@ -5,12 +5,18 @@ import { db } from "../db/client"
 import { users, userAuths } from "../db/schema"
 import { generateWorkspaceId } from "./workspace-id"
 import { logger } from "../server/logger"
+import {
+  verificationStore,
+  verificationSender,
+  generateVerificationCode,
+} from "./email-verification"
 
 export interface RegisterInput {
   username: string
   email: string
   password: string
   displayName?: string
+  verificationCode?: string
 }
 
 export interface LoginInput {
@@ -35,10 +41,64 @@ function validateRegister(input: RegisterInput): string | null {
   if (!input.password || input.password.length < 8) {
     return "Password must be at least 8 characters"
   }
+  if (!input.verificationCode || input.verificationCode.length === 0) {
+    return "Verification code is required"
+  }
   return null
 }
 
 export class AuthService {
+  async sendVerificationCode(email: string) {
+    const normalized = email.toLowerCase().trim()
+    if (!normalized || !normalized.includes("@")) {
+      return { error: { code: "VALIDATION_ERROR", message: "Invalid email" }, status: 400 } as const
+    }
+
+    // Check if email is already registered
+    const existing = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, normalized))
+
+    if (existing.length > 0) {
+      logger.warn({ email: normalized }, "auth.sendVerificationCode: email already registered")
+      return { error: { code: "CONFLICT", message: "Email already registered" }, status: 409 } as const
+    }
+
+    // Check resend cooldown
+    const cooldown = verificationStore.canResend(normalized)
+    if (!cooldown.allowed) {
+      logger.warn({ email: normalized, remainingMs: cooldown.remainingMs }, "auth.sendVerificationCode: cooldown active")
+      return {
+        error: {
+          code: "RATE_LIMITED",
+          message: "Please wait before requesting another code",
+          remainingMs: cooldown.remainingMs,
+        },
+        status: 429,
+      } as const
+    }
+
+    const code = generateVerificationCode()
+    verificationStore.storeCode(normalized, code)
+
+    try {
+      await verificationSender.send(normalized, code)
+    } catch (sendError: unknown) {
+      logger.error({ email: normalized, err: sendError }, "auth.sendVerificationCode: failed to send verification code")
+      return {
+        error: {
+          code: "CONFIGURATION_ERROR",
+          message: sendError instanceof Error ? sendError.message : "Failed to send verification code",
+        },
+        status: 500,
+      } as const
+    }
+
+    logger.info({ email: normalized }, "auth.sendVerificationCode: code sent")
+    return { success: true, status: 200 } as const
+  }
+
   async register(input: RegisterInput) {
     const validationError = validateRegister(input)
     if (validationError) {
@@ -46,10 +106,19 @@ export class AuthService {
       return { error: { code: "VALIDATION_ERROR", message: validationError }, status: 400 } as const
     }
 
+    const normalizedEmail = input.email.toLowerCase()
+
+    // Verify email verification code
+    const verification = verificationStore.verifyCode(normalizedEmail, input.verificationCode!)
+    if (!verification.valid) {
+      logger.warn({ email: normalizedEmail }, "auth.register: invalid or expired verification code")
+      return { error: { code: "INVALID_VERIFICATION_CODE", message: "Invalid or expired verification code" }, status: 400 } as const
+    }
+
     const existing = await db
       .select()
       .from(users)
-      .where(eq(users.email, input.email.toLowerCase()))
+      .where(eq(users.email, normalizedEmail))
 
     if (existing.length > 0) {
       logger.warn({ email: input.email }, "auth.register: email already registered")
@@ -64,7 +133,7 @@ export class AuthService {
     const user = {
       id,
       username: input.username,
-      email: input.email.toLowerCase(),
+      email: normalizedEmail,
       displayName: input.displayName ?? null,
       workspaceId,
       role: "user",

@@ -42,7 +42,7 @@ async function onReauthRegister(payload: RegisterPayload) {
   reauthLoading.value = true
   reauthError.value = ''
   try {
-    await auth.register(payload.username, payload.email, payload.password)
+    await auth.register(payload.username, payload.email, payload.password, payload.verificationCode)
     appEventBus.emit('auth:reauthenticated')
   } catch (e: unknown) {
     reauthError.value = e instanceof Error ? e.message : '注册失败'

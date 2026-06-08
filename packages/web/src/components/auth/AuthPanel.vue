@@ -98,6 +98,7 @@
         <template #prepend><q-icon name="person_outline" class="imago-input-panel__icon" /></template>
       </q-input>
       <q-input
+        ref="registerEmailRef"
         v-model="registerForm.email"
         label="邮箱地址"
         type="email"
@@ -111,6 +112,38 @@
       >
         <template #prepend><q-icon name="mail_outline" class="imago-input-panel__icon" /></template>
       </q-input>
+      <div class="auth-panel__verify-row">
+        <q-input
+          v-model="registerForm.verificationCode"
+          label="验证码"
+          type="text"
+          outlined
+          dark
+          hide-bottom-space
+          class="imago-input-panel auth-panel__verify-input"
+          color="purple-4"
+          :rules="[(v: string) => !!v || '请输入验证码']"
+          lazy-rules
+        >
+          <template #prepend><q-icon name="pin" class="imago-input-panel__icon" /></template>
+        </q-input>
+        <q-btn
+          type="button"
+          class="auth-panel__send-code-btn"
+          :loading="sendingCode"
+          :disable="sendingCode || cooldownRemaining > 0"
+          unelevated
+          no-caps
+          @click="onSendVerificationCode"
+        >
+          <template v-if="cooldownRemaining > 0">{{ cooldownRemaining }}s 后重发</template>
+          <template v-else-if="codeSent">重新发送</template>
+          <template v-else>发送验证码</template>
+        </q-btn>
+      </div>
+      <div v-if="sendError" class="auth-panel__send-error" role="alert">
+        {{ sendError }}
+      </div>
       <q-input
         v-model="registerForm.password"
         label="密码"
@@ -186,6 +219,7 @@
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
+import { api } from 'src/api/client'
 
 export type AuthMode = 'login' | 'register'
 export type OAuthProvider = 'github' | 'google'
@@ -201,6 +235,7 @@ export interface RegisterPayload {
   username: string
   email: string
   password: string
+  verificationCode: string
 }
 
 interface Props {
@@ -252,7 +287,62 @@ const showRegisterPassword = ref(false)
 const rememberMe = ref(false)
 
 const loginForm = reactive({ email: '', password: '' })
-const registerForm = reactive({ username: '', email: '', password: '' })
+const registerForm = reactive({ username: '', email: '', password: '', verificationCode: '' })
+
+// ── Email verification state ─────────────────────────────────────────
+const registerEmailRef = ref<{ nativeEl?: HTMLInputElement } | null>(null)
+const sendingCode = ref(false)
+const cooldownRemaining = ref(0)
+const codeSent = ref(false)
+const sendError = ref('')
+let cooldownTimer: ReturnType<typeof setInterval> | null = null
+
+/** Sync the register email field from the DOM (handles browser autofill). */
+function syncEmailFromDom() {
+  const input = registerEmailRef.value?.nativeEl
+  if (input && input.value) {
+    registerForm.email = input.value
+  }
+}
+
+/** Start cooldown countdown after successful code send. */
+function startCooldown(durationMs = 60000) {
+  cooldownRemaining.value = Math.ceil(durationMs / 1000)
+  if (cooldownTimer) clearInterval(cooldownTimer)
+  cooldownTimer = setInterval(() => {
+    cooldownRemaining.value--
+    if (cooldownRemaining.value <= 0) {
+      if (cooldownTimer) clearInterval(cooldownTimer)
+      cooldownTimer = null
+    }
+  }, 1000)
+}
+
+async function onSendVerificationCode() {
+  syncEmailFromDom()
+  const email = registerForm.email.trim()
+  sendError.value = ''
+  if (!email || !email.includes('@')) {
+    sendError.value = '请输入有效的邮箱地址'
+    return
+  }
+
+  sendingCode.value = true
+  try {
+    await api.sendEmailVerification(email)
+    codeSent.value = true
+    startCooldown(60000)
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : '发送验证码失败'
+    sendError.value = msg
+    // If rate-limited, start cooldown anyway
+    if (msg.includes('wait') || msg.includes('请稍后')) {
+      startCooldown(60000)
+    }
+  } finally {
+    sendingCode.value = false
+  }
+}
 
 // ── Submit handlers — only emit, never call auth store directly ─────
 function onLoginSubmit() {
@@ -264,10 +354,12 @@ function onLoginSubmit() {
 }
 
 function onRegisterSubmit() {
+  syncEmailFromDom()
   emit('register', {
     username: registerForm.username,
     email: registerForm.email,
     password: registerForm.password,
+    verificationCode: registerForm.verificationCode,
   })
 }
 </script>
@@ -368,6 +460,53 @@ function onRegisterSubmit() {
 .auth-panel__form {
   display: grid;
   gap: 13px;
+}
+
+/* ── Verification code row ──────────────────────────────────────────── */
+.auth-panel__verify-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.auth-panel__verify-input {
+  flex: 1;
+}
+
+.auth-panel__send-code-btn {
+  flex-shrink: 0;
+  height: 50px;
+  padding: 0 14px;
+  font-size: 13px;
+  white-space: nowrap;
+  background: linear-gradient(135deg, rgb(196 38 255 / 18%), rgb(168 85 247 / 10%)) !important;
+  border: 1px solid rgb(196 38 255 / 36%) !important;
+  border-radius: var(--imago-radius-md);
+  color: rgb(226 200 255 / 90%);
+  text-shadow: 0 0 10px rgb(196 38 255 / 32%);
+  transition:
+    opacity var(--imago-ease-fast),
+    border-color var(--imago-ease-fast),
+    box-shadow var(--imago-ease-fast);
+}
+
+.auth-panel__send-code-btn:hover:not(:disabled) {
+  border-color: rgb(196 38 255 / 70%) !important;
+  box-shadow: 0 0 16px rgb(196 38 255 / 30%);
+  color: #fff;
+}
+
+.auth-panel__send-code-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.auth-panel__send-error {
+  font-size: 12px;
+  color: #ff5252;
+  margin-top: -6px;
+  padding: 0 2px;
+  text-shadow: 0 0 8px rgb(255 82 82 / 40%);
 }
 
 :deep(.imago-input-panel .q-field__control) {

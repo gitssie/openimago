@@ -227,10 +227,12 @@ export interface GalleryDetail {
 
 export const api = {
   // Auth — { token, user } / { id, username, ... }
-  register: (data: { username: string; email: string; password: string }) =>
+  register: (data: { username: string; email: string; password: string; verificationCode: string }) =>
     request<{ token: string; user: OpenimagoUser }>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data: { email: string; password: string }) =>
     request<{ token: string; user: OpenimagoUser }>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+  sendEmailVerification: (email: string) =>
+    request<{ success: boolean }>('/auth/email-verification/send', { method: 'POST', body: JSON.stringify({ email }) }),
   me: () => request<OpenimagoUser>('/auth/me'),
   updateMe: (data: { displayName?: string; email?: string }) =>
     request<OpenimagoUser>('/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),

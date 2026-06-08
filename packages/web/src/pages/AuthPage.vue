@@ -55,7 +55,7 @@ async function handleRegister(payload: RegisterPayload) {
   loading.value = true
   error.value = ''
   try {
-    await auth.register(payload.username, payload.email, payload.password)
+    await auth.register(payload.username, payload.email, payload.password, payload.verificationCode)
     void router.push('/')
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : '注册失败'

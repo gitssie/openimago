@@ -4,6 +4,18 @@ import { oauthService } from "./oauth"
 
 export const authRoutes = new Hono()
 
+// POST /auth/email-verification/send — request a verification code
+authRoutes.post("/email-verification/send", async (c) => {
+  const body = await c.req.json()
+  const result = await authService.sendVerificationCode(body.email)
+
+  if ("error" in result) {
+    return c.json({ error: result.error }, result.status as any)
+  }
+
+  return c.json({ success: result.success })
+})
+
 authRoutes.post("/register", async (c) => {
   const body = await c.req.json()
   const result = await authService.register(body)
