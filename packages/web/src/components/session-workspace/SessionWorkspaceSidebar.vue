@@ -25,7 +25,10 @@
             @click="$emit('select', session.id)"
           >
             <q-item-section class="session-item__section">
-              <q-item-label class="session-title">{{ session.title }}</q-item-label>
+              <div class="session-item__row">
+                <q-item-label class="session-title">{{ session.title }}</q-item-label>
+                <span class="session-item__time">{{ session.clockLabel }}</span>
+              </div>
               <q-item-label caption class="session-preview">{{ session.preview }}</q-item-label>
             </q-item-section>
             <q-item-section side class="session-delete">
@@ -173,6 +176,20 @@ defineEmits<{
 
 .session-item__section {
   gap: 6px;
+}
+
+.session-item__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.session-item__time {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .session-title {
