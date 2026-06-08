@@ -8,6 +8,30 @@ import { logger } from "../server/logger"
 export const VALID_MEDIA_KINDS = ["image", "video", "audio"] as const
 export type MediaKind = (typeof VALID_MEDIA_KINDS)[number]
 
+// ── Generation-run metadata (ADR 0003 artifact-first rerun) ─────────────────
+//
+// Carried inside the workspaceGeneratedFiles.metadata JSONB column under
+// the key "genRun". No DB migration needed — the metadata column already
+// exists and accepts arbitrary JSON. Promote to dedicated columns only if
+// query patterns demand it.
+
+export interface GenerationRunMetadata {
+  /** Tool name that generated this artifact (e.g. "image_generate"). */
+  toolName: string
+  /** OpenCode tool-call ID for traceability back to the chat message. */
+  toolCallId: string
+  /** Chat message ID containing the tool call. */
+  messageId: string
+  /** Full input arguments to the tool call (provider params, prompt, etc.).
+   *  Exposed to the WorkspaceArtifactsPanel parameter editor for rerun. */
+  inputArgs: Record<string, unknown>
+  /** Parent artifact ID when this was created from a rerun/edit of another
+   *  artifact. Immutably links rerun output to source artifact. */
+  parentArtifactId?: string
+}
+
+const METADATA_GEN_RUN_KEY = "genRun"
+
 export interface RegisterWorkspaceFileInput {
   sessionId: string
   kind: MediaKind
@@ -25,6 +49,17 @@ export interface RegisterWorkspaceFileInput {
   provider?: string
   model?: string
   metadata?: Record<string, unknown>
+  // ── Generation-run metadata (ADR 0003, openimago-xkn) ──────────────
+  /** Tool name that generated this artifact. */
+  toolName?: string
+  /** OpenCode tool-call ID. */
+  toolCallId?: string
+  /** Chat message ID containing the tool call. */
+  messageId?: string
+  /** Parent artifact ID for rerun lineage. */
+  parentArtifactId?: string
+  /** Full tool-call input arguments. */
+  inputArgs?: Record<string, unknown>
 }
 
 export interface MediaAccessLocator {
@@ -54,6 +89,9 @@ export interface WorkspaceFileRecord {
   model?: string
   createdAt: string
   metadata?: Record<string, unknown>
+  /** Surface generation-run metadata from the metadata JSONB column.
+   *  Populated when genRun data was persisted at registration time. */
+  generationRun?: GenerationRunMetadata
 }
 
 function buildAccessLocators(input: RegisterWorkspaceFileInput): WorkspaceFileAccessLocators {
@@ -70,6 +108,48 @@ function buildAccessLocators(input: RegisterWorkspaceFileInput): WorkspaceFileAc
     locators.poster = { href: input.accessPosterHref }
   }
   return locators
+}
+
+/**
+ * Merge generation-run fields into a metadata object for JSONB storage.
+ * Existing metadata keys are preserved; gen-run data goes under "genRun".
+ * Returns null when there is no gen-run data and no existing metadata.
+ */
+function buildMetadata(input: RegisterWorkspaceFileInput): Record<string, unknown> | null {
+  const hasGenRun = input.toolName || input.toolCallId || input.messageId || input.parentArtifactId || input.inputArgs
+  const genRunObj: Record<string, unknown> = {}
+  if (input.toolName) genRunObj.toolName = input.toolName
+  if (input.toolCallId) genRunObj.toolCallId = input.toolCallId
+  if (input.messageId) genRunObj.messageId = input.messageId
+  if (input.parentArtifactId) genRunObj.parentArtifactId = input.parentArtifactId
+  if (input.inputArgs) genRunObj.inputArgs = input.inputArgs
+
+  const hasExistingMeta = input.metadata && Object.keys(input.metadata).length > 0
+
+  if (!hasGenRun && !hasExistingMeta) return null
+  if (!hasGenRun) return input.metadata ?? null
+
+  // Merge gen-run into existing metadata (existing keys preserved)
+  return { ...(input.metadata ?? {}), [METADATA_GEN_RUN_KEY]: genRunObj }
+}
+
+function extractGenerationRun(meta: Record<string, unknown> | undefined): GenerationRunMetadata | undefined {
+  if (!meta) return undefined
+  const genRun = meta[METADATA_GEN_RUN_KEY]
+  if (typeof genRun !== "object" || genRun === null) return undefined
+  const g = genRun as Record<string, unknown>
+  if (typeof g.toolName !== "string" || typeof g.toolCallId !== "string" || typeof g.messageId !== "string") {
+    return undefined
+  }
+  if (typeof g.inputArgs !== "object" || g.inputArgs === null) return undefined
+
+  return {
+    toolName: g.toolName as string,
+    toolCallId: g.toolCallId as string,
+    messageId: g.messageId as string,
+    inputArgs: g.inputArgs as Record<string, unknown>,
+    ...(typeof g.parentArtifactId === "string" ? { parentArtifactId: g.parentArtifactId } : {}),
+  }
 }
 
 function rowToRecord(row: typeof workspaceGeneratedFiles.$inferSelect): WorkspaceFileRecord {
@@ -90,6 +170,7 @@ function rowToRecord(row: typeof workspaceGeneratedFiles.$inferSelect): Workspac
     model: row.model ?? undefined,
     createdAt: row.createdAt.toISOString(),
     metadata: meta,
+    generationRun: extractGenerationRun(meta),
   }
 }
 
@@ -140,6 +221,7 @@ export class WorkspaceFilesService {
 
     const id = generateWorkspaceFileId()
     const accessLocators = buildAccessLocators(input)
+    const mergedMetadata = buildMetadata(input)
     const now = new Date()
 
     await db.insert(workspaceGeneratedFiles).values({
@@ -156,7 +238,7 @@ export class WorkspaceFilesService {
       prompt: input.prompt,
       provider: input.provider,
       model: input.model,
-      metadata: input.metadata ?? null,
+      metadata: mergedMetadata,
       status: "active",
       createdAt: now,
       updatedAt: now,
@@ -176,7 +258,8 @@ export class WorkspaceFilesService {
       provider: input.provider,
       model: input.model,
       createdAt: now.toISOString(),
-      metadata: input.metadata,
+      metadata: mergedMetadata ?? undefined,
+      generationRun: extractGenerationRun(mergedMetadata ?? undefined),
     }
 
     logger.info({ workspaceFileId: id, sessionId: input.sessionId, kind: input.kind }, "workspace-files: registered")

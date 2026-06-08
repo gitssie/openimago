@@ -113,6 +113,7 @@ export interface PromptTemplate {
 import type { MediaToolResultV1 } from '../services/media'
 
 export type { MediaAccessLocator } from '../services/media'
+export type { GenerationRunMetadata } from '../components/session-workspace/types'
 
 export interface WorkspaceFileAccessLocator {
   href: string
@@ -132,6 +133,10 @@ export interface WorkspaceFile extends Omit<MediaToolResultV1, 'access' | 'creat
   prompt?: string
   provider?: string
   model?: string
+  /** Generation-run metadata surfaced from workspaceGeneratedFiles.metadata.
+   *  Present when the file was registered with gen-run data (ADR 0003).
+   *  Legacy files created before openimago-xkn may lack this field. */
+  generationRun?: import('../components/session-workspace/types').GenerationRunMetadata
 }
 
 // ── Billing ──────────────────────────────────────────────────────────────────
@@ -368,6 +373,23 @@ export const api = {
   // Project files — flat file listing for a project
   projectFiles: (projectId: string) =>
     request<{ files: WorkspaceFile[] }>(`/api/platform/projects/${projectId}/files`).then((r) => r.files ?? []),
+
+  // ── Rerun (stub, openimago-xkn / ADR 0003) ────────────────────────────
+  //
+  // TODO: wire to backend rerun endpoint when the generation-run execution
+  // path is implemented. For MVP, the WorkspaceArtifactsPanel emits "rerun"
+  // events; pages handle the event with this stub.
+  rerunArtifact: (_payload: {
+    artifactId: string
+    prompt?: string
+    model?: string
+    aspectRatio?: string
+    duration?: number
+    seed?: number
+    inputArgs?: Record<string, unknown>
+  }) =>
+    // Stub — returns a dummy response so callers can proceed
+    Promise.resolve({ ok: false, message: "Rerun endpoint not yet implemented — openimago-xkn placeholder" }),
 
   // ── Gallery ──────────────────────────────────────────────────────────────────
 

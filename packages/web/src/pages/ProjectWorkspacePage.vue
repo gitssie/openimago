@@ -152,7 +152,7 @@ import type { SessionItem } from 'src/services/agents'
 import { api, type OpenimagoProject } from 'src/api/client'
 import type { TextPart } from '@opencode-ai/sdk/v2'
 import WorkspaceArtifactsPanel from 'src/components/session-workspace/WorkspaceArtifactsPanel.vue'
-import type { WorkspaceArtifact } from 'src/components/session-workspace/types'
+import type { WorkspaceArtifact, GenerationRunMetadata } from 'src/components/session-workspace/types'
 
 // ── Local shapes (unchanged from previous version) ───────────────────────────
 
@@ -166,6 +166,8 @@ type OutputItem = {
   model?: string | null
   resolution?: string | null
   durationLabel?: string | null
+  /** Generation-run metadata surfaced from the API (ADR 0003, openimago-xkn). */
+  genRun?: GenerationRunMetadata
 }
 
 // ── UI refs ───────────────────────────────────────────────────────────────────
@@ -315,6 +317,7 @@ const projectArtifacts = computed<WorkspaceArtifact[]>(() => {
       prompt: output.promptText,
       timeLabel: output.timeLabel,
       ...(output.model ? { model: output.model } : {}),
+      ...(output.genRun ? { genRun: output.genRun } : {}),
     })
   }
 
@@ -331,6 +334,7 @@ const projectArtifacts = computed<WorkspaceArtifact[]>(() => {
         filename: file.filename,
         prompt: file.promptText,
         timeLabel: file.timeLabel,
+        ...(file.genRun ? { genRun: file.genRun } : {}),
       })
     }
   }
@@ -635,6 +639,7 @@ async function fetchProjectOutputs() {
       model: wf.model ?? null,
       resolution: null,
       durationLabel: null,
+      ...(wf.generationRun ? { genRun: wf.generationRun } : {}),
     }))
     // Auto-select the most recent output the first time we load.
     if (!selectedOutputId.value && projectOutputs.value.length > 0) {
@@ -658,6 +663,7 @@ async function fetchProjectFiles() {
       kind: wf.kind,
       timeLabel: formatResultTime(new Date(wf.createdAt)),
       promptText: wf.prompt ?? '',
+      ...(wf.generationRun ? { genRun: wf.generationRun } : {}),
     }))
   } catch {
     projectFiles.value = []
