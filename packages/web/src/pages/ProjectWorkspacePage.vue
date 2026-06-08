@@ -69,6 +69,41 @@
       </template>
     </ProjectWorkspaceGrid>
 
+    <!-- ── WorkspaceArtifactsPanel overlay (project scope, ADR 0003) ────────── -->
+    <!-- TODO (openimago-s55): integrate this panel into the grid's right column
+         when the grid layout supports a collapsible right panel natively.
+         For MVP, rendered as a toggleable overlay above the grid. -->
+    <div v-if="showArtifactsPanel" class="artifacts-panel-overlay">
+      <div class="artifacts-panel-overlay__backdrop" @click="toggleArtifactsPanel" />
+      <div class="artifacts-panel-overlay__panel">
+        <WorkspaceArtifactsPanel
+          v-model="artifactsPanelTab"
+          :artifacts="projectArtifacts"
+          :selected-id="artifactsPanelSelectedId"
+          :scope="'project'"
+          @select="onArtifactSelect"
+          @edit-params="onArtifactEditParams"
+          @rerun="onArtifactRerun"
+          @delete="onArtifactDelete"
+        />
+      </div>
+      <button type="button" class="artifacts-panel-close" aria-label="关闭制品面板" @click="toggleArtifactsPanel">
+        <q-icon name="close" size="20px" />
+      </button>
+    </div>
+
+    <!-- Panel toggle FAB — shown when panel is hidden and there are artifacts -->
+    <button
+      v-if="!showArtifactsPanel && projectArtifacts.length > 0"
+      type="button"
+      class="artifacts-panel-toggle"
+      aria-label="打开制品面板"
+      @click="toggleArtifactsPanel"
+    >
+      <q-icon name="view_in_ar" size="18px" />
+      <span class="artifacts-panel-toggle__count">{{ projectArtifacts.length }}</span>
+    </button>
+
     <!-- Bottom composer — kept at page level so PromptInput can focus on mount -->
     <div class="input-dock">
       <div class="input-container">
@@ -116,6 +151,8 @@ import { useAgentSession } from 'src/composables/useAgentSession'
 import type { SessionItem } from 'src/services/agents'
 import { api, type OpenimagoProject } from 'src/api/client'
 import type { TextPart } from '@opencode-ai/sdk/v2'
+import WorkspaceArtifactsPanel from 'src/components/session-workspace/WorkspaceArtifactsPanel.vue'
+import type { WorkspaceArtifact } from 'src/components/session-workspace/types'
 
 // ── Local shapes (unchanged from previous version) ───────────────────────────
 
@@ -153,6 +190,9 @@ const selectedOutputId = ref<string | null>(null)
 const projectFiles = ref<OutputItem[]>([])
 const projectFilesLoading = ref(false)
 const selectedElementId = ref<string | null>(null)
+const showArtifactsPanel = ref(false)
+const artifactsPanelTab = ref('result')
+const artifactsPanelSelectedId = ref<string | null>(null)
 
 function pageHeightFn(offset: number) {
   return { minHeight: `${window.innerHeight - offset}px`, height: `${window.innerHeight - offset}px` }
@@ -250,6 +290,52 @@ const storyElements = computed<StoryElement[]>(() => {
   }
 
   return items
+})
+
+// ── Derived: WorkspaceArtifact[] for WorkspaceArtifactsPanel (ADR 0003) ─────
+// Maps project outputs + files into the unified artifact shape used by the
+// reusable panel. The existing grid continues to use gridOutputs and
+// storyElements; this computed is for the right-side panel integration.
+//
+// TODO (openimago-s55 follow-up): once the grid's output strip is ready to
+// be replaced, switch the grid's source to this computed too.
+
+const projectArtifacts = computed<WorkspaceArtifact[]>(() => {
+  const artifacts: WorkspaceArtifact[] = []
+
+  for (const output of projectOutputs.value) {
+    artifacts.push({
+      id: output.id,
+      kind: output.kind,
+      access: {
+        preview: output.url,
+        thumbnail: output.url,
+      },
+      filename: output.filename,
+      prompt: output.promptText,
+      timeLabel: output.timeLabel,
+      ...(output.model ? { model: output.model } : {}),
+    })
+  }
+
+  for (const file of projectFiles.value) {
+    // Avoid duplicate entries already covered by projectOutputs
+    if (!artifacts.some((a) => a.id === file.id)) {
+      artifacts.push({
+        id: file.id,
+        kind: file.kind,
+        access: {
+          preview: file.url,
+          thumbnail: file.url,
+        },
+        filename: file.filename,
+        prompt: file.promptText,
+        timeLabel: file.timeLabel,
+      })
+    }
+  }
+
+  return artifacts
 })
 
 const currentSessionItem = computed<SessionItem | null>(() => {
@@ -436,6 +522,31 @@ function onPlayOutput(id: string) {
   if (output) {
     $q.notify({ color: 'info', message: `播放 ${output.filename}（待接入）`, icon: 'play_circle' })
   }
+}
+
+// ── WorkspaceArtifactsPanel event handlers (ADR 0003) ──────────────────────
+
+function onArtifactSelect(id: string) {
+  artifactsPanelSelectedId.value = id
+}
+
+function onArtifactEditParams(_id: string) {
+  // TODO: open parameter editor inline (openimago-xkn)
+  $q.notify({ color: 'info', message: '参数编辑器即将上线（编辑模式）', icon: 'edit', timeout: 1500 })
+}
+
+function onArtifactRerun(_payload: unknown) {
+  // TODO: create new generation run against project story workflow (openimago-xkn)
+  $q.notify({ color: 'info', message: '重新生成即将上线（项目作用域）', icon: 'refresh', timeout: 1500 })
+}
+
+function onArtifactDelete(_id: string) {
+  // TODO: prompt confirm dialog, call project outputs/files delete endpoint
+  $q.notify({ color: 'info', message: '删除制品功能即将上线', icon: 'delete', timeout: 1500 })
+}
+
+function toggleArtifactsPanel() {
+  showArtifactsPanel.value = !showArtifactsPanel.value
 }
 
 async function onSessionSelect(sid: string) {
@@ -635,5 +746,96 @@ onUnmounted(() => {
   .input-dock {
     padding: 10px 14px 14px;
   }
+}
+
+/* ── WorkspaceArtifactsPanel overlay (ADR 0003) ────────────────────────── */
+
+.artifacts-panel-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.artifacts-panel-overlay__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+}
+
+.artifacts-panel-overlay__panel {
+  position: relative;
+  z-index: 1;
+  width: 360px;
+  height: 100%;
+  pointer-events: auto;
+  box-shadow: -4px 0 40px rgba(0, 0, 0, 0.5);
+}
+
+.artifacts-panel-close {
+  position: absolute;
+  top: 12px;
+  right: 372px;
+  z-index: 2;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(16, 17, 30, 0.92);
+  color: var(--imago-text-dim);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: border-color var(--imago-ease-default), color var(--imago-ease-default);
+}
+
+.artifacts-panel-close:hover {
+  border-color: rgba(0, 240, 255, 0.3);
+  color: var(--imago-text-primary);
+}
+
+/* ── Panel toggle FAB ──────────────────────────────────────────────────── */
+
+.artifacts-panel-toggle {
+  position: fixed;
+  right: 16px;
+  bottom: 100px;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: 28px;
+  border: 1px solid rgba(0, 240, 255, 0.18);
+  background: linear-gradient(135deg, rgba(16, 17, 30, 0.94), rgba(11, 12, 22, 0.92));
+  color: var(--imago-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  transition: border-color var(--imago-ease-default), transform var(--imago-ease-default);
+}
+
+.artifacts-panel-toggle:hover {
+  border-color: rgba(0, 240, 255, 0.35);
+  transform: translateY(-1px);
+}
+
+.artifacts-panel-toggle__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: rgba(0, 240, 255, 0.15);
+  color: rgba(0, 240, 255, 0.9);
+  font-size: 11px;
+  font-weight: 600;
 }
 </style>

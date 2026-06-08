@@ -227,16 +227,16 @@
       </UILayoutFooter>
 
       <UILayoutDrawer v-model="rightPanelVisible" side="right" :width="360" behavior="desktop" bordered>
-        <SessionWorkspaceResultsPanel
+        <WorkspaceArtifactsPanel
           v-model="resultTab"
-          :current-session-label="currentSessionLabel"
-          :latest-prompt-text="latestPromptText"
-          :generated-results="resultsPanelItems"
-          :selected-result-id="selectedResultId"
-          :selected-result="selectedResultPanelItem"
-          :show-pending-result-tile="showPendingResultTile"
-          :side-panel-result-count="sidePanelResultCount"
-          @select-result="handleSelectResult"
+          :artifacts="sessionArtifacts"
+          :selected-id="selectedResultId"
+          :show-pending-tile="showPendingResultTile"
+          :scope="'session'"
+          @select="handleSelectResult"
+          @edit-params="handleEditArtifactParams"
+          @rerun="handleRerunArtifact"
+          @delete="handleDeleteArtifact"
         />
       </UILayoutDrawer>
     </UILayout>
@@ -256,7 +256,8 @@ import PromptInput from 'src/components/PromptInput.vue'
 import ImagePickerPopup from 'src/components/ImagePickerPopup.vue'
 import SessionChatView from 'src/components/session-workspace/SessionChatView.vue'
 import SessionWorkspaceSidebar from 'src/components/session-workspace/SessionWorkspaceSidebar.vue'
-import SessionWorkspaceResultsPanel from 'src/components/session-workspace/SessionWorkspaceResultsPanel.vue'
+import WorkspaceArtifactsPanel from 'src/components/session-workspace/WorkspaceArtifactsPanel.vue'
+import type { WorkspaceArtifact } from 'src/components/session-workspace/types'
 import { UILayout, UILayoutDrawer, UILayoutFooter, UILayoutPage, UILayoutPageContainer } from 'src/components/ui/layout'
 import { useAgentSession, type DisplayMessage } from 'src/composables/useAgentSession'
 import type { SessionItem } from 'src/services/agents'
@@ -264,14 +265,6 @@ import type { SessionItem } from 'src/services/agents'
 type DisplayTurn = {
   user: DisplayMessage
   assistant: DisplayMessage | null
-}
-
-type GeneratedResultItem = {
-  id: string
-  url: string
-  filename: string
-  time: Date
-  prompt: string
 }
 
 type SidebarSessionItem = {
@@ -282,14 +275,6 @@ type SidebarSessionItem = {
   clockLabel: string
   meta: string
   active: boolean
-}
-
-type ResultPanelItem = {
-  id: string
-  url: string
-  filename: string
-  prompt: string
-  timeLabel: string
 }
 
 // ── UI refs ───────────────────────────────────────────────────────────────────
@@ -451,8 +436,8 @@ const latestPromptText = computed(() => {
   return ''
 })
 
-const generatedResults = computed<GeneratedResultItem[]>(() => {
-  const items: GeneratedResultItem[] = []
+const generatedResults = computed<WorkspaceArtifact[]>(() => {
+  const items: (WorkspaceArtifact & { time: Date })[] = []
 
   for (const turn of displayTurns.value) {
     if (!turn.assistant) continue
@@ -462,21 +447,29 @@ const generatedResults = computed<GeneratedResultItem[]>(() => {
     for (const part of turn.assistant.parts) {
       if (part.type !== 'file') continue
       const mime = part.mime?.toLowerCase() ?? ''
-      const filename = part.filename || part.url.split('/').at(-1) || '生成结果'
-      const looksLikeImage = mime.includes('image') || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(filename)
-      if (!looksLikeImage) continue
+      const filename = part.filename || (part as { url?: string }).url?.split('/').at(-1) || '生成结果'
+
+      const kind = resolveMediaFileKind(mime, filename)
+      if (!kind) continue
 
       items.push({
-        id: part.id,
-        url: part.url,
+        id: (part as { id?: string }).id ?? `file-${items.length}`,
+        kind,
+        access: {
+          preview: (part as { url?: string }).url ?? '',
+          download: (part as { url?: string }).url ?? '',
+        },
         filename,
-        time: turn.assistant.time,
         prompt,
+        timeLabel: formatResultTime(turn.assistant.time),
+        time: turn.assistant.time,
       })
     }
   }
 
-  return items.sort((left, right) => right.time.getTime() - left.time.getTime())
+  return items
+    .sort((left, right) => right.time.getTime() - left.time.getTime())
+    .map(({ time: _time, ...rest }) => rest)
 })
 
 const sidebarSessions = computed<SidebarSessionItem[]>(() => sessionList.value
@@ -494,30 +487,11 @@ const sidebarSessions = computed<SidebarSessionItem[]>(() => sessionList.value
 
 const showPendingResultTile = computed(() => isLoading.value && generatedResults.value.length > 0)
 
-const sidePanelResultCount = computed(() => generatedResults.value.length + (showPendingResultTile.value ? 1 : 0))
+const sessionArtifacts = computed<WorkspaceArtifact[]>(() => generatedResults.value)
 
-const selectedGeneratedResult = computed<GeneratedResultItem | null>(() => {
+const selectedGeneratedResult = computed<WorkspaceArtifact | null>(() => {
   const selected = generatedResults.value.find((item) => item.id === selectedResultId.value)
   return selected ?? generatedResults.value[0] ?? null
-})
-
-const resultsPanelItems = computed<ResultPanelItem[]>(() => generatedResults.value.map((item) => ({
-  id: item.id,
-  url: item.url,
-  filename: item.filename,
-  prompt: item.prompt,
-  timeLabel: formatResultTime(item.time),
-})))
-
-const selectedResultPanelItem = computed<ResultPanelItem | null>(() => {
-  if (!selectedGeneratedResult.value) return null
-  return {
-    id: selectedGeneratedResult.value.id,
-    url: selectedGeneratedResult.value.url,
-    filename: selectedGeneratedResult.value.filename,
-    prompt: selectedGeneratedResult.value.prompt,
-    timeLabel: formatResultTime(selectedGeneratedResult.value.time),
-  }
 })
 
 watch(generatedResults, (items) => {
@@ -590,6 +564,13 @@ function getUserMessageText(msg: DisplayMessage): string {
     .join('')
 }
 
+function resolveMediaFileKind(mime: string, filename: string): WorkspaceArtifact['kind'] | null {
+  if (mime.includes('image') || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(filename)) return 'image'
+  if (mime.includes('video') || /\.(mp4|webm|mov|avi)$/i.test(filename)) return 'video'
+  if (mime.includes('audio') || /\.(mp3|wav|ogg|flac|aac|m4a)$/i.test(filename)) return 'audio'
+  return null
+}
+
 function formatSessionTime(date: Date): string {
   const now = new Date()
   const diff = now.getTime() - date.getTime()
@@ -649,6 +630,24 @@ function clipText(value: string, max = 48): string {
 
 function handleSelectResult(id: string) {
   selectedResultId.value = id
+}
+
+// ── WorkspaceArtifactsPanel event stubs (ADR 0003) ──────────────────────────
+// TODO: wire to parameter editor / rerun backend when available (openimago-xkn)
+
+function handleEditArtifactParams(_id: string) {
+  // TODO: open parameter editor inline in the panel
+  $q.notify({ color: 'info', message: '参数编辑器即将上线（编辑模式）', icon: 'edit', timeout: 1500 })
+}
+
+function handleRerunArtifact(_payload: unknown) {
+  // TODO: create new generation run with updated params (immutable) — openimago-xkn
+  $q.notify({ color: 'info', message: '重新生成即将上线（会话作用域）', icon: 'refresh', timeout: 1500 })
+}
+
+function handleDeleteArtifact(_id: string) {
+  // TODO: prompt confirm dialog, call workspace-files delete endpoint
+  $q.notify({ color: 'info', message: '删除制品功能即将上线', icon: 'delete', timeout: 1500 })
 }
 
 

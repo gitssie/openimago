@@ -56,20 +56,18 @@ const StubSessionWorkspaceSidebar = defineComponent({
   template: '<div class="sidebar-stub" />',
 })
 
-const StubSessionWorkspaceResultsPanel = defineComponent({
-  name: 'SessionWorkspaceResultsPanel',
+const StubWorkspaceArtifactsPanel = defineComponent({
+  name: 'WorkspaceArtifactsPanel',
   props: {
     modelValue: String,
-    currentSessionLabel: String,
-    latestPromptText: String,
-    generatedResults: Array,
-    selectedResultId: [String, Object] as PropType<string | null>,
-    selectedResult: Object,
-    showPendingResultTile: Boolean,
-    sidePanelResultCount: Number,
+    artifacts: Array,
+    selectedId: [String, Object] as PropType<string | null>,
+    showPendingTile: Boolean,
+    scope: String,
+    loading: Boolean,
   },
-  emits: ['update:modelValue', 'select-result'],
-  template: '<div class="results-panel-stub" />',
+  emits: ['update:modelValue', 'select', 'edit-params', 'rerun', 'delete'],
+  template: '<div class="artifacts-panel-stub" />',
 })
 
 const StubPromptInput = defineComponent({
@@ -267,7 +265,7 @@ function mountPage(component: Component, opts?: Parameters<typeof mount>[1]) {
         OiIcon: StubOiIcon,
         SessionChatView: StubSessionChatView,
         SessionWorkspaceSidebar: StubSessionWorkspaceSidebar,
-        SessionWorkspaceResultsPanel: StubSessionWorkspaceResultsPanel,
+        WorkspaceArtifactsPanel: StubWorkspaceArtifactsPanel,
         PromptInput: StubPromptInput,
         AgentQuestion: StubAgentQuestion,
         AgentPermission: StubAgentPermission,
@@ -674,11 +672,12 @@ describe('SessionWorkspacePage', () => {
       await wrapper.find('.topbar-icon-btn').trigger('click')
       await wrapper.vm.$nextTick()
 
-      const panel = wrapper.findComponent({ name: 'SessionWorkspaceResultsPanel' })
-      const results = panel.props('generatedResults') as { filename: string }[]
-      // Only image results should be collected (not the pdf)
+      const panel = wrapper.findComponent({ name: 'WorkspaceArtifactsPanel' })
+      const results = panel.props('artifacts') as { filename: string; kind: string }[]
+      // Only media results should be collected (not the pdf)
       expect(results).toHaveLength(1)
       expect(results[0]?.filename).toBe('result.png')
+      expect(results[0]?.kind).toBe('image')
     })
 
     it('sorts generated results by time descending', async () => {
@@ -711,8 +710,8 @@ describe('SessionWorkspacePage', () => {
       await wrapper.find('.topbar-icon-btn').trigger('click')
       await wrapper.vm.$nextTick()
 
-      const panel = wrapper.findComponent({ name: 'SessionWorkspaceResultsPanel' })
-      const results = panel.props('generatedResults') as { filename: string }[]
+      const panel = wrapper.findComponent({ name: 'WorkspaceArtifactsPanel' })
+      const results = panel.props('artifacts') as { filename: string }[]
       expect(results).toHaveLength(2)
       // Newest first
       expect(results[0]?.filename).toBe('new.png')
@@ -738,8 +737,8 @@ describe('SessionWorkspacePage', () => {
       await wrapper.find('.topbar-icon-btn').trigger('click')
       await wrapper.vm.$nextTick()
 
-      const panel = wrapper.findComponent({ name: 'SessionWorkspaceResultsPanel' })
-      expect(panel.props('selectedResultId')).toBe('r1')
+      const panel = wrapper.findComponent({ name: 'WorkspaceArtifactsPanel' })
+      expect(panel.props('selectedId')).toBe('r1')
     })
 
     it('passes currentSessionLabel and sidePanelResultCount to panel', async () => {
@@ -764,9 +763,9 @@ describe('SessionWorkspacePage', () => {
       await wrapper.find('.topbar-icon-btn').trigger('click')
       await wrapper.vm.$nextTick()
 
-      const panel = wrapper.findComponent({ name: 'SessionWorkspaceResultsPanel' })
-      expect(panel.props('currentSessionLabel')).toBe('My Session')
-      expect(panel.props('sidePanelResultCount')).toBe(1)
+      const panel = wrapper.findComponent({ name: 'WorkspaceArtifactsPanel' })
+      expect(panel.props('artifacts')).toHaveLength(1)
+      expect(panel.props('scope')).toBe('session')
     })
   })
 
@@ -1053,11 +1052,11 @@ describe('SessionWorkspacePage', () => {
 
       // UILayoutDrawer renders content even when hidden (just display:none)
       // Panel stub should always be present in the DOM
-      const panel = wrapper.findComponent({ name: 'SessionWorkspaceResultsPanel' })
+      const panel = wrapper.findComponent({ name: 'WorkspaceArtifactsPanel' })
       expect(panel.exists()).toBe(true)
 
-      // Verify the panel receives side-panel-result-count
-      expect(panel.props('sidePanelResultCount')).toBe(0)
+      // Verify the panel receives artifacts prop (empty initially)
+      expect(panel.props('artifacts')).toEqual([])
     })
 
     it('shows session switching spinner', async () => {
