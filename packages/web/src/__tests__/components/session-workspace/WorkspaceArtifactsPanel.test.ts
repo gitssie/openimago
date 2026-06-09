@@ -195,7 +195,7 @@ describe('WorkspaceArtifactsPanel — events', () => {
     const tabs = wrapper.findAll('.q-tab')
     if (tabs.length >= 2 && tabs[1]!.attributes('name') === 'canvas') {
       await tabs[1]!.trigger('click')
-      const emitted = wrapper.emitted('update:modelValue')
+      wrapper.emitted('update:modelValue')
       // The tab click may or may not bubble through stubs; just check the component didn't error
       expect(wrapper.exists()).toBe(true)
     }
