@@ -112,8 +112,10 @@ export interface PromptTemplate {
 
 import type { MediaToolResultV1 } from '../services/media'
 
+import type { GenerationRunMetadata } from '../components/session-workspace/types'
+
 export type { MediaAccessLocator } from '../services/media'
-export type { GenerationRunMetadata } from '../components/session-workspace/types'
+export type { GenerationRunMetadata }
 
 export interface WorkspaceFileAccessLocator {
   href: string
@@ -136,7 +138,7 @@ export interface WorkspaceFile extends Omit<MediaToolResultV1, 'access' | 'creat
   /** Generation-run metadata surfaced from workspaceGeneratedFiles.metadata.
    *  Present when the file was registered with gen-run data (ADR 0003).
    *  Legacy files created before openimago-xkn may lack this field. */
-  generationRun?: import('../components/session-workspace/types').GenerationRunMetadata
+  generationRun?: GenerationRunMetadata
 }
 
 // ── Story Types (ADR 0004, openimago-1a3) ─────────────────────────────────────
