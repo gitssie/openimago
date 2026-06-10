@@ -64,11 +64,19 @@ export interface OpenimagoUser {
   id: string
   username: string
   email: string
+  emailVerified?: boolean
+  emailVerifiedAt?: string | null
   role: string
   displayName?: string
   workspaceId?: string
   createdAt?: string
   updatedAt?: string
+}
+
+export interface AuthResponse {
+  token: string
+  user: OpenimagoUser
+  requiresEmailVerification?: boolean
 }
 
 export interface OpenimagoProject {
@@ -298,12 +306,14 @@ export interface GalleryDetail {
 
 export const api = {
   // Auth — { token, user } / { id, username, ... }
-  register: (data: { username: string; email: string; password: string; verificationCode: string }) =>
-    request<{ token: string; user: OpenimagoUser }>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+  register: (data: { username: string; email: string; password: string; verificationCode?: string }) =>
+    request<AuthResponse>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data: { email: string; password: string }) =>
-    request<{ token: string; user: OpenimagoUser }>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+    request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   sendEmailVerification: (email: string) =>
     request<{ success: boolean }>('/auth/email-verification/send', { method: 'POST', body: JSON.stringify({ email }) }),
+  verifyEmail: (code: string) =>
+    request<{ user: OpenimagoUser }>('/auth/email-verification/verify', { method: 'POST', body: JSON.stringify({ code }) }),
   me: () => request<OpenimagoUser>('/auth/me'),
   updateMe: (data: { displayName?: string; email?: string }) =>
     request<OpenimagoUser>('/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),
@@ -477,7 +487,7 @@ export const api = {
 
   // ── Rerun (stub, openimago-xkn / ADR 0003) ────────────────────────────
   //
-  // TODO: wire to backend rerun endpoint when the generation-run execution
+  // Future: wire to backend rerun endpoint when the generation-run execution
   // path is implemented. For MVP, the WorkspaceArtifactsPanel emits "rerun"
   // events; pages handle the event with this stub.
   rerunArtifact: (_payload: {

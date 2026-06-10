@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useAuthStore } from '../../stores/auth'
 
@@ -6,6 +6,7 @@ describe('Auth Store — reauth dialog state', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
+    vi.restoreAllMocks()
   })
 
   it('requestReauth() sets showReauthDialog to true', () => {
@@ -60,5 +61,58 @@ describe('Auth Store — reauth dialog state', () => {
     auth.requestReauth()
     auth.requestReauth()
     expect(auth.showReauthDialog).toBe(true)
+  })
+
+  it('login() stores unverified account state without granting app access', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+      token: 'unverified-token',
+      requiresEmailVerification: true,
+      user: {
+        id: '1',
+        username: 'test',
+        email: 'test@test.com',
+        role: 'user',
+        emailVerified: false,
+        emailVerifiedAt: null,
+      },
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+
+    const auth = useAuthStore()
+    await auth.login('test@test.com', 'password123')
+
+    expect(auth.token).toBe('unverified-token')
+    expect(auth.showUnverifiedEmailDialog).toBe(true)
+    expect(auth.unverifiedEmailPhase).toBe('notice')
+    expect(auth.canAccessApp).toBe(false)
+  })
+
+  it('verifyUnverifiedEmail() marks the account accessible after backend verification', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+      user: {
+        id: '1',
+        username: 'test',
+        email: 'test@test.com',
+        role: 'user',
+        emailVerified: true,
+        emailVerifiedAt: '2026-06-10T09:00:00.000Z',
+      },
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+
+    const auth = useAuthStore()
+    auth.setAuth('unverified-token', {
+      id: '1',
+      username: 'test',
+      email: 'test@test.com',
+      role: 'user',
+      emailVerified: false,
+      emailVerifiedAt: null,
+    })
+    auth.requestEmailVerification()
+
+    await auth.verifyUnverifiedEmail('123456')
+
+    expect(auth.user?.emailVerified).toBe(true)
+    expect(auth.unverifiedEmailPhase).toBe('success')
+    expect(auth.canAccessApp).toBe(true)
   })
 })

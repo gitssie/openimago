@@ -41,14 +41,11 @@ function validateRegister(input: RegisterInput): string | null {
   if (!input.password || input.password.length < 8) {
     return "Password must be at least 8 characters"
   }
-  if (!input.verificationCode || input.verificationCode.length === 0) {
-    return "Verification code is required"
-  }
   return null
 }
 
 export class AuthService {
-  async sendVerificationCode(email: string) {
+  async sendVerificationCode(email: string, requesterToken?: string) {
     const normalized = email.toLowerCase().trim()
     if (!normalized || !normalized.includes("@")) {
       return { error: { code: "VALIDATION_ERROR", message: "Invalid email" }, status: 400 } as const
@@ -61,8 +58,27 @@ export class AuthService {
       .where(eq(users.email, normalized))
 
     if (existing.length > 0) {
-      logger.warn({ email: normalized }, "auth.sendVerificationCode: email already registered")
-      return { error: { code: "CONFLICT", message: "Email already registered" }, status: 409 } as const
+      const existingUser = existing[0]!
+      if (existingUser.emailVerified) {
+        logger.warn({ email: normalized }, "auth.sendVerificationCode: email already verified")
+        return { error: { code: "CONFLICT", message: "Email already verified" }, status: 409 } as const
+      }
+
+      if (!requesterToken) {
+        logger.warn({ email: normalized }, "auth.sendVerificationCode: existing unverified email requires authentication")
+        return { error: { code: "UNAUTHORIZED", message: "Authentication required to verify an existing account" }, status: 401 } as const
+      }
+
+      try {
+        const { userId } = await verifyJwt(requesterToken)
+        if (userId !== existingUser.id) {
+          logger.warn({ email: normalized, requesterUserId: userId }, "auth.sendVerificationCode: token does not match existing email owner")
+          return { error: { code: "FORBIDDEN", message: "Cannot request verification for another account" }, status: 403 } as const
+        }
+      } catch (tokenError: unknown) {
+        logger.warn({ email: normalized, err: tokenError }, "auth.sendVerificationCode: invalid requester token")
+        return { error: { code: "UNAUTHORIZED", message: "Invalid token" }, status: 401 } as const
+      }
     }
 
     // Check resend cooldown
@@ -109,12 +125,6 @@ export class AuthService {
     const normalizedEmail = input.email.toLowerCase()
 
     // Verify email verification code
-    const verification = verificationStore.verifyCode(normalizedEmail, input.verificationCode!)
-    if (!verification.valid) {
-      logger.warn({ email: normalizedEmail }, "auth.register: invalid or expired verification code")
-      return { error: { code: "INVALID_VERIFICATION_CODE", message: "Invalid or expired verification code" }, status: 400 } as const
-    }
-
     const existing = await db
       .select()
       .from(users)
@@ -134,6 +144,8 @@ export class AuthService {
       id,
       username: input.username,
       email: normalizedEmail,
+      emailVerified: false,
+      emailVerifiedAt: null,
       displayName: input.displayName ?? null,
       workspaceId,
       role: "user",
@@ -153,7 +165,7 @@ export class AuthService {
 
     const token = await signJwt({ userId: id, role: "user" })
     logger.info({ userId: id, username: input.username, email: input.email }, "auth.register: user created")
-    return { user, token, status: 201 } as const
+    return { user, token, requiresEmailVerification: true, status: 201 } as const
   }
 
   async login(input: LoginInput) {
@@ -194,8 +206,59 @@ export class AuthService {
     }
 
     const token = await signJwt({ userId: user.id, role: user.role })
-    logger.info({ userId: user.id, email }, "auth.login: success")
-    return { user, token, status: 200 } as const
+    logger.info({ userId: user.id, email, emailVerified: user.emailVerified }, "auth.login: success")
+    return { user, token, requiresEmailVerification: !user.emailVerified, status: 200 } as const
+  }
+
+  async verifyExistingEmail(token: string, code: string) {
+    if (!code || code.trim().length === 0) {
+      return { error: { code: "VALIDATION_ERROR", message: "Verification code is required" }, status: 400 } as const
+    }
+
+    try {
+      const { userId } = await verifyJwt(token)
+      const userRows = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, userId))
+
+      if (userRows.length === 0) {
+        return { error: { code: "UNAUTHORIZED", message: "User not found" }, status: 401 } as const
+      }
+
+      const user = userRows[0]!
+      if (!user.email) {
+        return { error: { code: "VALIDATION_ERROR", message: "User has no email to verify" }, status: 400 } as const
+      }
+
+      if (user.emailVerified) {
+        return { user, status: 200 } as const
+      }
+
+      const verification = verificationStore.verifyCode(user.email, code.trim())
+      if (!verification.valid) {
+        logger.warn({ userId: user.id, email: user.email }, "auth.verifyExistingEmail: invalid or expired verification code")
+        return { error: { code: "INVALID_VERIFICATION_CODE", message: "Invalid or expired verification code" }, status: 400 } as const
+      }
+
+      const now = new Date()
+      await db
+        .update(users)
+        .set({ emailVerified: true, emailVerifiedAt: now, updatedAt: now })
+        .where(eq(users.id, user.id))
+
+      const updatedUserRows = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, user.id))
+
+      const updatedUser = updatedUserRows[0]!
+      logger.info({ userId: updatedUser.id, email: updatedUser.email }, "auth.verifyExistingEmail: email verified")
+      return { user: updatedUser, status: 200 } as const
+    } catch (tokenError: unknown) {
+      logger.warn({ err: tokenError }, "auth.verifyExistingEmail: invalid token")
+      return { error: { code: "UNAUTHORIZED", message: "Invalid token" }, status: 401 } as const
+    }
   }
 
   async updateProfile(token: string, input: UpdateProfileInput) {
@@ -236,6 +299,10 @@ export class AuthService {
           return { error: { code: "CONFLICT", message: "Email already in use" }, status: 409 } as const
         }
         updates.email = newEmail
+        if (newEmail !== user.email) {
+          updates.emailVerified = false
+          updates.emailVerifiedAt = null
+        }
       }
 
       // Validate and set password

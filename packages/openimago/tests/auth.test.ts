@@ -61,10 +61,10 @@ test("POST /auth/email-verification/send rejects invalid email", async () => {
   expect(body.error.code).toBe("VALIDATION_ERROR")
 })
 
-// 3. Send verification rejects already registered email
-test("POST /auth/email-verification/send rejects already registered email", async () => {
-  // Register alice first
-  const code = await requestVerificationCode("alice@example.com")
+// 3. Send verification rejects already verified registered email
+test("POST /auth/email-verification/send rejects already verified registered email", async () => {
+  // Register alice first, then verify her email
+  await requestVerificationCode("alice@example.com")
   await app.fetch(
     new Request("http://localhost/auth/register", {
       method: "POST",
@@ -73,8 +73,23 @@ test("POST /auth/email-verification/send rejects already registered email", asyn
         username: "alice",
         email: "alice@example.com",
         password: "password123",
-        verificationCode: code,
       }),
+    }),
+  )
+  const { token } = await (await app.fetch(
+    new Request("http://localhost/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "alice@example.com", password: "password123" }),
+    }),
+  )).json() as { token: string }
+  const verifyCode = verificationStore.getCode("alice@example.com")
+  expect(verifyCode).toBeDefined()
+  await app.fetch(
+    new Request("http://localhost/auth/email-verification/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ code: verifyCode }),
     }),
   )
 
@@ -116,10 +131,10 @@ test("POST /auth/email-verification/send enforces cooldown", async () => {
   expect(body.error.code).toBe("RATE_LIMITED")
 })
 
-// ── Registration with verification ────────────────────────────────────
+// ── Registration with deferred verification ────────────────────────────
 
-// 5. Registration without verification code is rejected
-test("registration without verification code is rejected", async () => {
+// 5. Registration without verification code creates an unverified user
+test("registration without verification code creates an unverified user", async () => {
   const res = await app.fetch(
     new Request("http://localhost/auth/register", {
       method: "POST",
@@ -131,13 +146,16 @@ test("registration without verification code is rejected", async () => {
       }),
     }),
   )
-  expect(res.status).toBe(400)
-  const body = await res.json() as Record<string, any>
-  expect(body.error.code).toBe("VALIDATION_ERROR")
+  expect(res.status).toBe(201)
+  const body = await res.json() as { token: string; user: { email: string; emailVerified: boolean; emailVerifiedAt: string | null } }
+  expect(body.user.email).toBe("nocode@example.com")
+  expect(body.user.emailVerified).toBe(false)
+  expect(body.user.emailVerifiedAt).toBeNull()
+  expect(typeof body.token).toBe("string")
 })
 
-// 6. Registration with wrong verification code is rejected
-test("registration with wrong verification code is rejected", async () => {
+// 6. Registration ignores stale/wrong verification code and still creates an unverified user
+test("registration ignores stale verification code and creates an unverified user", async () => {
   await requestVerificationCode("wrongcode@example.com")
   const res = await app.fetch(
     new Request("http://localhost/auth/register", {
@@ -151,13 +169,13 @@ test("registration with wrong verification code is rejected", async () => {
       }),
     }),
   )
-  expect(res.status).toBe(400)
-  const body = await res.json() as Record<string, any>
-  expect(body.error.code).toBe("INVALID_VERIFICATION_CODE")
+  expect(res.status).toBe(201)
+  const body = await res.json() as { user: { emailVerified: boolean } }
+  expect(body.user.emailVerified).toBe(false)
 })
 
-// 7. Registration with correct verification code succeeds
-test("user can register with verified email", async () => {
+// 7. Registration with correct verification code still defers verification until login-time flow
+test("user can register with deferred email verification", async () => {
   const code = await requestVerificationCode("bob@example.com")
   const res = await app.fetch(
     new Request("http://localhost/auth/register", {
@@ -175,14 +193,15 @@ test("user can register with verified email", async () => {
   const body = await res.json() as Record<string, any>
   expect(body.user.username).toBe("bob")
   expect(body.user.email).toBe("bob@example.com")
+  expect(body.user.emailVerified).toBe(false)
   expect(body.token).toBeDefined()
   expect(typeof body.token).toBe("string")
 })
 
 // 8. Verification code is consumed — cannot be reused
 test("verification code is consumed after successful registration", async () => {
-  const code = await requestVerificationCode("onetime@example.com")
-  // First registration succeeds
+  await requestVerificationCode("onetime@example.com")
+  // First registration succeeds without consuming the login-time verification code
   const res1 = await app.fetch(
     new Request("http://localhost/auth/register", {
       method: "POST",
@@ -191,20 +210,19 @@ test("verification code is consumed after successful registration", async () => 
         username: "onetime",
         email: "onetime@example.com",
         password: "password123",
-        verificationCode: code,
       }),
     }),
   )
   expect(res1.status).toBe(201)
 
-  // Second registration with same email should fail (email already registered)
+  // Existing pre-registration code remains available until a login-time verification consumes it.
   const code2 = verificationStore.getCode("onetime@example.com")
-  expect(code2).toBeUndefined()
+  expect(code2).toBeDefined()
 })
 
 // 9. Duplicate email still rejected
 test("registration rejects duplicate email", async () => {
-  const code = await requestVerificationCode("dupe@example.com")
+  await requestVerificationCode("dupe@example.com")
   await app.fetch(
     new Request("http://localhost/auth/register", {
       method: "POST",
@@ -213,14 +231,9 @@ test("registration rejects duplicate email", async () => {
         username: "dupe1",
         email: "dupe@example.com",
         password: "password123",
-        verificationCode: code,
       }),
     }),
   )
-
-  // Manually inject a new verification code for the already-registered email
-  // (bypassing the send endpoint's duplicate-email check)
-  verificationStore.storeCode("dupe@example.com", "999999")
 
   const res = await app.fetch(
     new Request("http://localhost/auth/register", {
@@ -230,7 +243,6 @@ test("registration rejects duplicate email", async () => {
         username: "dupe2",
         email: "dupe@example.com",
         password: "password123",
-        verificationCode: "999999",
       }),
     }),
   )
@@ -241,7 +253,7 @@ test("registration rejects duplicate email", async () => {
 
 // 10. Weak password still rejected
 test("registration rejects weak password", async () => {
-  const code = await requestVerificationCode("weak@example.com")
+  await requestVerificationCode("weak@example.com")
   const res = await app.fetch(
     new Request("http://localhost/auth/register", {
       method: "POST",
@@ -250,7 +262,6 @@ test("registration rejects weak password", async () => {
         username: "weak",
         email: "weak@example.com",
         password: "123",
-        verificationCode: code,
       }),
     }),
   )
@@ -259,11 +270,11 @@ test("registration rejects weak password", async () => {
   expect(body.error.code).toBe("VALIDATION_ERROR")
 })
 
-// ── Login (unchanged, uses verified registrations) ────────────────────
+// ── Login + login-time email verification ─────────────────────────────
 
 // 11. Login success
 test("user can login with correct email/password", async () => {
-  const code = await requestVerificationCode("login@example.com")
+  await requestVerificationCode("login@example.com")
   await app.fetch(
     new Request("http://localhost/auth/register", {
       method: "POST",
@@ -272,7 +283,6 @@ test("user can login with correct email/password", async () => {
         username: "loginuser",
         email: "login@example.com",
         password: "password123",
-        verificationCode: code,
       }),
     }),
   )
@@ -290,12 +300,102 @@ test("user can login with correct email/password", async () => {
   const body = await res.json() as Record<string, any>
   expect(body.user.username).toBe("loginuser")
   expect(body.user.email).toBe("login@example.com")
+  expect(body.user.emailVerified).toBe(false)
+  expect(body.requiresEmailVerification).toBe(true)
   expect(body.token).toBeDefined()
+})
+
+test("authenticated unverified user can request a new verification code", async () => {
+  await app.fetch(
+    new Request("http://localhost/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        username: "resenduser",
+        email: "resend-login@example.com",
+        password: "password123",
+      }),
+    }),
+  )
+  const login = await app.fetch(
+    new Request("http://localhost/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "resend-login@example.com", password: "password123" }),
+    }),
+  )
+  const { token } = await login.json() as { token: string }
+
+  const res = await app.fetch(
+    new Request("http://localhost/auth/email-verification/send", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ email: "resend-login@example.com" }),
+    }),
+  )
+
+  expect(res.status).toBe(200)
+  expect(verificationStore.getCode("resend-login@example.com")).toBeDefined()
+})
+
+test("verifying login-time code marks existing user email verified", async () => {
+  await app.fetch(
+    new Request("http://localhost/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        username: "verifyuser",
+        email: "verify-login@example.com",
+        password: "password123",
+      }),
+    }),
+  )
+  const login = await app.fetch(
+    new Request("http://localhost/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "verify-login@example.com", password: "password123" }),
+    }),
+  )
+  const { token } = await login.json() as { token: string }
+  await app.fetch(
+    new Request("http://localhost/auth/email-verification/send", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ email: "verify-login@example.com" }),
+    }),
+  )
+  const code = verificationStore.getCode("verify-login@example.com")
+  expect(code).toBeDefined()
+
+  const verify = await app.fetch(
+    new Request("http://localhost/auth/email-verification/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ code }),
+    }),
+  )
+
+  expect(verify.status).toBe(200)
+  const verifiedBody = await verify.json() as { user: { emailVerified: boolean; emailVerifiedAt: string | null } }
+  expect(verifiedBody.user.emailVerified).toBe(true)
+  expect(verifiedBody.user.emailVerifiedAt).not.toBeNull()
+
+  const verifiedLogin = await app.fetch(
+    new Request("http://localhost/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "verify-login@example.com", password: "password123" }),
+    }),
+  )
+  const verifiedLoginBody = await verifiedLogin.json() as { requiresEmailVerification: boolean; user: { emailVerified: boolean } }
+  expect(verifiedLoginBody.requiresEmailVerification).toBe(false)
+  expect(verifiedLoginBody.user.emailVerified).toBe(true)
 })
 
 // 12. Login wrong password
 test("login with wrong password returns 401", async () => {
-  const code = await requestVerificationCode("wrongpw@example.com")
+  await requestVerificationCode("wrongpw@example.com")
   await app.fetch(
     new Request("http://localhost/auth/register", {
       method: "POST",
@@ -304,7 +404,6 @@ test("login with wrong password returns 401", async () => {
         username: "user12",
         email: "wrongpw@example.com",
         password: "password123",
-        verificationCode: code,
       }),
     }),
   )
@@ -342,7 +441,7 @@ test("login with unregistered email returns 401", async () => {
 
 // 14. GET /auth/me success
 test("GET /auth/me returns user info for valid token", async () => {
-  const code = await requestVerificationCode("me@example.com")
+  await requestVerificationCode("me@example.com")
   const reg = await app.fetch(
     new Request("http://localhost/auth/register", {
       method: "POST",
@@ -351,7 +450,6 @@ test("GET /auth/me returns user info for valid token", async () => {
         username: "meuser",
         email: "me@example.com",
         password: "password123",
-        verificationCode: code,
       }),
     }),
   )
@@ -366,6 +464,7 @@ test("GET /auth/me returns user info for valid token", async () => {
   expect(body.username).toBe("meuser")
   expect(body.email).toBe("me@example.com")
   expect(body.role).toBe("user")
+  expect(body.emailVerified).toBe(false)
 })
 
 // 15. GET /auth/me without token

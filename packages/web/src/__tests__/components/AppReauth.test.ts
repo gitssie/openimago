@@ -71,7 +71,7 @@ describe('App.vue — global reauth dialog', () => {
 
     const auth = useAuthStore()
     auth.login = vi.fn(() => {
-      auth.setAuth('new-token', { id: '1', username: 'test', email: 'test@test.com', role: 'user' })
+      auth.setAuth('new-token', { id: '1', username: 'test', email: 'test@test.com', role: 'user', emailVerified: true })
       return Promise.resolve()
     })
 
@@ -91,5 +91,26 @@ describe('App.vue — global reauth dialog', () => {
     expect(emitSpy).toHaveBeenCalledWith('auth:reauthenticated')
 
     emitSpy.mockRestore()
+  })
+
+  it('renders UnverifiedEmailDialog for authenticated users with unverified email', async () => {
+    await router.push('/auth')
+    await router.isReady()
+
+    const auth = useAuthStore()
+    auth.setAuth('unverified-token', {
+      id: '1',
+      username: 'test',
+      email: 'test@test.com',
+      role: 'user',
+      emailVerified: false,
+      emailVerifiedAt: null,
+    })
+    auth.requestEmailVerification()
+
+    const wrapper = mountApp()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findComponent({ name: 'UnverifiedEmailDialog' }).exists()).toBe(true)
   })
 })

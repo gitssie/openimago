@@ -1,10 +1,12 @@
-import { pgTable, text, timestamp, integer, real, bigint, uniqueIndex, jsonb } from "drizzle-orm/pg-core"
+import { boolean, pgTable, text, timestamp, integer, real, bigint, uniqueIndex, jsonb } from "drizzle-orm/pg-core"
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
   username: text("username").notNull().unique(),
   displayName: text("display_name"),
   email: text("email").unique(),
+  emailVerified: boolean("email_verified").notNull().default(false),
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
   workspaceId: text("workspace_id"),
   role: text("role").notNull().default("user"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

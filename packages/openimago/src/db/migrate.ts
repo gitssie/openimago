@@ -22,6 +22,8 @@ export async function migrate() {
       username TEXT NOT NULL UNIQUE,
       display_name TEXT,
       email TEXT UNIQUE,
+      email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+      email_verified_at TIMESTAMPTZ,
       role TEXT NOT NULL DEFAULT 'user',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -59,6 +61,14 @@ export async function migrate() {
 
   await db.execute(sql`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS workspace_id TEXT
+  `)
+
+  await db.execute(sql`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE
+  `)
+
+  await db.execute(sql`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ
   `)
 
   // Rename full_path → directory on projects table (same concept, unified naming)

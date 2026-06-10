@@ -39,6 +39,11 @@ export default defineRouter((/* { store, ssrContext } */) => {
       }
       return '/auth'
     }
+
+    if (!auth.isEmailVerified) {
+      auth.requestEmailVerification()
+      return '/auth'
+    }
   })
 
   return Router

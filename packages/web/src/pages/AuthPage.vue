@@ -43,7 +43,7 @@ async function handleLogin(payload: LoginPayload) {
   error.value = ''
   try {
     await auth.login(payload.email, payload.password)
-    void router.push('/')
+    if (auth.canAccessApp) void router.push('/')
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : '登录失败'
   } finally {
@@ -56,7 +56,7 @@ async function handleRegister(payload: RegisterPayload) {
   error.value = ''
   try {
     await auth.register(payload.username, payload.email, payload.password, payload.verificationCode)
-    void router.push('/')
+    if (auth.canAccessApp) void router.push('/')
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : '注册失败'
   } finally {
@@ -69,7 +69,7 @@ function oauthLogin(provider: OAuthProvider) {
 }
 
 function handleForgotPassword() {
-  // TODO: implement forgot password flow (route or modal)
+  // Future: implement forgot password flow (route or modal)
   void router.push('/forgot-password')
 }
 </script>
