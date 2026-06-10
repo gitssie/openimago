@@ -12,7 +12,7 @@ import {
 } from "./email-verification"
 
 export interface RegisterInput {
-  username: string
+  username?: string
   email: string
   password: string
   displayName?: string
@@ -32,9 +32,6 @@ export interface UpdateProfileInput {
 }
 
 function validateRegister(input: RegisterInput): string | null {
-  if (!input.username || input.username.length < 3 || input.username.length > 32) {
-    return "Username must be 3-32 characters"
-  }
   if (!input.email || !input.email.includes("@")) {
     return "Invalid email"
   }
@@ -118,7 +115,7 @@ export class AuthService {
   async register(input: RegisterInput) {
     const validationError = validateRegister(input)
     if (validationError) {
-      logger.warn({ username: input.username, email: input.email }, `auth.register: validation failed — ${validationError}`)
+      logger.warn({ email: input.email }, `auth.register: validation failed — ${validationError}`)
       return { error: { code: "VALIDATION_ERROR", message: validationError }, status: 400 } as const
     }
 
@@ -139,10 +136,11 @@ export class AuthService {
     const now = new Date()
     const hash = await Bun.password.hash(input.password)
     const workspaceId = generateWorkspaceId()
+    const username = id
 
     const user = {
       id,
-      username: input.username,
+      username,
       email: normalizedEmail,
       emailVerified: false,
       emailVerifiedAt: null,
@@ -164,7 +162,7 @@ export class AuthService {
     })
 
     const token = await signJwt({ userId: id, role: "user" })
-    logger.info({ userId: id, username: input.username, email: input.email }, "auth.register: user created")
+    logger.info({ userId: id, username, email: input.email }, "auth.register: user created")
     return { user, token, requiresEmailVerification: true, status: 201 } as const
   }
 

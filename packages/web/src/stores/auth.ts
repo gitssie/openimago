@@ -35,8 +35,12 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function register(username: string, email: string, password: string, verificationCode: string) {
-    const res = await api.register({ username, email, password, verificationCode })
+  async function register(email: string, password: string) {
+    // UI contract: email + password only at submit. No username, no inline
+    // verification code. The dependent task (openimago-cgh) wires the new
+    // registration backend flow + triggers UnverifiedEmailDialog when the
+    // returned user is unverified.
+    const res = await api.register({ email, password })
     setAuth(res.token, res.user)
     if (res.requiresEmailVerification || res.user.emailVerified !== true) {
       requestEmailVerification()

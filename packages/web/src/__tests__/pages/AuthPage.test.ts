@@ -37,12 +37,12 @@ describe('AuthPage', () => {
     expect(wrapper.text()).toContain('openimago')
   })
 
-  it('switches to register tab and shows username field', async () => {
+  it('switches to register tab and shows email verification notice', async () => {
     const wrapper = mountAuth()
     // Find the register tab button and click it
     const tabs = wrapper.findAll('.q-tab')
     expect(tabs.length).toBe(2)
     if (tabs[1]) await tabs[1].trigger('click')
-    expect(wrapper.text()).toContain('用户名')
+    expect(wrapper.text()).toContain('注册后系统会向此邮箱发送验证码以完成验证')
   })
 })

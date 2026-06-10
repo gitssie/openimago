@@ -16,14 +16,14 @@ interface Registration {
   workspaceId: string
 }
 
-async function registerUser(username: string, email: string): Promise<Registration> {
+async function registerUser(email: string): Promise<Registration> {
   const a = new Hono()
   a.route("/auth", authRoutes)
   const res = await a.fetch(
     new Request("http://localhost/auth/register", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ username, email, password: "password123" }),
+      body: JSON.stringify({ email, password: "password123" }),
     }),
   )
   const body = (await res.json()) as Record<string, any>
@@ -130,7 +130,7 @@ describe("workspace-files schema", () => {
 // ---------------------------------------------------------------------------
 describe("workspace-files routes", () => {
   test("POST /api/platform/workspace-files registers a file", async () => {
-    const reg = await registerUser("wsfreg", "wsfreg@example.com")
+    const reg = await registerUser("wsfreg@example.com")
     await ensureSession(SESSION_ID, reg.workspaceId)
 
     const res = await app.fetch(
@@ -178,7 +178,7 @@ describe("workspace-files routes", () => {
   })
 
   test("POST /api/platform/workspace-files rejects invalid kind", async () => {
-    const reg = await registerUser("wsfbad", "wsfbad@example.com")
+    const reg = await registerUser("wsfbad@example.com")
     await ensureSession(SESSION_ID, reg.workspaceId)
 
     const res = await app.fetch(
@@ -203,7 +203,7 @@ describe("workspace-files routes", () => {
   })
 
   test("POST /api/platform/workspace-files returns 404 for non-existent session", async () => {
-    const reg = await registerUser("wsfnosess", "wsfnosess@example.com")
+    const reg = await registerUser("wsfnosess@example.com")
 
     const res = await app.fetch(
       new Request("http://localhost/api/platform/workspace-files", {
@@ -227,7 +227,7 @@ describe("workspace-files routes", () => {
   })
 
   test("GET /api/platform/sessions/:id/workspace-files lists files", async () => {
-    const reg = await registerUser("wsflist", "wsflist@example.com")
+    const reg = await registerUser("wsflist@example.com")
     await ensureSession(SESSION_ID, reg.workspaceId)
 
     // Register a file first
@@ -275,7 +275,7 @@ describe("workspace-files routes", () => {
   })
 
   test("GET /api/platform/sessions/:id/workspace-files returns 404 for non-existent session", async () => {
-    const reg = await registerUser("wsflist404", "wsflist404@example.com")
+    const reg = await registerUser("wsflist404@example.com")
 
     const res = await app.fetch(
       new Request(

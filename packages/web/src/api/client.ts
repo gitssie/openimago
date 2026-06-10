@@ -306,7 +306,7 @@ export interface GalleryDetail {
 
 export const api = {
   // Auth — { token, user } / { id, username, ... }
-  register: (data: { username: string; email: string; password: string; verificationCode?: string }) =>
+  register: (data: { email: string; password: string }) =>
     request<AuthResponse>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data: { email: string; password: string }) =>
     request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),

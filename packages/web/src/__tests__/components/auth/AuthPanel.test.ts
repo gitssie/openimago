@@ -51,17 +51,15 @@ describe('AuthPanel', () => {
     })
   })
 
-  it('emits "register" with username/email/password when the register form is submitted', async () => {
+  it('emits "register" with email/password when the register form is submitted', async () => {
     const wrapper = mountPanel({ initialMode: 'register' })
     const inputs = wrapper.findAll('input')
-    if (inputs[0]) await inputs[0].setValue('alice')
-    if (inputs[1]) await inputs[1].setValue('alice@example.com')
-    if (inputs[2]) await inputs[2].setValue('supersecret')
+    if (inputs[0]) await inputs[0].setValue('alice@example.com')
+    if (inputs[1]) await inputs[1].setValue('supersecret')
     await wrapper.find('form').trigger('submit')
     const registerEvents = wrapper.emitted('register')
     expect(registerEvents).toBeTruthy()
     expect(registerEvents?.[0]?.[0]).toEqual({
-      username: 'alice',
       email: 'alice@example.com',
       password: 'supersecret',
     })

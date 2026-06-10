@@ -133,21 +133,21 @@ test("POST /auth/email-verification/send enforces cooldown", async () => {
 
 // ── Registration with deferred verification ────────────────────────────
 
-// 5. Registration without verification code creates an unverified user
-test("registration without verification code creates an unverified user", async () => {
+// 5. Registration with only email/password creates an unverified user and generated username
+test("registration with only email/password creates an unverified user", async () => {
   const res = await app.fetch(
     new Request("http://localhost/auth/register", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        username: "nocode",
         email: "nocode@example.com",
         password: "password123",
       }),
     }),
   )
   expect(res.status).toBe(201)
-  const body = await res.json() as { token: string; user: { email: string; emailVerified: boolean; emailVerifiedAt: string | null } }
+  const body = await res.json() as { token: string; user: { username: string; email: string; emailVerified: boolean; emailVerifiedAt: string | null } }
+  expect(body.user.username).toMatch(/^usr_/)
   expect(body.user.email).toBe("nocode@example.com")
   expect(body.user.emailVerified).toBe(false)
   expect(body.user.emailVerifiedAt).toBeNull()
@@ -182,7 +182,6 @@ test("user can register with deferred email verification", async () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        username: "bob",
         email: "bob@example.com",
         password: "password123",
         verificationCode: code,
@@ -191,7 +190,7 @@ test("user can register with deferred email verification", async () => {
   )
   expect(res.status).toBe(201)
   const body = await res.json() as Record<string, any>
-  expect(body.user.username).toBe("bob")
+  expect(body.user.username).toMatch(/^usr_/)
   expect(body.user.email).toBe("bob@example.com")
   expect(body.user.emailVerified).toBe(false)
   expect(body.token).toBeDefined()
@@ -207,7 +206,6 @@ test("verification code is consumed after successful registration", async () => 
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        username: "onetime",
         email: "onetime@example.com",
         password: "password123",
       }),
@@ -228,7 +226,6 @@ test("registration rejects duplicate email", async () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        username: "dupe1",
         email: "dupe@example.com",
         password: "password123",
       }),
@@ -240,7 +237,6 @@ test("registration rejects duplicate email", async () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        username: "dupe2",
         email: "dupe@example.com",
         password: "password123",
       }),
@@ -259,7 +255,6 @@ test("registration rejects weak password", async () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        username: "weak",
         email: "weak@example.com",
         password: "123",
       }),
@@ -280,7 +275,6 @@ test("user can login with correct email/password", async () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        username: "loginuser",
         email: "login@example.com",
         password: "password123",
       }),
@@ -298,7 +292,7 @@ test("user can login with correct email/password", async () => {
   )
   expect(res.status).toBe(200)
   const body = await res.json() as Record<string, any>
-  expect(body.user.username).toBe("loginuser")
+  expect(body.user.username).toMatch(/^usr_/)
   expect(body.user.email).toBe("login@example.com")
   expect(body.user.emailVerified).toBe(false)
   expect(body.requiresEmailVerification).toBe(true)
@@ -311,7 +305,6 @@ test("authenticated unverified user can request a new verification code", async 
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        username: "resenduser",
         email: "resend-login@example.com",
         password: "password123",
       }),
@@ -344,7 +337,6 @@ test("verifying login-time code marks existing user email verified", async () =>
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        username: "verifyuser",
         email: "verify-login@example.com",
         password: "password123",
       }),
@@ -401,7 +393,6 @@ test("login with wrong password returns 401", async () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        username: "user12",
         email: "wrongpw@example.com",
         password: "password123",
       }),
@@ -447,7 +438,6 @@ test("GET /auth/me returns user info for valid token", async () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        username: "meuser",
         email: "me@example.com",
         password: "password123",
       }),
@@ -461,7 +451,7 @@ test("GET /auth/me returns user info for valid token", async () => {
   )
   expect(res.status).toBe(200)
   const body = await res.json() as Record<string, any>
-  expect(body.username).toBe("meuser")
+  expect(body.username).toMatch(/^usr_/)
   expect(body.email).toBe("me@example.com")
   expect(body.role).toBe("user")
   expect(body.emailVerified).toBe(false)
