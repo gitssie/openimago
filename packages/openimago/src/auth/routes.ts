@@ -72,6 +72,7 @@ authRoutes.post("/register", async (c) => {
       },
       token: result.token,
       requiresEmailVerification: result.requiresEmailVerification,
+      verificationCodeSent: "verificationCodeSent" in result ? result.verificationCodeSent : false,
     },
     201 as any,
   )

@@ -41,6 +41,27 @@ function validateRegister(input: RegisterInput): string | null {
   return null
 }
 
+async function issueVerificationCode(normalizedEmail: string, logMessage: string) {
+  const code = generateVerificationCode()
+  verificationStore.storeCode(normalizedEmail, code)
+
+  try {
+    await verificationSender.send(normalizedEmail, code)
+  } catch (sendError: unknown) {
+    logger.error({ email: normalizedEmail, err: sendError }, "auth.issueVerificationCode: failed to send verification code")
+    return {
+      error: {
+        code: "CONFIGURATION_ERROR",
+        message: sendError instanceof Error ? sendError.message : "Failed to send verification code",
+      },
+      status: 500,
+    } as const
+  }
+
+  logger.info({ email: normalizedEmail }, logMessage)
+  return { success: true, status: 200 } as const
+}
+
 export class AuthService {
   async sendVerificationCode(email: string, requesterToken?: string) {
     const normalized = email.toLowerCase().trim()
@@ -92,24 +113,7 @@ export class AuthService {
       } as const
     }
 
-    const code = generateVerificationCode()
-    verificationStore.storeCode(normalized, code)
-
-    try {
-      await verificationSender.send(normalized, code)
-    } catch (sendError: unknown) {
-      logger.error({ email: normalized, err: sendError }, "auth.sendVerificationCode: failed to send verification code")
-      return {
-        error: {
-          code: "CONFIGURATION_ERROR",
-          message: sendError instanceof Error ? sendError.message : "Failed to send verification code",
-        },
-        status: 500,
-      } as const
-    }
-
-    logger.info({ email: normalized }, "auth.sendVerificationCode: code sent")
-    return { success: true, status: 200 } as const
+    return issueVerificationCode(normalized, "auth.sendVerificationCode: code sent")
   }
 
   async register(input: RegisterInput) {
@@ -128,6 +132,50 @@ export class AuthService {
       .where(eq(users.email, normalizedEmail))
 
     if (existing.length > 0) {
+      const existingUser = existing[0]!
+      if (!existingUser.emailVerified) {
+        logger.info({ email: normalizedEmail, previousUserId: existingUser.id }, "auth.register: reclaiming unverified email registration")
+
+        const id = userId()
+        const now = new Date()
+        const hash = await Bun.password.hash(input.password)
+        const workspaceId = generateWorkspaceId()
+        const username = id
+        const user = {
+          id,
+          username,
+          email: normalizedEmail,
+          emailVerified: false,
+          emailVerifiedAt: null,
+          displayName: input.displayName ?? null,
+          workspaceId,
+          role: "user",
+          createdAt: now,
+          updatedAt: now,
+        }
+
+        await db.transaction(async (tx) => {
+          await tx.delete(userAuths).where(eq(userAuths.userId, existingUser.id))
+          await tx.delete(users).where(eq(users.id, existingUser.id))
+          await tx.insert(users).values(user)
+          await tx.insert(userAuths).values({
+            id: authId(),
+            userId: id,
+            provider: "password",
+            providerId: null,
+            passwordHash: hash,
+            createdAt: now,
+          })
+        })
+
+        const verification = await issueVerificationCode(normalizedEmail, "auth.register: reclaim verification code sent")
+        if (!("success" in verification)) return verification
+
+        const token = await signJwt({ userId: id, role: "user" })
+        logger.info({ userId: id, username, email: input.email, previousUserId: existingUser.id }, "auth.register: unverified email reclaimed")
+        return { user, token, requiresEmailVerification: true, verificationCodeSent: true, status: 201 } as const
+      }
+
       logger.warn({ email: input.email }, "auth.register: email already registered")
       return { error: { code: "CONFLICT", message: "Email already registered" }, status: 409 } as const
     }

@@ -44,6 +44,10 @@ export const useAuthStore = defineStore('auth', () => {
     setAuth(res.token, res.user)
     if (res.requiresEmailVerification || res.user.emailVerified !== true) {
       requestEmailVerification()
+      if (res.verificationCodeSent) {
+        unverifiedEmailPhase.value = 'input'
+        unverifiedEmailCooldownSeconds.value = 60
+      }
     }
   }
 

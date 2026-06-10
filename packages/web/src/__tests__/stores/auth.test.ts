@@ -86,6 +86,30 @@ describe('Auth Store — reauth dialog state', () => {
     expect(auth.canAccessApp).toBe(false)
   })
 
+  it('register() enters code input phase when backend already sent reclaim code', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+      token: 'reclaim-token',
+      requiresEmailVerification: true,
+      verificationCodeSent: true,
+      user: {
+        id: '2',
+        username: 'usr_2',
+        email: 'reclaim@test.com',
+        role: 'user',
+        emailVerified: false,
+        emailVerifiedAt: null,
+      },
+    }), { status: 201, headers: { 'content-type': 'application/json' } }))
+
+    const auth = useAuthStore()
+    await auth.register('reclaim@test.com', 'password123')
+
+    expect(auth.token).toBe('reclaim-token')
+    expect(auth.showUnverifiedEmailDialog).toBe(true)
+    expect(auth.unverifiedEmailPhase).toBe('input')
+    expect(auth.unverifiedEmailCooldownSeconds).toBe(60)
+  })
+
   it('verifyUnverifiedEmail() marks the account accessible after backend verification', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
       user: {

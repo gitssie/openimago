@@ -77,6 +77,7 @@ export interface AuthResponse {
   token: string
   user: OpenimagoUser
   requiresEmailVerification?: boolean
+  verificationCodeSent?: boolean
 }
 
 export interface OpenimagoProject {

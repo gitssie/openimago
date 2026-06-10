@@ -218,10 +218,10 @@ test("verification code is consumed after successful registration", async () => 
   expect(code2).toBeDefined()
 })
 
-// 9. Duplicate email still rejected
-test("registration rejects duplicate email", async () => {
+// 9. Verified duplicate email still rejected
+test("registration rejects duplicate verified email", async () => {
   await requestVerificationCode("dupe@example.com")
-  await app.fetch(
+  const firstRegister = await app.fetch(
     new Request("http://localhost/auth/register", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -231,6 +231,17 @@ test("registration rejects duplicate email", async () => {
       }),
     }),
   )
+  const { token } = await firstRegister.json() as { token: string }
+  const code = verificationStore.getCode("dupe@example.com")
+  expect(code).toBeDefined()
+  const verify = await app.fetch(
+    new Request("http://localhost/auth/email-verification/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ code }),
+    }),
+  )
+  expect(verify.status).toBe(200)
 
   const res = await app.fetch(
     new Request("http://localhost/auth/register", {
@@ -245,6 +256,82 @@ test("registration rejects duplicate email", async () => {
   expect(res.status).toBe(409)
   const body = await res.json() as Record<string, any>
   expect(body.error.code).toBe("CONFLICT")
+})
+
+test("unverified email registration can be reclaimed with a new password and code", async () => {
+  const attackerCode = await requestVerificationCode("reclaim@example.com")
+  const attackerRegister = await app.fetch(
+    new Request("http://localhost/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "reclaim@example.com",
+        password: "attacker-pass",
+      }),
+    }),
+  )
+  expect(attackerRegister.status).toBe(201)
+  const attackerBody = await attackerRegister.json() as { token: string; user: { id: string } }
+
+  const victimRegister = await app.fetch(
+    new Request("http://localhost/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "reclaim@example.com",
+        password: "victim-pass",
+      }),
+    }),
+  )
+  expect(victimRegister.status).toBe(201)
+  const victimBody = await victimRegister.json() as { token: string; user: { id: string; emailVerified: boolean } }
+  expect(victimBody.user.id).not.toBe(attackerBody.user.id)
+  expect(victimBody.user.emailVerified).toBe(false)
+
+  const replacementCode = verificationStore.getCode("reclaim@example.com")
+  expect(replacementCode).toBeDefined()
+  expect(replacementCode).not.toBe(attackerCode)
+
+  const staleVerify = await app.fetch(
+    new Request("http://localhost/auth/email-verification/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${victimBody.token}` },
+      body: JSON.stringify({ code: attackerCode }),
+    }),
+  )
+  expect(staleVerify.status).toBe(400)
+  const staleBody = await staleVerify.json() as Record<string, any>
+  expect(staleBody.error.code).toBe("INVALID_VERIFICATION_CODE")
+
+  const verified = await app.fetch(
+    new Request("http://localhost/auth/email-verification/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${victimBody.token}` },
+      body: JSON.stringify({ code: replacementCode }),
+    }),
+  )
+  expect(verified.status).toBe(200)
+
+  const oldPasswordLogin = await app.fetch(
+    new Request("http://localhost/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "reclaim@example.com", password: "attacker-pass" }),
+    }),
+  )
+  expect(oldPasswordLogin.status).toBe(401)
+
+  const newPasswordLogin = await app.fetch(
+    new Request("http://localhost/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "reclaim@example.com", password: "victim-pass" }),
+    }),
+  )
+  expect(newPasswordLogin.status).toBe(200)
+  const newPasswordBody = await newPasswordLogin.json() as { requiresEmailVerification: boolean; user: { emailVerified: boolean } }
+  expect(newPasswordBody.requiresEmailVerification).toBe(false)
+  expect(newPasswordBody.user.emailVerified).toBe(true)
 })
 
 // 10. Weak password still rejected
