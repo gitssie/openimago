@@ -11,7 +11,7 @@ import { MessageTable } from "../db/message-schema"
 import { projects } from "../db/schema"
 import { WorkspaceTable } from "../db/workspace-schema"
 import { logger } from "../server/logger"
-import { Effect, Stream } from "effect"
+import { Effect, Fiber, Stream } from "effect"
 import type { BusEvent } from "../event/types"
 import { billingService } from "../billing/service"
 import { resolveAttachments, type AttachmentInput } from "../attachments/resolver"
@@ -482,6 +482,21 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
         _unsubscribed = true
         subscription.unsubscribe()
       }
+      let streamFiber: ReturnType<typeof Effect.runFork> | null = null
+      let _cleanedUp = false
+      const cleanupSse = (interruptFiber: boolean) => {
+        if (_cleanedUp) return
+        _cleanedUp = true
+        if (jwtCheckTimer) clearInterval(jwtCheckTimer)
+        jwtCheckTimer = null
+        unsubscribe()
+        writer.close().catch(() => {})
+        if (interruptFiber && streamFiber) {
+          const fiber = streamFiber
+          streamFiber = null
+          Effect.runPromise(Fiber.interrupt(fiber)).catch(() => {})
+        }
+      }
 
       // ── JWT heartbeat: periodically verify the token is still valid ──────
       let jwtCheckTimer: ReturnType<typeof setInterval> | null = null
@@ -499,10 +514,7 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
                 properties: {},
               })))
             } catch { /* writer may already be closed */ }
-            if (jwtCheckTimer) clearInterval(jwtCheckTimer)
-            jwtCheckTimer = null
-            unsubscribe()
-            writer.close().catch(() => {})
+            cleanupSse(true)
           }
         }, 10_000)
       }
@@ -525,7 +537,7 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
       )
 
       // Run the stream, piping chunks to the writer
-      Effect.runFork(
+      streamFiber = Effect.runFork(
         sseStream.pipe(
           Stream.runForEach((chunk) =>
             Effect.tryPromise({
@@ -535,8 +547,7 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
           ),
           Effect.ensuring(
             Effect.sync(() => {
-              writer.close().catch(() => {})
-              unsubscribe()
+              cleanupSse(false)
             }),
           ),
         ),
@@ -544,10 +555,8 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
 
       // Clean up on client disconnect
       c.req.raw.signal.addEventListener("abort", () => {
-        if (jwtCheckTimer) clearInterval(jwtCheckTimer)
-        unsubscribe()
-        writer.close().catch(() => {})
-      })
+        cleanupSse(true)
+      }, { once: true })
 
       return c.body(readable, 200, {
         "content-type": "text/event-stream",

@@ -1,5 +1,6 @@
 import { createOpencodeClient, OpencodeClient } from "@opencode-ai/sdk/v2"
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
+import { Effect, Stream } from "effect"
 import { sql, eq } from "drizzle-orm"
 import { Hono } from "hono"
 import { setup, teardown, setupSessionTable, setupMessageTable, COS_BASE_PATH } from "./helper"
@@ -243,6 +244,43 @@ test("SSE endpoint returns text/event-stream", async () => {
   const chunk = new TextDecoder().decode(value)
   expect(chunk).toContain("data: ")
   expect(chunk).toContain("server.connected")
+})
+
+test("SSE cleanup interrupts the running stream fiber when the client disconnects", async () => {
+  const { token } = await registerUser("pxsse_cleanup", "pxsse_cleanup@example.com")
+  let unsubscribed = 0
+  let finalized = 0
+
+  const appWithHangingSubscription = new Hono()
+  appWithHangingSubscription.route("/auth", authRoutes)
+  appWithHangingSubscription.route("/", createProxyRoutes({ opencodeUrl: OPENCODE_URL }, async () => ({
+    stream: Stream.async(() => Effect.sync(() => { finalized++ })),
+    unsubscribe: () => { unsubscribed++ },
+  })))
+
+  const abort = new AbortController()
+  const res = await appWithHangingSubscription.fetch(
+    new Request("http://localhost/api/event", {
+      headers: {
+        authorization: `Bearer ${token}`,
+        accept: "text/event-stream",
+      },
+      signal: abort.signal,
+    }),
+  )
+
+  expect(res.status).toBe(200)
+  const reader = res.body!.getReader()
+  const { value } = await reader.read()
+  expect(new TextDecoder().decode(value)).toContain("server.connected")
+  await new Promise((resolve) => setTimeout(resolve, 50))
+
+  abort.abort()
+  await reader.cancel()
+  await new Promise((resolve) => setTimeout(resolve, 50))
+
+  expect(unsubscribed).toBe(1)
+  expect(finalized).toBe(1)
 })
 
 // ════════════════════════════════════════════════════════════════
