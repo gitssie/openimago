@@ -1082,3 +1082,13 @@ input:-webkit-autofill {
   background: var(--imago-cyan-04) !important;
   border-left: 2px solid var(--imago-neon-cyan);
 }
+
+// ── UILayout: ensure containerized layouts form a positioning context so
+//    their absolute-positioned children (drawers, page, footer) are scoped
+//    inside the layout bounds rather than escaping to the page container
+//    above. The component renders with a `relative` class but the Tailwind
+//    utility is not loaded in this app, so we wire it up explicitly.
+.ui-layout,
+.ui-layout-container {
+  position: relative;
+}

@@ -90,16 +90,14 @@
                   :agents="getUserAgentMentions(turn.user)"
                 />
               </div>
-              <div v-if="getUserMetaLabel(turn.user) || canRevertTurn(turn.user)" class="user-message-footer q-mt-sm row items-center justify-between q-gutter-sm">
-                <div v-if="getUserMetaLabel(turn.user)" class="user-message-meta">{{ getUserMetaLabel(turn.user) }}</div>
-                <div class="row items-center q-gutter-xs">
-                  <button class="user-turn-action" type="button" :title="t('shared.copy')" @click="copyTurn(turn.user)">
-                    <OiIcon name="copy" size="13px" />
-                  </button>
-                  <button v-if="canRevertTurn(turn.user)" class="user-turn-action" type="button" :title="t('agent.restore')" @click="$emit('revert-turn', turn.user.id)">
-                    <OiIcon name="revert" size="13px" />
-                  </button>
-                </div>
+              <div class="user-message-actions">
+                <!-- Time/agent meta intentionally hidden to reduce visual clutter in the redesigned workspace. -->
+                <button class="user-turn-action" type="button" :title="t('shared.copy')" :aria-label="t('shared.copy')" @click="copyTurn(turn.user)">
+                  <OiIcon name="copy" size="13px" />
+                </button>
+                <button v-if="canRevertTurn(turn.user)" class="user-turn-action" type="button" :title="t('agent.restore')" :aria-label="t('agent.restore')" @click="$emit('revert-turn', turn.user.id)">
+                  <OiIcon name="revert" size="13px" />
+                </button>
               </div>
             </div>
 
@@ -159,15 +157,14 @@
                   </div>
                 </template>
 
-                <div v-if="getTurnMetaLabel(turn) || getAssistantCopyText(turn.assistant)" class="assistant-turn-footer row items-center justify-start q-gutter-xs q-mt-sm">
-                  <div v-if="getTurnMetaLabel(turn)" class="turn-meta-label text-caption text-grey-5">
-                    {{ getTurnMetaLabel(turn) }}
-                  </div>
+                <div v-if="getAssistantCopyText(turn.assistant)" class="assistant-turn-actions">
+                  <!-- Model/time/duration meta intentionally hidden to reduce visual clutter in the redesigned workspace. -->
                   <button
                     v-if="getAssistantCopyText(turn.assistant)"
                     class="assistant-copy-btn"
                     type="button"
                     :title="t('shared.copy')"
+                    :aria-label="t('shared.copy')"
                     @click="copyAssistantTurn(turn.assistant!)"
                   >
                     <OiIcon name="copy" size="13px" />
@@ -952,16 +949,35 @@ onUnmounted(() => {
   color: rgba(255 255 255 / 0.62);
 }
 
-.user-message-footer {
-  min-height: 24px;
-  width: 100%;
-  max-width: min(100%, 62ch);
+.user-message-actions {
+  /* Flow below the bubble as the last flex child of .user-turn-content.
+     align-items: flex-end on the parent right-aligns the bar with the
+     bubble so it never overlaps the message text, regardless of length. */
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--imago-ease-fast);
+  pointer-events: none;
+}
+
+.user-message-actions:focus-within {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .user-message-meta {
   font-size: 12px;
   line-height: 1.2;
   color: rgba(255, 255, 255, 0.50);
+}
+
+.user-turn-content:hover .user-message-actions,
+.user-turn-content:focus-within .user-message-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .user-turn-action {
@@ -975,7 +991,6 @@ onUnmounted(() => {
   color: rgba(255 255 255 / 0.6);
   cursor: pointer;
   border-radius: 4px;
-  opacity: 0;
   transition: opacity 150ms ease, background var(--imago-ease-fast);
   padding: 0;
 }
@@ -985,20 +1000,32 @@ onUnmounted(() => {
   color: rgba(255 255 255 / 0.9);
 }
 
-.user-turn-content:hover .user-turn-action,
-.user-turn-content:focus-within .user-turn-action {
-  opacity: 1;
-}
-
-.assistant-turn-footer {
-  min-height: 24px;
-  width: min(100%, 72ch);
+.assistant-turn-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 1;
   opacity: 0;
   transition: opacity 0.15s ease;
+  pointer-events: none;
 }
 
-.assistant-content:hover .assistant-turn-footer {
+.assistant-turn-actions:focus-within {
   opacity: 1;
+  pointer-events: auto;
+}
+
+.assistant-content {
+  position: relative;
+}
+
+.assistant-content:hover .assistant-turn-actions,
+.assistant-content:focus-within .assistant-turn-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .assistant-copy-btn {

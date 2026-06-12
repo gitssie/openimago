@@ -56,18 +56,52 @@ const StubSessionWorkspaceSidebar = defineComponent({
   template: '<div class="sidebar-stub" />',
 })
 
-const StubWorkspaceArtifactsPanel = defineComponent({
-  name: 'WorkspaceArtifactsPanel',
+const StubAIOutputsPanel = defineComponent({
+  name: 'AIOutputsPanel',
   props: {
-    modelValue: String,
-    artifacts: Array,
-    selectedId: [String, Object] as PropType<string | null>,
-    showPendingTile: Boolean,
-    scope: String,
-    loading: Boolean,
+    title: String,
+    subtitle: String,
+    items: { type: Array, default: () => [] },
+    selectedId: { type: [String, Object] as PropType<string | null>, default: null },
+    layout: String,
+    showViewAll: Boolean,
+    viewAllLabel: String,
   },
-  emits: ['update:modelValue', 'select', 'edit-params', 'rerun', 'delete'],
-  template: '<div class="artifacts-panel-stub" />',
+  emits: ['item-select', 'item-menu', 'layout-change', 'filter', 'view-all'],
+  template: '<div class="ai-outputs-stub" />',
+})
+
+const StubWorkspaceTopBar = defineComponent({
+  name: 'WorkspaceTopBar',
+  template: '<div class="workspace-top-bar-stub"><slot /></div>',
+})
+
+const StubTopbarActionButton = defineComponent({
+  name: 'TopbarActionButton',
+  props: {
+    variant: String,
+    label: String,
+    leadingIcon: String,
+    trailingIcon: String,
+    iconSize: Number,
+    iconOnly: Boolean,
+    hasPopup: Boolean,
+    badge: Boolean,
+    ariaLabel: String,
+  },
+  template: '<button class="topbar-action-stub" type="button" :aria-label="ariaLabel || label"><slot /></button>',
+})
+
+const StubChatInputDock = defineComponent({
+  name: 'ChatInputDock',
+  props: {
+    loading: Boolean,
+    connected: Boolean,
+    disabled: Boolean,
+    attachments: Array,
+  },
+  emits: ['submit', 'abort', 'remove-attachment', 'attach-files'],
+  template: '<div class="chat-input-dock-stub" />',
 })
 
 const StubPromptInput = defineComponent({
@@ -265,7 +299,10 @@ function mountPage(component: Component, opts?: Parameters<typeof mount>[1]) {
         OiIcon: StubOiIcon,
         SessionChatView: StubSessionChatView,
         SessionWorkspaceSidebar: StubSessionWorkspaceSidebar,
-        WorkspaceArtifactsPanel: StubWorkspaceArtifactsPanel,
+        AIOutputsPanel: StubAIOutputsPanel,
+        WorkspaceTopBar: StubWorkspaceTopBar,
+        TopbarActionButton: StubTopbarActionButton,
+        ChatInputDock: StubChatInputDock,
         PromptInput: StubPromptInput,
         AgentQuestion: StubAgentQuestion,
         AgentPermission: StubAgentPermission,

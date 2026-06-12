@@ -20,36 +20,6 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true },
       },
       {
-        path: 'sessions',
-        name: 'sessions',
-        component: () => import('pages/SessionWorkspacePage.vue'),
-        meta: { requiresAuth: true },
-      },
-      {
-        path: 'sessions/:id',
-        name: 'session',
-        component: () => import('pages/SessionWorkspacePage.vue'),
-        meta: { requiresAuth: true },
-      },
-      {
-        path: 'projects',
-        name: 'projects',
-        component: () => import('pages/ProjectsPage.vue'),
-        meta: { requiresAuth: true },
-      },
-      {
-        path: 'projects/:id',
-        name: 'project-workspace',
-        component: () => import('pages/ProjectWorkspacePage.vue'),
-        meta: { requiresAuth: true },
-      },
-      {
-        path: 'projects/:id/sessions/:sessionId',
-        name: 'project-session',
-        component: () => import('pages/ProjectWorkspacePage.vue'),
-        meta: { requiresAuth: true },
-      },
-      {
         path: 'assets',
         name: 'assets',
         component: () => import('pages/AssetsPage.vue'),
@@ -82,7 +52,62 @@ const routes: RouteRecordRaw[] = [
     ],
   },
 
-  // ── Gallery Detail (standalone — full-screen immersive viewer) ──
+  // ── Projects list (kept under HomeLayout for now) ───────────────────────
+  {
+    path: '/projects',
+    component: () => import('layouts/HomeLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: 'projects',
+        component: () => import('pages/ProjectsPage.vue'),
+        meta: { requiresAuth: true },
+      },
+    ],
+  },
+
+  // ── Workspace pages (own full-viewport shell, no HomeLayout chrome) ────
+  {
+    path: '/sessions',
+    component: () => import('layouts/WorkspaceLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: 'sessions',
+        component: () => import('pages/SessionWorkspacePage.vue'),
+        meta: { requiresAuth: true, layout: 'session-workspace' },
+      },
+      {
+        path: ':id',
+        name: 'session',
+        component: () => import('pages/SessionWorkspacePage.vue'),
+        meta: { requiresAuth: true, layout: 'session-workspace' },
+      },
+    ],
+  },
+  {
+    path: '/projects/:id',
+    component: () => import('layouts/WorkspaceLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: 'project-workspace',
+        component: () => import('pages/ProjectWorkspacePage.vue'),
+        meta: { requiresAuth: true, layout: 'project-workspace' },
+      },
+      {
+        path: 'sessions/:sessionId',
+        name: 'project-session',
+        component: () => import('pages/ProjectWorkspacePage.vue'),
+        meta: { requiresAuth: true, layout: 'project-workspace' },
+      },
+    ],
+  },
+
+  // ── Gallery Detail (standalone — full-screen immersive viewer) ────────
   {
     path: '/gallery/:slug',
     name: 'gallery-detail',

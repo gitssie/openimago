@@ -6,7 +6,7 @@ import type {
   OpenimagoStoryBible,
   OpenimagoStoryEpisode,
 } from '../api/client'
-import type { StoryElement } from '../components/session-workspace/ProjectWorkspaceGrid.vue'
+import type { StoryElement } from '../components/session-workspace/types'
 
 function safeStr(v: unknown): string {
   return typeof v === 'string' ? v : ''

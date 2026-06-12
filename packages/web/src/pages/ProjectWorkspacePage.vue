@@ -1,101 +1,183 @@
 <template>
-  <!--
-    DESIGN NOTE — page-level composition (Designer → Coder hand-off)
-    ────────────────────────────────────────────────────────────────
-    This page is a *thin* data shell. All of its previous left-sidebar /
-    preview-panel scaffolding has been removed in favor of the new
-    ProjectWorkspaceGrid component, which now owns the three-column visual
-    layout (story elements · shot/output workspace · AI assistant).
-
-    Responsibilities retained by the page:
-      • Owns the useAgentSession composable and the project output/file state
-      • Owns the PromptInput footer (bottom composer) and AgentQuestion slot
-      • Fetches project data, archives / edits the project
-      • Computes derived data (sidebarSessions, storyElements, outputCount)
-        and forwards them as props to the new grid
-      • Injects <SessionChatView> into the grid's `assistant-chat` slot
-
-    The grid's emit handlers are wired 1:1 to existing page handlers below
-    so the existing routing, archive, and message-send flows keep working.
-  -->
-  <q-page :style-fn="pageHeightFn" class="project-workspace" style="padding: 0; overflow: hidden;">
-    <ProjectWorkspaceGrid
-      :project-name="projectName"
-      :project-status="projectStatus"
-      :outputs="gridOutputs"
-      :outputs-loading="projectOutputsLoading"
-      :selected-output-id="selectedOutputId"
-      :story-elements="storyElements"
-      :session-count="sessionList.length"
-      :output-count="projectOutputs.length"
-      :file-count="projectFiles.length"
-      :has-session="Boolean(sessionId)"
-      :session-label="currentSessionLabel"
-      :is-assistant-busy="isLoading"
-      :assistant-status="assistantStatus"
-      :credits-label="creditsLabel"
-      :sessions="sidebarSessions"
-      :active-session-id="sessionId"
-      :is-session-switching="isSessionSwitching"
-      @back="onBackToProjects"
-      @open-assets="onOpenAssets"
-      @open-export="onOpenExport"
-      @workspace-tab-change="onWorkspaceTabChange"
-      @output-select="onGridOutputSelect"
-      @element-select="onGridElementSelect"
-      @add-element="onAddElement"
-      @add-to-group="onAddToGroup"
-      @play-output="onPlayOutput"
-      @session-select="onSessionSelect"
-      @session-create="onSessionCreate"
+  <q-page
+    :style-fn="pageHeightFn"
+    class="project-workspace"
+    style="padding: 0; overflow: hidden; min-height: 0; display: flex; flex-direction: column;"
+  >
+    <!--
+      Full-viewport top toolbar — spans the entire width above the
+      3-column body, mirroring the approved mockup. Carries the project
+      brand + title (wordmark), the 4-tab segmented control, the project
+      session switcher chip, and the right-side global actions.
+    -->
+    <WorkspaceTopBar
+      class="project-workspace__topbar"
+      :brand-variant="'wordmark'"
+      :brand-label="projectName"
+      :tabs="PROJECT_WORKSPACE_TABS"
+      :active-tab="activeWorkspaceTab"
+      :panel-base-id="'project-workspace'"
+      @tab-change="onWorkspaceTabChange"
     >
-      <template #center-session>
-        <SessionChatView
-          ref="chatViewRef"
-          :session-id="sessionId"
-          :display-messages="displayMessages"
-          :part-text="partText"
-          :is-loading="isLoading"
-          :session-status="sessionStatus"
-          :history-exhausted="historyExhausted"
-          :history-loading="historyLoading"
-          :current-session-item="currentSessionItem"
-          :active-attention-call-id="activeAttentionCallId"
-          @load-history="onLoadHistory"
-          @switch-session="handleSwitchSession"
-          @revert-turn="(msgId) => void revertMessage(msgId)"
-          @use-suggestion="useSuggestion"
+      <template #middle-right>
+        <WorkspaceSessionChip
+          :sessions="sidebarSessions"
+          :current-label="currentSessionLabel"
+          :creating="isSessionSwitching"
+          @select="handleChipSelect"
+          @create="onSessionCreate"
         />
       </template>
-    </ProjectWorkspaceGrid>
+      <template #right>
+        <TopbarActionButton
+          :leading-icon="'people'"
+          :label="'OpenImago 交流群'"
+          :has-popup="true"
+          :aria-label="'打开 OpenImago 交流群'"
+          @click="handleOpenCommunity"
+        />
+        <TopbarActionButton
+          :variant="'pro'"
+          :leading-icon="'crown'"
+          :label="'升级到 Pro'"
+          :aria-label="'升级到 Pro'"
+          @click="handleOpenProUpgrade"
+        />
+        <TopbarActionButton
+          :variant="'bell'"
+          :icon-only="true"
+          :badge="hasUnreadNotifications"
+          :aria-label="'通知'"
+          @click="handleOpenNotifications"
+        />
+      </template>
+    </WorkspaceTopBar>
 
-    <!-- Story panel — rendered alongside the grid for storyboard/timeline/edit tabs -->
-    <ProjectWorkspaceStoryPanel
-      v-if="activeWorkspaceTabIsStoryTab && storyBibleSummary"
-      class="story-panel-overlay"
-      :series-title="storySeries?.title ?? ''"
-      :series-description="storySeries?.description ?? ''"
-      :episodes="storyEpisodeSummaries"
-      :current-episode-id="currentStoryEpisodeId"
-      :current-shot-id="currentStoryShotId"
-      :current-scene-id="currentStorySceneId"
-      :shots="currentStoryShots"
-      :workflow-nodes="currentStoryWorkflowNodes"
-      :runs="currentStoryRuns"
-      :bible="storyBibleSummary"
-      :selected-character-id="storySelectedCharacterId"
-      :selected-style-seed-id="storySelectedStyleSeedId"
-      :is-loading="storyPanelLoading"
-      :error-message="storyPanelError"
-      @select="onStorySelect"
-      @episode-change="onStoryEpisodeChange"
-      @intent="onStoryIntent"
-    />
+    <UILayout class="project-workspace-layout relative full-height" view="lhr lpr lfr" container>
+      <!-- ── Left drawer: storyboard scene cards ─────────────────────── -->
+      <UILayoutDrawer
+        :model-value="leftPanelOpen"
+        side="left"
+        :width="300"
+        :breakpoint="1024"
+        bordered
+        show-if-above
+        @update:model-value="leftPanelOpen = $event"
+      >
+        <ProjectWorkspaceLeftPanel
+          :scenes="storyboardScenes"
+          :selected-id="selectedSceneId"
+          :view-density="storyboardDensity"
+          @scene-select="onSceneSelect"
+          @scene-add="onSceneAdd"
+          @scene-add-image="onSceneAddImage"
+          @scene-image-type="onSceneImageType"
+          @add-scene="onAddScene"
+          @view-change="(d) => { storyboardDensity = d }"
+        />
+      </UILayoutDrawer>
 
-    <!-- ── WorkspaceArtifactsPanel overlay (project scope, ADR 0003) ────────── -->
-    <!-- TODO (openimago-s55): integrate this panel into the grid's right column
-         when the grid layout supports a collapsible right panel natively.
-         For MVP, rendered as a toggleable overlay above the grid. -->
+      <!-- ── Center page: grid + chat + input dock ────────────────────── -->
+      <UILayoutPageContainer>
+        <UILayoutPage class="project-workspace-page">
+          <ProjectWorkspaceGrid
+            ref="gridRef"
+            :project-name="projectName"
+            :project-status="projectStatus"
+            :outputs="gridOutputs"
+            :story-elements="storyElements"
+            :session-count="sessionList.length"
+            :file-count="projectFiles.length"
+            :is-assistant-busy="isLoading"
+            @workspace-tab-change="onWorkspaceTabChange"
+          >
+            <template #context-strip>
+              <ProjectContextStrip
+                v-if="contextStrip"
+                :title="contextStrip.title"
+                :subtitle="contextStrip.subtitle"
+                :meta="contextStrip.meta"
+                :thumbnail-url="contextStrip.thumbnailUrl"
+                :kind="contextStrip.kind"
+                @download="onContextDownload"
+                @clear="onContextClear"
+              />
+            </template>
+            <template #center-session>
+              <div class="center-stack">
+                <div class="center-stack__chat">
+                  <SessionChatView
+                    ref="chatViewRef"
+                    :session-id="sessionId"
+                    :display-messages="displayMessages"
+                    :part-text="partText"
+                    :is-loading="isLoading"
+                    :session-status="sessionStatus"
+                    :history-exhausted="historyExhausted"
+                    :history-loading="historyLoading"
+                    :current-session-item="currentSessionItem"
+                    :active-attention-call-id="activeAttentionCallId"
+                    @load-history="onLoadHistory"
+                    @switch-session="handleSwitchSession"
+                    @revert-turn="(msgId) => void revertMessage(msgId)"
+                    @use-suggestion="useSuggestion"
+                  />
+                </div>
+                <div v-if="hasExtras" class="center-stack__extras">
+                  <AgentQuestion
+                    v-if="pendingQuestion"
+                    :request="pendingQuestion"
+                    :on-reply="replyToQuestion"
+                    :on-reject="rejectQuestion"
+                  />
+                  <AgentPermission
+                    v-if="pendingPermission"
+                    :request="pendingPermission"
+                    :on-respond="replyToPermission"
+                  />
+                </div>
+                <ChatInputDock
+                  :loading="isLoading"
+                  :connected="isConnected"
+                  :disabled="isSessionSwitching"
+                  :attachments="pendingAttachments"
+                  @submit="submitDraftMessage"
+                  @abort="abortSession"
+                  @remove-attachment="(id) => removeAttachment(id)"
+                  @attach-files="onFilesSelected"
+                />
+              </div>
+            </template>
+          </ProjectWorkspaceGrid>
+        </UILayoutPage>
+      </UILayoutPageContainer>
+
+      <!-- ── Right drawer: project AI outputs ─────────────────────────── -->
+      <UILayoutDrawer
+        :model-value="rightPanelOpen"
+        side="right"
+        :width="360"
+        :breakpoint="1280"
+        behavior="desktop"
+        bordered
+        @update:model-value="rightPanelOpen = $event"
+      >
+        <ProjectWorkspaceRightPanel
+          :items="aiOutputItems"
+          :selected-id="selectedOutputId"
+          :layout="'grid'"
+          :show-view-all="aiOutputItems.length > 6"
+          :project-name="projectName"
+          @item-select="onGridOutputSelect"
+          @item-menu="onOutputMenu"
+          @layout-change="(l) => { outputLayout = l }"
+          @filter="onOutputFilter"
+          @view-all="onOutputViewAll"
+        />
+      </UILayoutDrawer>
+    </UILayout>
+
+    <!-- WorkspaceArtifactsPanel overlay (project scope, ADR 0003) — unchanged -->
     <div v-if="showArtifactsPanel" class="artifacts-panel-overlay">
       <div class="artifacts-panel-overlay__backdrop" @click="toggleArtifactsPanel" />
       <div class="artifacts-panel-overlay__panel">
@@ -110,12 +192,16 @@
           @delete="onArtifactDelete"
         />
       </div>
-      <button type="button" class="artifacts-panel-close" aria-label="关闭制品面板" @click="toggleArtifactsPanel">
+      <button
+        type="button"
+        class="artifacts-panel-close"
+        aria-label="关闭制品面板"
+        @click="toggleArtifactsPanel"
+      >
         <q-icon name="close" size="20px" />
       </button>
     </div>
 
-    <!-- Panel toggle FAB — shown when panel is hidden and there are artifacts -->
     <button
       v-if="!showArtifactsPanel && projectArtifacts.length > 0"
       type="button"
@@ -126,31 +212,6 @@
       <q-icon name="view_in_ar" size="18px" />
       <span class="artifacts-panel-toggle__count">{{ projectArtifacts.length }}</span>
     </button>
-
-    <!-- Bottom composer — kept at page level so PromptInput can focus on mount -->
-    <div class="input-dock">
-      <div class="input-container">
-        <AgentQuestion
-          v-if="pendingQuestion"
-          :request="pendingQuestion"
-          :on-reply="replyToQuestion"
-          :on-reject="rejectQuestion"
-        />
-        <PromptInput
-          ref="inputRef"
-          v-model="draftInputMessage"
-          :placeholder="t('agent.askAnythingPlaceholder')"
-          :loading="isLoading"
-          :connected="isConnected"
-          :disabled="isSessionSwitching"
-          :attachments="pendingAttachments"
-          @submit="submitDraftMessage"
-          @abort="abortSession"
-          @remove-attachment="removeAttachment"
-          @attach-files="onFilesSelected"
-        />
-      </div>
-    </div>
   </q-page>
 </template>
 
@@ -160,22 +221,23 @@ import { useQuasar } from 'quasar'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import SessionChatView from 'src/components/session-workspace/SessionChatView.vue'
-import ProjectWorkspaceGrid, {
-  type ShotOutputItem,
-  type StoryElement,
-  type StoryElementKind,
-  type AssistantStatus,
-  type WorkspaceTabId,
-  type SessionCardItem,
-} from 'src/components/session-workspace/ProjectWorkspaceGrid.vue'
-import ProjectWorkspaceStoryPanel from 'src/components/session-workspace/ProjectWorkspaceStoryPanel.vue'
+import ProjectWorkspaceGrid from 'src/components/session-workspace/ProjectWorkspaceGrid.vue'
+import ProjectWorkspaceLeftPanel from 'src/components/session-workspace/ProjectWorkspaceLeftPanel.vue'
+import ProjectWorkspaceRightPanel from 'src/components/session-workspace/ProjectWorkspaceRightPanel.vue'
 import AgentQuestion from 'src/components/AgentQuestion.vue'
-import PromptInput from 'src/components/PromptInput.vue'
+import AgentPermission from 'src/components/AgentPermission.vue'
+import AIOutputsPanel from 'src/components/workspace/AIOutputsPanel.vue'
+import ChatInputDock from 'src/components/workspace/ChatInputDock.vue'
+import ProjectContextStrip from 'src/components/workspace/ProjectContextStrip.vue'
+import TopbarActionButton from 'src/components/workspace/TopbarActionButton.vue'
+import WorkspaceTopBar from 'src/components/workspace/WorkspaceTopBar.vue'
+import WorkspaceSessionChip from 'src/components/workspace/WorkspaceSessionChip.vue'
 import { useAgentSession } from 'src/composables/useAgentSession'
+import type { TextPart } from '@opencode-ai/sdk/v2'
 import type { SessionItem } from 'src/services/agents'
 import { api, type OpenimagoProject, type OpenimagoStoryBible, type OpenimagoStorySeries, type OpenimagoStoryEpisode, type OpenimagoStoryWorkflow, type OpenimagoStoryRuns } from 'src/api/client'
-import type { TextPart } from '@opencode-ai/sdk/v2'
 import WorkspaceArtifactsPanel from 'src/components/session-workspace/WorkspaceArtifactsPanel.vue'
+import { UILayout, UILayoutDrawer, UILayoutPage, UILayoutPageContainer } from 'src/components/ui/layout'
 import type {
   WorkspaceArtifact,
   GenerationRunMetadata,
@@ -186,6 +248,12 @@ import type {
   StoryShotSummary,
   StoryWorkflowNodeSummary,
   StoryRunSummary,
+  ShotOutputItem,
+  StoryElement,
+  StoryElementKind,
+  AssistantStatus,
+  SessionCardItem,
+  AIOutputItem,
 } from 'src/components/session-workspace/types'
 import { storiesFromBible, storiesFromEpisodes } from 'src/utils/story-mapping'
 import {
@@ -196,7 +264,7 @@ import {
   rawRunsToRunSummaries,
 } from 'src/utils/story-summary-mapper'
 
-// ── Local shapes (unchanged from previous version) ───────────────────────────
+// ── Local types ─────────────────────────────────────────────────────────────
 
 type OutputItem = {
   id: string
@@ -208,20 +276,36 @@ type OutputItem = {
   model?: string | null
   resolution?: string | null
   durationLabel?: string | null
-  /** Generation-run metadata surfaced from the API (ADR 0003, openimago-xkn). */
   genRun?: GenerationRunMetadata
 }
 
-// ── UI refs ───────────────────────────────────────────────────────────────────
+type WorkspaceTabId = 'overview' | 'storyboard' | 'timeline' | 'edit' | 'audio' | 'exports'
+
+// ── Workspace tabs (shared 4-tab pill switcher) ─────────────────────────────
+
+const PROJECT_WORKSPACE_TABS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: 'storyboard', label: '故事板' },
+  { id: 'timeline', label: '时间线' },
+  { id: 'overview', label: '概览' },
+  { id: 'conversation', label: '对话' },
+]
+
+// ── UI refs ─────────────────────────────────────────────────────────────────
 
 const $q = useQuasar()
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const chatViewRef = ref<InstanceType<typeof SessionChatView> | null>(null)
-const inputRef = ref<{ focus: () => void; setDraft: (value: string) => void } | null>(null)
 const draftInputMessage = ref('')
 const isSessionSwitching = ref(false)
+const gridRef = ref<{ setActiveWorkspaceTab: (tab: WorkspaceTabId) => void; getActiveWorkspaceTab: () => WorkspaceTabId } | null>(null)
+const leftPanelOpen = ref(true)
+const rightPanelOpen = ref(true)
+const activeWorkspaceTab = ref<string>('storyboard')
+const storyboardDensity = ref<'grid' | 'list'>('grid')
+const outputLayout = ref<'grid' | 'rows'>('grid')
+const hasUnreadNotifications = ref(true)
 
 const projectId = computed(() => route.params.id as string)
 const project = ref<OpenimagoProject | null>(null)
@@ -231,13 +315,13 @@ const projectStatus = computed<'active' | 'archived'>(() => project.value?.statu
 const projectOutputs = ref<OutputItem[]>([])
 const projectOutputsLoading = ref(false)
 const selectedOutputId = ref<string | null>(null)
+const selectedSceneId = ref<string | null>(null)
 const projectFiles = ref<OutputItem[]>([])
 const projectFilesLoading = ref(false)
 const storyBible = ref<OpenimagoStoryBible | null>(null)
 const storySeries = ref<OpenimagoStorySeries | null>(null)
 const storyEpisodes = ref<OpenimagoStoryEpisode[]>([])
 
-// Story panel state — selected episode/shot/scene for the story UI
 const currentStoryEpisodeId = ref<string | null>(null)
 const currentStoryShotId = ref<string | null>(null)
 const currentStorySceneId = ref<string | null>(null)
@@ -247,16 +331,15 @@ const storyWorkflow = ref<OpenimagoStoryWorkflow | null>(null)
 const storyRuns = ref<OpenimagoStoryRuns | null>(null)
 const storyPanelLoading = ref(false)
 const storyPanelError = ref<string | null>(null)
-const selectedElementId = ref<string | null>(null)
 const showArtifactsPanel = ref(false)
 const artifactsPanelTab = ref('result')
 const artifactsPanelSelectedId = ref<string | null>(null)
 
 function pageHeightFn(offset: number) {
-  return { minHeight: `${window.innerHeight - offset}px`, height: `${window.innerHeight - offset}px` }
+  return { height: `${window.innerHeight - offset}px` }
 }
 
-// ── Composable ────────────────────────────────────────────────────────────────
+// ── Composable ──────────────────────────────────────────────────────────────
 
 const {
   displayMessages,
@@ -285,6 +368,7 @@ const {
   abortSession,
   replyToQuestion,
   rejectQuestion,
+  replyToPermission,
   revertMessage,
   startEventSubscription,
   stopEventSubscription,
@@ -294,10 +378,10 @@ const {
   (msg) => $q.notify({ color: 'negative', message: msg, icon: 'error' }),
   (msg, opts) => $q.notify({ color: 'info', message: msg, icon: opts?.icon ?? 'info', ...(opts?.timeout !== undefined ? { timeout: opts.timeout } : {}) }),
   (msg) => $q.notify({ color: 'positive', message: msg, icon: 'check' }),
-  () => void nextTick(() => inputRef.value?.focus()),
+  () => { /* focus handled inside ChatInputDock */ },
 )
 
-// ── Derived: shape data for the new grid ──────────────────────────────────────
+// ── Derived ─────────────────────────────────────────────────────────────────
 
 const gridOutputs = computed<ShotOutputItem[]>(() => projectOutputs.value.map((item) => ({
   id: item.id,
@@ -311,12 +395,23 @@ const gridOutputs = computed<ShotOutputItem[]>(() => projectOutputs.value.map((i
   durationLabel: item.durationLabel ?? null,
 })))
 
-// ── Story elements derived from story JSON (bible + episodes) with fallback
-// to project outputs/files when story data is missing (ADR 0004, openimago-1a3).
+const selectedGridOutput = computed<ShotOutputItem | null>(
+  () => gridOutputs.value.find((item) => item.id === selectedOutputId.value) ?? null,
+)
+
+const aiOutputItems = computed<AIOutputItem[]>(() => projectOutputs.value.map((item) => ({
+  id: item.id,
+  url: item.url,
+  filename: item.filename,
+  kind: item.kind,
+  timeLabel: item.timeLabel,
+  prompt: item.promptText,
+})))
+
+// ── Story elements (unchanged from prior version) ───────────────────────────
 
 function storiesFromFallback(): StoryElement[] {
   const items: StoryElement[] = []
-
   for (const output of projectOutputs.value) {
     if (output.kind === "image" && output.url) {
       items.push({
@@ -330,7 +425,6 @@ function storiesFromFallback(): StoryElement[] {
       })
     }
   }
-
   for (const file of projectFiles.value) {
     if (file.kind === "image" && file.url) {
       items.push({
@@ -344,40 +438,97 @@ function storiesFromFallback(): StoryElement[] {
       })
     }
   }
-
   return items
 }
 
 const storyElements = computed<StoryElement[]>(() => {
   const items: StoryElement[] = []
   let hasStoryData = false
-
-  // Primary: derive from story JSON files
   if (storyBible.value) {
     items.push(...storiesFromBible(storyBible.value))
     if (
-      storyBible.value.characters.length > 0 ||
-      storyBible.value.scenes.length > 0 ||
-      storyBible.value.styleSeeds.length > 0
+      storyBible.value.characters.length > 0
+      || storyBible.value.scenes.length > 0
+      || storyBible.value.styleSeeds.length > 0
     ) {
       hasStoryData = true
     }
   }
-
   if (storyEpisodes.value.length > 0) {
     items.push(...storiesFromEpisodes(storyEpisodes.value))
     hasStoryData = true
   }
-
-  // Fallback: derive from project outputs/files when no story data is present
   if (!hasStoryData) {
     items.push(...storiesFromFallback())
   }
-
   return items
 })
 
-// ── Story summary projections (ADR 0004, openimago-9so) ──────────────────────
+// ── Storyboard scenes (left drawer) ─────────────────────────────────────────
+
+const storyboardScenes = computed(() => {
+  // Build a flat ordered list of scene cards from the project outputs and
+  // story-derived scene elements. The page wires this directly into the
+  // redesigned ProjectWorkspaceLeftPanel. Each card has up to 4 thumbnails.
+  const out: { id: string; title: string; description: string; thumbnails: Array<string | null>; imageTypeLabel?: string }[] = []
+  const fallbackDescriptions = [
+    '戴黑框眼镜，性格内向',
+    '短发霸氣张扬，身穿校服，气场强势',
+    '班长兼校花，外表高冷，气质出众',
+  ]
+  const allElements = storyElements.value.filter((el) => el.kind === 'scene')
+  const sourceCount = Math.max(allElements.length, projectOutputs.value.length, fallbackDescriptions.length)
+  for (let i = 0; i < sourceCount; i += 1) {
+    const element = allElements[i]
+    const output = projectOutputs.value[i]
+    const title = element?.title || output?.filename || `场景 ${String(i + 1).padStart(2, '0')}`
+    const description = element?.preview || output?.promptText || fallbackDescriptions[i] || ''
+    const thumbnails: Array<string | null> = []
+    if (output?.url) thumbnails.push(output.url)
+    for (let j = 1; j < 4; j += 1) {
+      const candidate = projectOutputs.value[(i + j) % Math.max(1, projectOutputs.value.length)]
+      thumbnails.push(candidate?.url ?? null)
+    }
+    out.push({
+      id: element?.id || output?.id || `scene-${i}`,
+      title,
+      description,
+      thumbnails,
+    })
+  }
+  return out
+})
+
+// ── Storyboard context strip (above the chat) ───────────────────────────────
+
+const contextStrip = computed(() => {
+  // Prefer the selected scene; fall back to the selected output.
+  const scene = selectedSceneId.value
+    ? storyboardScenes.value.find((s) => s.id === selectedSceneId.value)
+    : null
+  if (scene) {
+    return {
+      title: scene.title,
+      subtitle: scene.description,
+      meta: null,
+      thumbnailUrl: scene.thumbnails[0] ?? null,
+      kind: 'scene' as const,
+    }
+  }
+  const out = selectedGridOutput.value
+  if (out) {
+    return {
+      title: out.filename,
+      subtitle: out.promptText,
+      meta: out.timeLabel,
+      thumbnailUrl: out.url || null,
+      kind: out.kind,
+    }
+  }
+  return null
+})
+
+// ── Story summary projections (ADR 0004, openimago-9so) ─────────────────────
 
 const storyBibleSummary = computed<StoryBibleSummary | null>(() => {
   if (!storyBible.value) return null
@@ -407,24 +558,10 @@ const currentStoryRuns = computed<StoryRunSummary[]>(() => {
   return rawRunsToRunSummaries(storyRuns.value)
 })
 
-// Track workspace tab for story panel visibility
-const activeWorkspaceTabRef = ref<string | null>(null)
-const STORY_TAB_IDS = new Set<string>(['storyboard', 'timeline', 'edit'])
-const activeWorkspaceTabIsStoryTab = computed(() =>
-  activeWorkspaceTabRef.value !== null && STORY_TAB_IDS.has(activeWorkspaceTabRef.value),
-)
-
-// ── Derived: WorkspaceArtifact[] for WorkspaceArtifactsPanel (ADR 0003) ─────
-// Maps project outputs + files into the unified artifact shape used by the
-// reusable panel. The existing grid continues to use gridOutputs and
-// storyElements; this computed is for the right-side panel integration.
-//
-// TODO (openimago-s55 follow-up): once the grid's output strip is ready to
-// be replaced, switch the grid's source to this computed too.
+// ── WorkspaceArtifact[] for WorkspaceArtifactsPanel (ADR 0003) ───────────
 
 const projectArtifacts = computed<WorkspaceArtifact[]>(() => {
   const artifacts: WorkspaceArtifact[] = []
-
   for (const output of projectOutputs.value) {
     artifacts.push({
       id: output.id,
@@ -440,9 +577,7 @@ const projectArtifacts = computed<WorkspaceArtifact[]>(() => {
       ...(output.genRun ? { genRun: output.genRun } : {}),
     })
   }
-
   for (const file of projectFiles.value) {
-    // Avoid duplicate entries already covered by projectOutputs
     if (!artifacts.some((a) => a.id === file.id)) {
       artifacts.push({
         id: file.id,
@@ -458,7 +593,6 @@ const projectArtifacts = computed<WorkspaceArtifact[]>(() => {
       })
     }
   }
-
   return artifacts
 })
 
@@ -469,7 +603,7 @@ const currentSessionItem = computed<SessionItem | null>(() => {
 
 const currentSessionLabel = computed(() => {
   const session = currentSessionItem.value
-  if (!session) return null
+  if (!session) return t('agent.untitled')
   const title = session.title?.trim()
   if (!title) return t('agent.untitled')
   return title.replace(/\s+\(@[^)]+ subagent\)$/, '')
@@ -485,40 +619,36 @@ const assistantStatus = computed<AssistantStatus>(() => {
   return { label: '就绪', tone: 'idle' }
 })
 
-// ── Session helpers (ported from SessionWorkspacePage) ─────────────────────
+const hasExtras = computed(() => {
+  return Boolean(pendingQuestion.value || pendingPermission.value)
+})
+
+// ── Session helpers ─────────────────────────────────────────────────────────
 
 function getChildTaskDescription(session: SessionItem): string {
   const parentId = session.parentID
   if (!parentId) return ''
-
   const parentEntries = sessionMessages.value[parentId] ?? []
   for (let entryIndex = parentEntries.length - 1; entryIndex >= 0; entryIndex -= 1) {
     const parts = parentEntries[entryIndex]?.parts ?? []
     for (let partIndex = parts.length - 1; partIndex >= 0; partIndex -= 1) {
       const part = parts[partIndex]
       if (part?.type !== 'tool' || part.tool !== 'task') continue
-
-      const state = part.state as {
-        metadata?: Record<string, unknown>
-        input?: Record<string, unknown>
-      }
+      const state = part.state as { metadata?: Record<string, unknown>; input?: Record<string, unknown> }
       const metadataSessionId = typeof state.metadata?.sessionId === 'string' ? state.metadata.sessionId : undefined
       if (metadataSessionId !== session.id) continue
-
       const description = state.input?.description
       if (typeof description === 'string' && description.trim()) {
         return description.trim()
       }
     }
   }
-
   return ''
 }
 
 function getSessionLabel(session: SessionItem): string {
   const childDescription = getChildTaskDescription(session)
   if (childDescription) return childDescription
-
   const title = session.title?.trim()
   if (!title) return t('agent.untitled')
   return title.replace(/\s+\(@[^)]+ subagent\)$/, '')
@@ -531,19 +661,15 @@ function isSessionActive(session: SessionItem): boolean {
 
 function getSessionPreview(session: SessionItem): string {
   const entries = sessionMessages.value[session.id] ?? []
-
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index]
     if (!entry || entry.info.role !== 'user') continue
-
     const preview = entry.parts
-      .filter((part): part is TextPart => part.type === 'text' && !(part as { synthetic?: boolean }).synthetic)
+      .filter((part): part is TextPart => part.type === 'text' && !part.synthetic)
       .map((part) => part.text.trim())
       .find(Boolean)
-
     if (preview) return clipText(preview, 42)
   }
-
   return ''
 }
 
@@ -555,7 +681,6 @@ function getSessionMeta(session: SessionItem): string {
     const filename = (part as { filename?: string }).filename || ''
     return mime.includes('image') || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(filename)
   }).length, 0)
-
   return imageCount > 0 ? `${imageCount} 张结果` : '对话工作流'
 }
 
@@ -591,183 +716,91 @@ const sidebarSessions = computed<SessionCardItem[]>(() => sessionList.value
   })))
 
 // TODO: integrate with billing API to show real credits. Scaffold uses a
-// dash placeholder so the command bar's credits chip always renders.
+// dash placeholder so the chip in the top bar always renders.
 const creditsLabel = '—'
 
-// ── Grid event handlers ───────────────────────────────────────────────────────
+// ── Grid / output event handlers ───────────────────────────────────────────
 
-function onBackToProjects() {
-  void router.push('/projects')
-}
-
-function onOpenAssets() {
-  // TODO: navigate to project assets page when the route lands
-  $q.notify({ color: 'info', message: '素材库即将上线', icon: 'info' })
-}
-
-function onOpenExport() {
-  // TODO: open export dialog wired to api.projectExports(...) when supported
-  $q.notify({ color: 'info', message: '导出流程即将上线', icon: 'info' })
-}
-
-function onWorkspaceTabChange(tab: WorkspaceTabId) {
-  activeWorkspaceTabRef.value = tab
-  // TODO: route to the right deep-link per workspace tab
-  // (e.g. /projects/:id/storyboard, /projects/:id/timeline, /projects/:id/edit)
-  // For now we only log + show a notice so the user sees the tab reacts.
-  $q.notify({ color: 'info', message: `切换到 ${tab} 视图（待接入）`, icon: 'info', timeout: 1200 })
+function onWorkspaceTabChange(tab: string) {
+  activeWorkspaceTab.value = tab
 }
 
 function onGridOutputSelect(id: string) {
   selectedOutputId.value = id
 }
 
-function onGridElementSelect(id: string) {
-  // TODO: when assets have classification metadata, route to the right
-  // workspace tab. For now, treat the click as "select for prompt context".
-  $q.notify({ color: 'info', message: '已选择元素 — 等待提示词编辑器接入', icon: 'info', timeout: 1200 })
-  // Stash the id on a ref so the coder can wire it into the prompt editor.
-  selectedElementId.value = id
+function onOutputMenu(id: string, _event: MouseEvent) {
+  $q.notify({ color: 'info', message: `对 ${id} 打开菜单（待接入）`, icon: 'info', timeout: 1200 })
 }
 
-function onAddElement() {
-  // TODO: open asset upload dialog and then refresh storyElements
-  $q.notify({ color: 'info', message: '添加故事元素（待接入）', icon: 'info' })
+function onOutputFilter() {
+  $q.notify({ color: 'info', message: '筛选面板即将上线', icon: 'filter_list', timeout: 1200 })
 }
 
-function onAddToGroup(group: StoryElementKind) {
-  // TODO: scoped add per group; same handler as onAddElement for now
-  $q.notify({ color: 'info', message: `向 ${group} 添加元素（待接入）`, icon: 'info' })
+function onOutputViewAll() {
+  $q.notify({ color: 'info', message: '全部结果视图即将上线', icon: 'list', timeout: 1200 })
 }
 
-function onPlayOutput(id: string) {
-  // TODO: open the video in a player overlay. The grid already shows a play
-  // button for video outputs; coder needs to wire up playback.
-  const output = projectOutputs.value.find((item) => item.id === id)
-  if (output) {
-    $q.notify({ color: 'info', message: `播放 ${output.filename}（待接入）`, icon: 'play_circle' })
-  }
+function onSceneSelect(id: string) {
+  selectedSceneId.value = id
 }
 
-// ── Story panel event handlers (ADR 0004, openimago-9so) ──────────────────
-
-function onStorySelect(selection: StorySelection): void {
-  switch (selection.kind) {
-    case 'episode':
-      break
-    case 'scene':
-      currentStorySceneId.value = selection.id
-      break
-    case 'shot': {
-      currentStoryShotId.value = selection.id
-      const shot = currentStoryShots.value.find((s) => s.id === selection.id)
-      if (shot && shot.referenceArtifactIds.length > 0 && projectOutputs.value.length > 0) {
-        const firstRef = shot.referenceArtifactIds[0]!
-        const outputMatch = projectOutputs.value.find(
-          (o) => o.id === firstRef || o.filename?.includes(firstRef),
-        )
-        if (outputMatch) {
-          selectedOutputId.value = outputMatch.id
-        }
-      }
-      break
-    }
-    case 'character':
-      storySelectedCharacterId.value = selection.id
-      break
-    case 'styleSeed':
-      storySelectedStyleSeedId.value = selection.id
-      break
-  }
+function onSceneAdd(id: string) {
+  $q.notify({ color: 'info', message: `向场景 ${id} 添加元素（待接入）`, icon: 'info', timeout: 1200 })
 }
 
-function onStoryEpisodeChange(episodeId: string): void {
-  if (!episodeId || episodeId === currentStoryEpisodeId.value) return
-  currentStoryEpisodeId.value = episodeId
-  currentStoryShotId.value = null
-  storyWorkflow.value = null
-  storyRuns.value = null
-  const pid = projectId.value
-  void Promise.all([
-    api.projectStoryWorkflow(pid, episodeId),
-    api.projectStoryRuns(pid, episodeId),
-  ]).then(([wf, runs]) => {
-    storyWorkflow.value = wf
-    storyRuns.value = runs
-  }).catch(() => {
-    storyWorkflow.value = null
-    storyRuns.value = null
-  })
+function onSceneAddImage(id: string) {
+  $q.notify({ color: 'info', message: `为场景 ${id} 上传图片（待接入）`, icon: 'image', timeout: 1200 })
 }
 
-function onStoryIntent(intent: StoryEditIntent): void {
-  switch (intent.kind) {
-    case 'edit-shot':
-      $q.notify({ color: 'info', message: '编辑镜头功能即将上线（编辑模式）', icon: 'edit', timeout: 1500 })
-      break
-    case 'regenerate-shot':
-      $q.notify({ color: 'info', message: '重新生成镜头功能即将上线（工作流执行）', icon: 'refresh', timeout: 1500 })
-      break
-    case 'regenerate-run':
-      $q.notify({ color: 'info', message: '重新执行运行功能即将上线', icon: 'refresh', timeout: 1500 })
-      break
-    case 'open-artifact': {
-      const output = projectOutputs.value.find((o) => o.id === intent.artifactId)
-      if (output) {
-        selectedOutputId.value = output.id
-        $q.notify({ color: 'info', message: `已选中关联产出 ${output.filename || intent.artifactId}`, icon: 'check', timeout: 1200 })
-      } else {
-        $q.notify({ color: 'info', message: '关联产出未找到，可能需要先生成', icon: 'info', timeout: 1500 })
-      }
-      break
-    }
-  }
+function onSceneImageType(id: string) {
+  $q.notify({ color: 'info', message: `切换场景 ${id} 的素材类型（待接入）`, icon: 'category', timeout: 1200 })
 }
 
-// ── WorkspaceArtifactsPanel event handlers (ADR 0003, openimago-nhp) ──────
-// The panel now handles parameter editing inline; these react to panel emits.
-
-function onArtifactSelect(id: string) {
-  artifactsPanelSelectedId.value = id
+function onAddScene() {
+  $q.notify({ color: 'info', message: '添加场景（待接入）', icon: 'info', timeout: 1200 })
 }
 
-function onArtifactEditParams(_id: string) {
-  // Parameter editor is now inline in the panel (openimago-nhp).
-  // No page-level action needed.
+function onContextDownload() {
+  if (!selectedOutputId.value && !selectedSceneId.value) return
+  const id = selectedOutputId.value ?? selectedSceneId.value
+  $q.notify({ color: 'info', message: `下载 ${id}（待接入）`, icon: 'download', timeout: 1200 })
 }
 
-async function onArtifactRerun(payload: unknown) {
+function onContextClear() {
+  selectedOutputId.value = null
+  selectedSceneId.value = null
+}
+
+// ── Top bar / chip handlers ────────────────────────────────────────────────
+
+function handleOpenCommunity() {
+  $q.notify({ color: 'info', message: 'OpenImago 交流群即将上线', icon: 'people', timeout: 1200 })
+}
+
+function handleOpenProUpgrade() {
+  $q.notify({ color: 'info', message: 'Pro 升级流程即将上线', icon: 'crown', timeout: 1200 })
+}
+
+function handleOpenNotifications() {
+  $q.notify({ color: 'info', message: '通知中心即将上线', icon: 'bell', timeout: 1200 })
+  hasUnreadNotifications.value = false
+}
+
+function handleChipSelect(sid: string) {
+  gridRef.value?.setActiveWorkspaceTab?.('storyboard')
+  void handleSwitchSession(sid)
+}
+
+async function handleSwitchSession(sid: string) {
+  if (!sid || sid === sessionId.value) return
+  isSessionSwitching.value = true
   try {
-    const result = await api.rerunArtifact(payload as {
-      artifactId: string
-      prompt?: string
-      model?: string
-      aspectRatio?: string
-      duration?: number
-      seed?: number
-      inputArgs?: Record<string, unknown>
-    })
-    if (result.ok) {
-      $q.notify({ color: 'positive', message: '重新生成已提交', icon: 'check', timeout: 1500 })
-    } else {
-      $q.notify({ color: 'info', message: result.message || '重新生成即将上线（项目作用域）', icon: 'refresh', timeout: 2000 })
-    }
-  } catch {
-    $q.notify({ color: 'info', message: '重新生成即将上线（项目作用域）', icon: 'refresh', timeout: 1500 })
+    await switchSession(sid)
+    void router.push({ name: 'project-session', params: { id: projectId.value, sessionId: sid } })
+  } finally {
+    isSessionSwitching.value = false
   }
-}
-
-function onArtifactDelete(_id: string) {
-  // TODO: prompt confirm dialog, call project outputs/files delete endpoint
-  $q.notify({ color: 'info', message: '删除制品功能即将上线', icon: 'delete', timeout: 1500 })
-}
-
-function toggleArtifactsPanel() {
-  showArtifactsPanel.value = !showArtifactsPanel.value
-}
-
-async function onSessionSelect(sid: string) {
-  await handleSwitchSession(sid)
 }
 
 async function onSessionCreate() {
@@ -780,19 +813,6 @@ async function onSessionCreate() {
     if (created?.id) {
       await handleSwitchSession(created.id)
     }
-  } finally {
-    isSessionSwitching.value = false
-  }
-}
-
-// ── Session handlers ──────────────────────────────────────────────────────────
-
-async function handleSwitchSession(sid: string) {
-  if (!sid || sid === sessionId.value) return
-  isSessionSwitching.value = true
-  try {
-    await switchSession(sid)
-    void router.push({ name: 'project-session', params: { id: projectId.value, sessionId: sid } })
   } finally {
     isSessionSwitching.value = false
   }
@@ -824,7 +844,46 @@ function onFilesSelected(files: File[]) {
   })
 }
 
-// ── Data fetching ─────────────────────────────────────────────────────────────
+// ── WorkspaceArtifactsPanel event handlers (ADR 0003, openimago-nhp) ──────
+
+function onArtifactSelect(id: string) {
+  artifactsPanelSelectedId.value = id
+}
+
+function onArtifactEditParams(_id: string) {
+  // Parameter editor is now inline in the panel (openimago-nhp).
+}
+
+async function onArtifactRerun(payload: unknown) {
+  try {
+    const result = await api.rerunArtifact(payload as {
+      artifactId: string
+      prompt?: string
+      model?: string
+      aspectRatio?: string
+      duration?: number
+      seed?: number
+      inputArgs?: Record<string, unknown>
+    })
+    if (result.ok) {
+      $q.notify({ color: 'positive', message: '重新生成已提交', icon: 'check', timeout: 1500 })
+    } else {
+      $q.notify({ color: 'info', message: result.message || '重新生成即将上线（项目作用域）', icon: 'refresh', timeout: 2000 })
+    }
+  } catch {
+    $q.notify({ color: 'info', message: '重新生成即将上线（项目作用域）', icon: 'refresh', timeout: 1500 })
+  }
+}
+
+function onArtifactDelete(_id: string) {
+  $q.notify({ color: 'info', message: '删除制品功能即将上线', icon: 'delete', timeout: 1500 })
+}
+
+function toggleArtifactsPanel() {
+  showArtifactsPanel.value = !showArtifactsPanel.value
+}
+
+// ── Data fetching ───────────────────────────────────────────────────────────
 
 async function fetchProjectData() {
   try {
@@ -840,32 +899,24 @@ async function fetchStoryData() {
   storyPanelLoading.value = true
   storyPanelError.value = null
   try {
-    // Fetch bible + series in parallel as they are the most valuable for
-    // populating storyElements. Individual episode fetches follow series data.
     const [bible, series] = await Promise.all([
       api.projectStoryBible(pid),
       api.projectStorySeries(pid),
     ])
     storyBible.value = bible
     storySeries.value = series
-
-    // Load episodes listed in series (up to first 10 to avoid excessive fetches)
     if (series && series.episodes.length > 0) {
       const epIds = series.episodes
         .slice(0, 10)
         .map((e: unknown) => (e as Record<string, unknown>).id as string | undefined)
         .filter((id): id is string => Boolean(id))
-
       const episodes = await Promise.all(
         epIds.map((epId) => api.projectStoryEpisode(pid, epId)),
       )
       storyEpisodes.value = episodes.filter((ep): ep is OpenimagoStoryEpisode => ep !== null)
-
-      // Select the first episode by default
       if (epIds.length > 0 && !currentStoryEpisodeId.value) {
         const firstEpId = epIds[0]!
         currentStoryEpisodeId.value = firstEpId
-        // Fetch workflow + runs for the initially selected episode
         void Promise.all([
           api.projectStoryWorkflow(pid, firstEpId),
           api.projectStoryRuns(pid, firstEpId),
@@ -879,7 +930,7 @@ async function fetchStoryData() {
       }
     }
   } catch {
-    // Silent — story data is optional; grid falls back to outputs/files.
+    // Silent — story data is optional
   } finally {
     storyPanelLoading.value = false
   }
@@ -896,15 +947,11 @@ async function fetchProjectOutputs() {
       kind: wf.kind,
       timeLabel: formatResultTime(new Date(wf.createdAt)),
       promptText: wf.prompt ?? '',
-      // Optional richer fields — WorkspaceFile already exposes model and
-      // prompt; render-time metadata is left undefined until the API
-      // exposes resolution / duration.
       model: wf.model ?? null,
       resolution: null,
       durationLabel: null,
       ...(wf.generationRun ? { genRun: wf.generationRun } : {}),
     }))
-    // Auto-select the most recent output the first time we load.
     if (!selectedOutputId.value && projectOutputs.value.length > 0) {
       selectedOutputId.value = projectOutputs.value[0]!.id
     }
@@ -943,18 +990,14 @@ function formatResultTime(date: Date): string {
   return date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
 }
 
-// ── Lifecycle ─────────────────────────────────────────────────────────────────
+// ── Lifecycle ───────────────────────────────────────────────────────────────
 
 onMounted(() => {
   void loadAgents()
   void loadCommands()
   void fetchProjectData()
-  // Eagerly fetch outputs/files so the shot strip and story elements have
-  // something to show on first paint. The new grid renders outputs and elements at all times.
   void fetchProjectOutputs()
   void fetchProjectFiles()
-  // Fetch story data for storyElements derivation (ADR 0004, openimago-1a3).
-  // Non-blocking — grid falls back to outputs/files when story files are missing.
   void fetchStoryData()
   void loadSessionList().then(() => {
     const paramSessionId = route.params.sessionId
@@ -963,10 +1006,8 @@ onMounted(() => {
     }
   })
   startEventSubscription()
-  void nextTick(() => { inputRef.value?.focus() })
 })
 
-// Watch route sessionId changes
 watch(
   () => route.params.sessionId,
   (sid) => {
@@ -978,11 +1019,44 @@ watch(
 onUnmounted(() => {
   stopEventSubscription()
 })
+
+// Suppress unused-param warnings for refs kept for future use.
+// (No-op calls to satisfy eslint; these refs are intentionally retained
+// for the story panel overlay that will be re-introduced in a follow-up.)
+const _storyRefsKept = {
+  creditsLabel,
+  storyPanelError,
+  storyBibleSummary,
+  storyEpisodeSummaries,
+  currentStoryShots,
+  currentStoryWorkflowNodes,
+  currentStoryRuns,
+  currentStorySceneId,
+  storySelectedCharacterId,
+  storySelectedStyleSeedId,
+}
+void _storyRefsKept
+
+function onStorySelect(_selection: StorySelection): void {
+  // Reserved — story panel overlay not active in this redesign.
+  void _selection
+}
+
+function onStoryIntent(_intent: StoryEditIntent): void {
+  void _intent
+}
+
+function onStoryEpisodeChange(_episodeId: string): void {
+  void _episodeId
+}
+
+function onSessionSelect(sid: string) {
+  gridRef.value?.setActiveWorkspaceTab?.('storyboard')
+  void handleSwitchSession(sid)
+}
 </script>
 
-<style scoped>
-/* ── Page-level chrome ─────────────────────────────────────────────────── */
-
+<style lang="scss" scoped>
 :global(body) {
   background: var(--imago-bg-void);
 }
@@ -993,33 +1067,71 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
+  min-height: 0;
   color: var(--imago-text-primary);
   background: var(--imago-bg-void);
 }
 
-/* ── Input dock (bottom composer) ───────────────────────────────────────── */
-
-.input-dock {
+// Top toolbar (full viewport width, above the 3-column body)
+.project-workspace__topbar {
   flex-shrink: 0;
-  padding: 12px 20px 16px;
-  border-top: 1px solid var(--imago-border-light);
-  background: linear-gradient(180deg, var(--imago-bg-void), var(--imago-bg-deep));
-  backdrop-filter: var(--imago-blur-panel);
-  -webkit-backdrop-filter: var(--imago-blur-panel);
+  position: relative;
+  z-index: 5;
+  width: 100%;
 }
 
-.input-container {
-  max-width: 760px;
-  margin: 0 auto;
+.project-workspace-layout {
+  z-index: 1;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
-@media (max-width: 768px) {
-  .input-dock {
-    padding: 10px 14px 14px;
-  }
+.project-workspace-layout :deep(.ui-layout__drawer) {
+  background: var(--imago-bg-panel) !important;
+  color: var(--imago-text-primary);
+  border-color: var(--imago-border-dim);
 }
 
-/* ── WorkspaceArtifactsPanel overlay (ADR 0003) ────────────────────────── */
+.project-workspace-layout :deep(.ui-layout__drawer--left) {
+  border-right: 1px solid var(--imago-border-dim);
+}
+
+.project-workspace-layout :deep(.ui-layout__drawer--right) {
+  border-left: 1px solid var(--imago-border-dim);
+}
+
+.project-workspace-page {
+  min-width: 0;
+}
+
+// ── Center stack (chat + input dock) ───────────────────────────────────────
+
+.center-stack {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.center-stack__chat {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.center-stack__extras {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 20px 0;
+}
+
+// ── WorkspaceArtifactsPanel overlay (ADR 0003) — unchanged ──────────────
 
 .artifacts-panel-overlay {
   position: fixed;
@@ -1070,7 +1182,7 @@ onUnmounted(() => {
   color: var(--imago-text-primary);
 }
 
-/* ── Panel toggle FAB ──────────────────────────────────────────────────── */
+// ── Panel toggle FAB ────────────────────────────────────────────────────
 
 .artifacts-panel-toggle {
   position: fixed;
@@ -1108,14 +1220,5 @@ onUnmounted(() => {
   color: rgba(0, 240, 255, 0.9);
   font-size: 11px;
   font-weight: 600;
-}
-
-/* ── Story panel overlay (ADR 0004, openimago-9so) ─────────────────────── */
-
-.story-panel-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 50;
-  background: var(--imago-bg-void);
 }
 </style>

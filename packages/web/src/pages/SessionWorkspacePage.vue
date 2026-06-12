@@ -1,11 +1,55 @@
 <template>
   <q-page :style-fn="pageHeightFn" class="session-workspace" style="padding: 0; overflow: hidden;">
-    <UILayout class="session-layout relative full-height" view="hhh lpr lfr" container>
-      <UILayoutDrawer :model-value="!sidebarCollapsed" side="left" :width="256" :breakpoint="1024" bordered show-if-above @update:model-value="sidebarCollapsed = !$event">
+    <!-- Full-viewport top toolbar (above 3-column body) -->
+    <WorkspaceTopBar
+      class="session-workspace__topbar"
+      :brand-variant="'wordmark'"
+      :brand-label="'工作台'"
+      :tabs="SESSION_WORKSPACE_TABS"
+      :active-tab="activeWorkspaceTab"
+      :panel-base-id="'session-workspace'"
+      @tab-change="onWorkspaceTabChange"
+    >
+      <template #right>
+        <TopbarActionButton
+          :leading-icon="'people'"
+          :label="'OpenImago 交流群'"
+          :has-popup="true"
+          :aria-label="'打开 OpenImago 交流群'"
+          @click="handleOpenCommunity"
+        />
+        <TopbarActionButton
+          :variant="'pro'"
+          :leading-icon="'crown'"
+          :label="'升级到 Pro'"
+          :aria-label="'升级到 Pro'"
+          @click="handleOpenProUpgrade"
+        />
+        <TopbarActionButton
+          :variant="'bell'"
+          :icon-only="true"
+          :badge="hasUnreadNotifications"
+          :aria-label="'通知'"
+          @click="handleOpenNotifications"
+        />
+      </template>
+    </WorkspaceTopBar>
+
+    <UILayout class="session-layout relative full-height" view="lhr lpr lfr" container>
+      <UILayoutDrawer
+        :model-value="!sidebarCollapsed"
+        side="left"
+        :width="280"
+        :breakpoint="1024"
+        bordered
+        show-if-above
+        @update:model-value="sidebarCollapsed = !$event"
+      >
         <SessionWorkspaceSidebar
           :sessions="sidebarSessions"
           :session-count="sidebarSessions.length"
           :collapsed="sidebarCollapsed"
+          :creating="isSessionSwitching"
           @create="createNewSession"
           @select="handleSwitchSession"
           @delete="deleteSession"
@@ -16,227 +60,224 @@
       <UILayoutPageContainer>
         <UILayoutPage class="chat-page">
           <main class="chat-area">
-        <header class="session-topbar">
-          <div class="col min-width-0">
-            <div v-if="currentParentSession" class="text-caption text-grey-5 row items-center no-wrap breadcrumb-row">
-              <q-btn
-                flat
-                dense
-                no-caps
-                size="sm"
-                class="breadcrumb-parent-btn q-px-none"
-                color="grey-5"
-                :label="getSessionLabel(currentParentSession)"
-                @click="handleSwitchSession(currentParentSession.id)"
+            <!--
+              The chat surface and composer now live in a single centered
+              column. The composer is a sibling of the chat (not a footer),
+              so it scrolls with the chat inside the same scrollable area
+              when the message stream is long.
+            -->
+            <div class="chat-body">
+              <header v-if="currentSessionItem || currentSessionLabel" class="chat-meta">
+                <div class="chat-meta__title-row">
+                  <h2 class="chat-meta__title">
+                    {{ currentSessionLabel }}
+                  </h2>
+                  <span v-if="currentSessionItem" class="chat-meta__clock">
+                    {{ formatSessionTime(currentSessionItem.time) }}
+                  </span>
+                  <span v-if="isConnected" class="chat-meta__status" aria-label="在线">
+                    <span class="chat-meta__status-dot" />
+                    <span>在线</span>
+                  </span>
+                </div>
+              </header>
+
+              <div class="chat-body__messages">
+                <SessionChatView
+                  ref="chatViewRef"
+                  :session-id="sessionId"
+                  :display-messages="displayMessages"
+                  :part-text="partText"
+                  :is-loading="isLoading"
+                  :session-status="sessionStatus"
+                  :history-exhausted="historyExhausted"
+                  :history-loading="historyLoading"
+                  :current-session-item="currentSessionItem"
+                  :active-attention-call-id="activeAttentionCallId"
+                  @load-history="onLoadHistory"
+                  @switch-session="handleSwitchSession"
+                  @revert-turn="(msgId) => void revertMessage(msgId)"
+                  @use-suggestion="useSuggestion"
+                />
+              </div>
+
+              <!--
+                Extra dock / popup region (todos, followups, revert preview,
+                agent question / permission). Rendered in a column above the
+                composer so it scrolls with the chat, matching the original
+                UILayoutFooter behaviour while the composer is now in the
+                center column.
+              -->
+              <div v-if="hasExtras" class="chat-body__extras">
+                <AgentQuestion
+                  v-if="pendingQuestion"
+                  :request="pendingQuestion"
+                  :on-reply="replyToQuestion"
+                  :on-reject="rejectQuestion"
+                />
+
+                <div v-if="sessionTodos.length > 0" class="todo-dock imago-dock q-mb-sm">
+                  <div class="row items-center justify-between q-mb-xs">
+                    <div class="text-caption text-weight-medium text-grey-5">
+                      {{ t('agent.todoProgress', { done: completedTodoCount, total: sessionTodos.length }) }}
+                    </div>
+                    <div v-if="activeTodoLabel" class="text-caption text-grey-5 ellipsis todo-dock__preview">
+                      {{ activeTodoLabel }}
+                    </div>
+                  </div>
+                  <div class="todo-dock__list">
+                    <div
+                      v-for="todo in sessionTodos"
+                      :key="todo.content"
+                      class="todo-dock__item row no-wrap items-start q-gutter-sm"
+                    >
+                      <q-icon
+                        :name="todo.status === 'completed' ? 'check_circle' : todo.status === 'in_progress' ? 'more_horiz' : todo.status === 'cancelled' ? 'cancel' : 'radio_button_unchecked'"
+                        :color="todo.status === 'completed' ? 'positive' : todo.status === 'in_progress' ? 'grey-5' : todo.status === 'cancelled' ? 'grey-5' : 'grey-4'"
+                        size="16px"
+                        class="q-mt-xs"
+                      />
+                      <div
+                        class="col text-body2"
+                        :class="{ 'text-grey-5': todo.status === 'completed' || todo.status === 'cancelled' }"
+                      >
+                        {{ todo.content }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  v-if="revertMessagePreview"
+                  class="revert-dock imago-dock imago-dock--warning q-mb-sm row items-center justify-between q-gutter-sm"
+                >
+                  <div class="col min-width-0">
+                    <div class="text-caption text-grey-5">{{ t('agent.revertActive') }}</div>
+                    <div class="text-body2 text-weight-medium ellipsis">{{ revertMessagePreview }}</div>
+                  </div>
+                  <div class="row items-center q-gutter-sm">
+                    <q-btn
+                      flat
+                      dense
+                      no-caps
+                      size="sm"
+                      color="warning"
+                      :label="t('agent.restore')"
+                      @click="restoreRevert"
+                    />
+                    <q-icon name="history" size="18px" color="warning" />
+                  </div>
+                </div>
+
+                <div v-if="currentQueuedFollowups.length > 0" class="followup-dock imago-dock q-mb-sm">
+                  <button
+                    type="button"
+                    class="followup-dock__header row items-center justify-between q-gutter-sm"
+                    @click="followupCollapsed = !followupCollapsed"
+                  >
+                    <div class="text-caption text-weight-medium text-grey-5">
+                      {{ currentQueuedFollowups.length === 1 ? t('agent.followupOne') : t('agent.followupMany', { count: currentQueuedFollowups.length }) }}
+                    </div>
+                    <q-btn
+                      flat
+                      dense
+                      round
+                      size="sm"
+                      icon="expand_more"
+                      color="grey-5"
+                      class="followup-dock__toggle"
+                      :class="{ 'followup-dock__toggle--collapsed': followupCollapsed }"
+                      @click.stop="followupCollapsed = !followupCollapsed"
+                    />
+                  </button>
+                  <div v-if="!followupCollapsed" class="followup-dock__list">
+                    <div
+                      v-for="item in currentQueuedFollowups"
+                      :key="item.id"
+                      class="followup-dock__item row items-center q-gutter-sm"
+                    >
+                      <div class="col min-width-0">
+                        <div class="text-body2 ellipsis">{{ getFollowupPreview(item) }}</div>
+                        <div
+                          v-if="failedFollowupId[sessionId || ''] === item.id"
+                          class="text-caption text-negative q-mt-xs"
+                        >
+                          {{ t('agent.followupFailed') }}
+                        </div>
+                      </div>
+                      <q-btn
+                        dense
+                        no-caps
+                        size="sm"
+                        color="grey-6"
+                        :loading="sendingFollowupId === item.id"
+                        :label="t('agent.sendNow')"
+                        @click="sendQueuedFollowup(item.id, true)"
+                      />
+                      <q-btn
+                        flat
+                        dense
+                        no-caps
+                        size="sm"
+                        color="grey-6"
+                        :disable="sendingFollowupId === item.id"
+                        :label="'编辑'"
+                        @click="editQueuedFollowup(item.id)"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <AgentPermission
+                  v-if="pendingPermission"
+                  :request="pendingPermission"
+                  :on-respond="replyToPermission"
+                />
+              </div>
+
+              <ChatInputDock
+                v-if="!currentParentSession"
+                :loading="isLoading"
+                :connected="isConnected"
+                :disabled="isSessionSwitching"
+                :attachments="pendingAttachments"
+                @submit="submitDraftMessage"
+                @abort="abortSession"
+                @remove-attachment="(id) => removeAttachment(id)"
+                @attach-files="onFilesSelected"
               />
-              <q-icon name="chevron_right" size="16px" color="grey-5" />
+              <div v-else class="child-session-input-disabled imago-dock text-body2 text-grey-7">
+                <span>{{ t('agent.childInputDisabled') }}</span>
+                <q-btn
+                  flat
+                  dense
+                  no-caps
+                  color="grey-5"
+                  class="q-ml-sm"
+                  :label="t('agent.backToParent')"
+                  @click="handleSwitchSession(currentParentSession.id)"
+                />
+              </div>
             </div>
-            <button class="session-heading" type="button">
-              {{ currentSessionLabel }}
-              <q-icon name="expand_more" size="18px" />
-            </button>
-          </div>
-
-          <div class="topbar-actions">
-            <div v-if="isSessionSwitching || isLoading" class="topbar-status">
-              <q-spinner-dots size="16px" color="grey-5" />
-              <span>{{ isLoading ? '生成中' : '切换会话' }}</span>
-            </div>
-            <button
-              type="button"
-              class="topbar-icon-btn"
-              :class="{ 'topbar-icon-btn--active': rightPanelVisible }"
-              :aria-label="'切换右侧面板'"
-              @click="rightPanelVisible = !rightPanelVisible"
-            >
-              <OiIcon name="sliders" :size="18" />
-              <q-tooltip anchor="bottom middle" self="top middle">{{ rightPanelVisible ? '关闭右侧面板' : '打开右侧面板' }}</q-tooltip>
-            </button>
-            <button type="button" class="topbar-icon-btn" aria-label="外观">
-              <OiIcon name="palette" :size="18" />
-              <q-tooltip anchor="bottom middle" self="top middle">外观</q-tooltip>
-            </button>
-          </div>
-        </header>
-
-        <SessionChatView
-          ref="chatViewRef"
-          :session-id="sessionId"
-          :display-messages="displayMessages"
-          :part-text="partText"
-          :is-loading="isLoading"
-          :session-status="sessionStatus"
-          :history-exhausted="historyExhausted"
-          :history-loading="historyLoading"
-          :current-session-item="currentSessionItem"
-          :active-attention-call-id="activeAttentionCallId"
-          @load-history="onLoadHistory"
-          @switch-session="handleSwitchSession"
-          @revert-turn="(msgId) => void revertMessage(msgId)"
-          @use-suggestion="useSuggestion"
-        />
-
-
-
           </main>
         </UILayoutPage>
       </UILayoutPageContainer>
 
-      <UILayoutFooter bordered>
-
-        <div class="input-area">
-          <div class="input-container">
-            <AgentQuestion
-              v-if="pendingQuestion"
-              :request="pendingQuestion"
-              :on-reply="replyToQuestion"
-              :on-reject="rejectQuestion"
-            />
-
-            <div v-if="sessionTodos.length > 0" class="todo-dock imago-dock q-mb-sm">
-              <div class="row items-center justify-between q-mb-xs">
-                <div class="text-caption text-weight-medium text-grey-5">
-                  {{ t('agent.todoProgress', { done: completedTodoCount, total: sessionTodos.length }) }}
-                </div>
-                <div v-if="activeTodoLabel" class="text-caption text-grey-5 ellipsis todo-dock__preview">
-                  {{ activeTodoLabel }}
-                </div>
-              </div>
-              <div class="todo-dock__list">
-                <div v-for="todo in sessionTodos" :key="todo.content" class="todo-dock__item row no-wrap items-start q-gutter-sm">
-                  <q-icon
-                    :name="todo.status === 'completed' ? 'check_circle' : todo.status === 'in_progress' ? 'more_horiz' : todo.status === 'cancelled' ? 'cancel' : 'radio_button_unchecked'"
-                    :color="todo.status === 'completed' ? 'positive' : todo.status === 'in_progress' ? 'grey-5' : todo.status === 'cancelled' ? 'grey-5' : 'grey-4'"
-                    size="16px"
-                    class="q-mt-xs"
-                  />
-                  <div class="col text-body2" :class="{ 'text-grey-5': todo.status === 'completed' || todo.status === 'cancelled' }">
-                    {{ todo.content }}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div v-if="revertMessagePreview" class="revert-dock imago-dock imago-dock--warning q-mb-sm row items-center justify-between q-gutter-sm">
-              <div class="col min-width-0">
-                <div class="text-caption text-grey-5">{{ t('agent.revertActive') }}</div>
-                <div class="text-body2 text-weight-medium ellipsis">{{ revertMessagePreview }}</div>
-              </div>
-              <div class="row items-center q-gutter-sm">
-                <q-btn flat dense no-caps size="sm" color="warning" :label="t('agent.restore')" @click="restoreRevert" />
-                <q-icon name="history" size="18px" color="warning" />
-              </div>
-            </div>
-
-            <div v-if="currentQueuedFollowups.length > 0" class="followup-dock imago-dock q-mb-sm">
-              <button type="button" class="followup-dock__header row items-center justify-between q-gutter-sm" @click="followupCollapsed = !followupCollapsed">
-                <div class="text-caption text-weight-medium text-grey-5">
-                  {{ currentQueuedFollowups.length === 1 ? t('agent.followupOne') : t('agent.followupMany', { count: currentQueuedFollowups.length }) }}
-                </div>
-                <div v-if="followupCollapsed" class="text-caption text-grey-6 ellipsis followup-dock__preview">
-                  {{ currentQueuedFollowups[0] ? getFollowupPreview(currentQueuedFollowups[0]) : '' }}
-                </div>
-                <q-btn
-                  flat
-                  dense
-                  round
-                  size="sm"
-                  icon="expand_more"
-                  color="grey-5"
-                  class="followup-dock__toggle"
-                  :class="{ 'followup-dock__toggle--collapsed': followupCollapsed }"
-                  @click.stop="followupCollapsed = !followupCollapsed"
-                />
-              </button>
-              <div v-if="followupsPaused" class="text-caption text-warning q-mb-sm q-mt-xs">
-                {{ t('agent.followupPaused') }}
-              </div>
-              <div v-if="!followupCollapsed" class="followup-dock__list">
-                <div v-for="item in currentQueuedFollowups" :key="item.id" class="followup-dock__item row items-center q-gutter-sm">
-                  <div class="col min-width-0">
-                    <div class="text-body2 ellipsis">{{ getFollowupPreview(item) }}</div>
-                    <div v-if="failedFollowupId[sessionId || ''] === item.id" class="text-caption text-negative q-mt-xs">
-                      {{ t('agent.followupFailed') }}
-                    </div>
-                  </div>
-                  <q-btn dense no-caps size="sm" color="grey-6" :loading="sendingFollowupId === item.id" :label="t('agent.sendNow')" @click="sendQueuedFollowup(item.id, true)" />
-                  <q-btn flat dense no-caps size="sm" color="grey-6" :disable="sendingFollowupId === item.id" :label="'编辑'" @click="editQueuedFollowup(item.id)" />
-                </div>
-              </div>
-            </div>
-
-            <AgentPermission
-              v-if="pendingPermission"
-              :request="pendingPermission"
-              :on-respond="replyToPermission"
-            />
-
-            <PromptInput
-              v-if="!currentParentSession"
-              ref="inputRef"
-              v-model="draftInputMessage"
-              :placeholder="t('agent.askAnythingPlaceholder')"
-              :loading="isLoading"
-              :connected="isConnected"
-              :disabled="isSessionSwitching"
-              :attachments="pendingAttachments"
-              @submit="submitDraftMessage"
-              @abort="abortSession"
-              @remove-attachment="removeAttachment"
-              @retry-attachment="retryAttachment"
-              @attach-files="onFilesSelected"
-            >
-              <template #leading>
-                <button
-                  type="button"
-                  class="prompt-input__icon-btn"
-                  :aria-label="t('gallery.composerAttach')"
-                >
-                  <OiIcon name="plus" :size="14" />
-                  <ImagePickerPopup @select="handleAttachmentSelect" />
-                </button>
-                <button type="button" class="prompt-input__select">
-                  <OiIcon name="sliders" :size="14" />
-                  <span>{{ t('gallery.composerMode') }}</span>
-                  <q-icon name="expand_more" size="14px" class="prompt-input__select-caret" />
-                </button>
-                <button type="button" class="prompt-input__select">
-                  <q-icon name="crop_landscape" size="14px" />
-                  <span>{{ t('gallery.composerAspect') }}</span>
-                </button>
-                <button type="button" class="prompt-input__select">
-                  <OiIcon name="clock" :size="14" />
-                  <span>{{ t('gallery.composerDuration') }}</span>
-                </button>
-              </template>
-            </PromptInput>
-            <div v-else class="child-session-input-disabled imago-dock text-body2 text-grey-7">
-              <span>{{ t('agent.childInputDisabled') }}</span>
-              <q-btn
-                flat
-                dense
-                no-caps
-                color="grey-5"
-                class="q-ml-sm"
-                :label="t('agent.backToParent')"
-                @click="handleSwitchSession(currentParentSession.id)"
-              />
-            </div>
-          </div>
-        </div>
-      </UILayoutFooter>
-
       <UILayoutDrawer v-model="rightPanelVisible" side="right" :width="360" behavior="desktop" bordered>
-        <WorkspaceArtifactsPanel
-          v-model="resultTab"
-          :artifacts="sessionArtifacts"
+        <AIOutputsPanel
+          :title="'AI 产出'"
+          :subtitle="'当前会话的生成结果'"
+          :items="aiOutputItems"
           :selected-id="selectedResultId"
-          :show-pending-tile="showPendingResultTile"
-          :scope="'session'"
-          @select="handleSelectResult"
-          @edit-params="handleEditArtifactParams"
-          @rerun="handleRerunArtifact"
-          @delete="handleDeleteArtifact"
+          :layout="'grid'"
+          :show-view-all="aiOutputItems.length > 6"
+          :view-all-label="'查看全部'"
+          :aria-label="'会话 AI 产出面板'"
+          @item-select="handleSelectResult"
+          @item-menu="handleItemMenu"
+          @layout-change="(l) => { layoutMode = l }"
+          @filter="handleFilterOutputs"
+          @view-all="handleViewAll"
         />
       </UILayoutDrawer>
     </UILayout>
@@ -249,24 +290,20 @@ import { useQuasar } from 'quasar'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import type { TextPart } from '@opencode-ai/sdk/v2'
-import OiIcon from 'src/components/ui/OiIcon.vue'
 import AgentQuestion from 'src/components/AgentQuestion.vue'
 import AgentPermission from 'src/components/AgentPermission.vue'
-import PromptInput from 'src/components/PromptInput.vue'
-import ImagePickerPopup from 'src/components/ImagePickerPopup.vue'
 import SessionChatView from 'src/components/session-workspace/SessionChatView.vue'
 import SessionWorkspaceSidebar from 'src/components/session-workspace/SessionWorkspaceSidebar.vue'
-import WorkspaceArtifactsPanel from 'src/components/session-workspace/WorkspaceArtifactsPanel.vue'
-import type { WorkspaceArtifact } from 'src/components/session-workspace/types'
-import { api } from 'src/api/client'
-import { UILayout, UILayoutDrawer, UILayoutFooter, UILayoutPage, UILayoutPageContainer } from 'src/components/ui/layout'
+import AIOutputsPanel from 'src/components/workspace/AIOutputsPanel.vue'
+import ChatInputDock from 'src/components/workspace/ChatInputDock.vue'
+import TopbarActionButton from 'src/components/workspace/TopbarActionButton.vue'
+import WorkspaceTopBar from 'src/components/workspace/WorkspaceTopBar.vue'
+import { UILayout, UILayoutDrawer, UILayoutPage, UILayoutPageContainer } from 'src/components/ui/layout'
 import { useAgentSession, type DisplayMessage } from 'src/composables/useAgentSession'
 import type { SessionItem } from 'src/services/agents'
+import type { AIOutputItem } from 'src/components/session-workspace/types'
 
-type DisplayTurn = {
-  user: DisplayMessage
-  assistant: DisplayMessage | null
-}
+// ── Local types ─────────────────────────────────────────────────────────────
 
 type SidebarSessionItem = {
   id: string
@@ -278,7 +315,16 @@ type SidebarSessionItem = {
   active: boolean
 }
 
-// ── UI refs ───────────────────────────────────────────────────────────────────
+// ── Workspace tabs (shared 4-tab pill switcher) ─────────────────────────────
+
+const SESSION_WORKSPACE_TABS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: 'storyboard', label: '故事板' },
+  { id: 'timeline', label: '时间线' },
+  { id: 'overview', label: '概览' },
+  { id: 'conversation', label: '对话' },
+]
+
+// ── UI refs ─────────────────────────────────────────────────────────────────
 
 const $q = useQuasar()
 const { t } = useI18n()
@@ -287,12 +333,13 @@ const router = useRouter()
 const chatViewRef = ref<InstanceType<typeof SessionChatView> | null>(null)
 const followupCollapsed = ref(false)
 const isSessionSwitching = ref(false)
-const inputRef = ref<{ focus: () => void; setDraft: (value: string) => void; openFilePicker: (type?: string) => void } | null>(null)
 const draftInputMessage = ref('')
-const resultTab = ref('result')
 const selectedResultId = ref<string | null>(null)
 const sidebarCollapsed = ref(false)
-const rightPanelVisible = ref(false)
+const rightPanelVisible = ref(true)
+const activeWorkspaceTab = ref<string>('conversation')
+const layoutMode = ref<'grid' | 'rows'>('grid')
+const hasUnreadNotifications = ref(true)
 
 function pageHeightFn(offset: number) {
   return { minHeight: `${window.innerHeight - offset}px`, height: `${window.innerHeight - offset}px` }
@@ -306,7 +353,7 @@ function scrollIfAtBottom() {
   chatViewRef.value?.doScrollToBottom()
 }
 
-// ── Composable ────────────────────────────────────────────────────────────────
+// ── Composable ──────────────────────────────────────────────────────────────
 
 const {
   displayMessages,
@@ -357,14 +404,13 @@ const {
   (msg) => $q.notify({ color: 'negative', message: msg, icon: 'error' }),
   (msg, opts) => $q.notify({ color: 'info', message: msg, icon: opts?.icon ?? 'info', ...(opts?.timeout !== undefined ? { timeout: opts.timeout } : {}) }),
   (msg) => $q.notify({ color: 'positive', message: msg, icon: 'check' }),
-  () => void nextTick(() => inputRef.value?.focus()),
+  () => { /* focus moved into the chat input dock */ },
 )
 
-// ── Computed ──────────────────────────────────────────────────────────────────
+// ── Computed ────────────────────────────────────────────────────────────────
 
 const currentParentSession = computed<SessionItem | null>(() => {
   if (!sessionId.value) return null
-
   const sessions = getAllSessions()
   const session = sessions.find((item) => item.id === sessionId.value)
   return session?.parentID
@@ -374,7 +420,6 @@ const currentParentSession = computed<SessionItem | null>(() => {
 
 const currentSessionLabel = computed(() => {
   if (!sessionId.value) return '工作台'
-
   const activeSession = getAllSessions().find((session) => session.id === sessionId.value)
   return activeSession ? getSessionLabel(activeSession) : '工作台'
 })
@@ -400,77 +445,20 @@ const activeTodoLabel = computed(() => {
 const revertMessagePreview = computed(() => {
   const revertMessageId = currentSessionItem.value?.revert?.messageID
   if (!revertMessageId) return ''
-
   const revertedMessage = displayMessages.value.find((message) => message.id === revertMessageId && message.role === 'user')
   if (!revertedMessage) return revertMessageId
-
   const text = getUserMessageText(revertedMessage).trim()
   return text || revertMessageId
 })
 
-const displayTurns = computed<DisplayTurn[]>(() => {
-  const turns: DisplayTurn[] = []
-  const revertMessageId = currentSessionItem.value?.revert?.messageID
-
-  for (const message of displayMessages.value) {
-    if (message.role === 'user') {
-      if (revertMessageId && message.id >= revertMessageId) {
-        continue
-      }
-      turns.push({ user: message, assistant: null })
-      continue
-    }
-    const userId = message.id.replace(/^asst:/, '')
-    const existing = turns.find((turn) => turn.user.id === userId)
-    if (existing) {
-      existing.assistant = message
-    }
-  }
-  return turns
-})
-
-const latestPromptText = computed(() => {
-  for (let index = displayTurns.value.length - 1; index >= 0; index -= 1) {
-    const text = getUserMessageText(displayTurns.value[index]!.user).trim()
-    if (text) return text
-  }
-  return ''
-})
-
-const generatedResults = computed<WorkspaceArtifact[]>(() => {
-  const items: (WorkspaceArtifact & { time: Date })[] = []
-
-  for (const turn of displayTurns.value) {
-    if (!turn.assistant) continue
-
-    const prompt = getUserMessageText(turn.user).trim()
-
-    for (const part of turn.assistant.parts) {
-      if (part.type !== 'file') continue
-      const mime = part.mime?.toLowerCase() ?? ''
-      const filename = part.filename || (part as { url?: string }).url?.split('/').at(-1) || '生成结果'
-
-      const kind = resolveMediaFileKind(mime, filename)
-      if (!kind) continue
-
-      items.push({
-        id: (part as { id?: string }).id ?? `file-${items.length}`,
-        kind,
-        access: {
-          preview: (part as { url?: string }).url ?? '',
-          download: (part as { url?: string }).url ?? '',
-        },
-        filename,
-        prompt,
-        timeLabel: formatResultTime(turn.assistant.time),
-        time: turn.assistant.time,
-      })
-    }
-  }
-
-  return items
-    .sort((left, right) => right.time.getTime() - left.time.getTime())
-    .map(({ time: _time, ...rest }) => rest)
+const hasExtras = computed(() => {
+  return Boolean(
+    pendingQuestion.value
+    || sessionTodos.value.length > 0
+    || revertMessagePreview.value
+    || currentQueuedFollowups.value.length > 0
+    || pendingPermission.value,
+  )
 })
 
 const sidebarSessions = computed<SidebarSessionItem[]>(() => sessionList.value
@@ -486,27 +474,35 @@ const sidebarSessions = computed<SidebarSessionItem[]>(() => sessionList.value
     active: isSessionActive(session),
   })))
 
-const showPendingResultTile = computed(() => isLoading.value && generatedResults.value.length > 0)
-
-const sessionArtifacts = computed<WorkspaceArtifact[]>(() => generatedResults.value)
-
-const selectedGeneratedResult = computed<WorkspaceArtifact | null>(() => {
-  const selected = generatedResults.value.find((item) => item.id === selectedResultId.value)
-  return selected ?? generatedResults.value[0] ?? null
+const generatedResults = computed<AIOutputItem[]>(() => {
+  const items: AIOutputItem[] = []
+  const displayTurns = computeDisplayTurns()
+  for (const turn of displayTurns) {
+    if (!turn.assistant) continue
+    const prompt = getUserMessageText(turn.user).trim()
+    for (const part of turn.assistant.parts) {
+      if (part.type !== 'file') continue
+      const mime = part.mime?.toLowerCase() ?? ''
+      const filename = part.filename || (part as { url?: string }).url?.split('/').at(-1) || '生成结果'
+      const kind = resolveMediaFileKind(mime, filename)
+      if (!kind) continue
+      items.push({
+        id: (part as { id?: string }).id ?? `file-${items.length}`,
+        url: (part as { url?: string }).url ?? '',
+        filename,
+        kind,
+        timeLabel: formatResultTime(turn.assistant.time),
+        prompt,
+      })
+    }
+  }
+  return items
+    .sort((left, right) => right.timeLabel.localeCompare(left.timeLabel))
 })
 
-watch(generatedResults, (items) => {
-  if (items.length === 0) {
-    selectedResultId.value = null
-    return
-  }
+const aiOutputItems = computed<AIOutputItem[]>(() => generatedResults.value)
 
-  if (!selectedResultId.value || !items.some((item) => item.id === selectedResultId.value)) {
-    selectedResultId.value = items[0]!.id
-  }
-}, { immediate: true })
-
-// ── Session helpers ───────────────────────────────────────────────────────────
+// ── Session helpers ────────────────────────────────────────────────────────
 
 function getAllSessions(): SessionItem[] {
   const nested = Object.values(childSessions.value).flatMap((items) => items)
@@ -516,35 +512,27 @@ function getAllSessions(): SessionItem[] {
 function getChildTaskDescription(session: SessionItem): string {
   const parentId = session.parentID
   if (!parentId) return ''
-
   const parentEntries = sessionMessages.value[parentId] ?? []
   for (let entryIndex = parentEntries.length - 1; entryIndex >= 0; entryIndex -= 1) {
     const parts = parentEntries[entryIndex]?.parts ?? []
     for (let partIndex = parts.length - 1; partIndex >= 0; partIndex -= 1) {
-      const part = parts[partIndex]
-        if (part?.type !== 'tool' || part.tool !== 'task') continue
-
-        const state = part.state as {
-          metadata?: Record<string, unknown>
-          input?: Record<string, unknown>
-        }
+      const part = parentEntries[entryIndex]?.parts[partIndex]
+      if (part?.type !== 'tool' || part.tool !== 'task') continue
+      const state = part.state as { metadata?: Record<string, unknown>; input?: Record<string, unknown> }
       const metadataSessionId = typeof state.metadata?.sessionId === 'string' ? state.metadata.sessionId : undefined
       if (metadataSessionId !== session.id) continue
-
       const description = state.input?.description
       if (typeof description === 'string' && description.trim()) {
         return description.trim()
       }
     }
   }
-
   return ''
 }
 
 function getSessionLabel(session: SessionItem): string {
   const childDescription = getChildTaskDescription(session)
   if (childDescription) return childDescription
-
   const title = session.title?.trim()
   if (!title) return t('agent.untitled')
   return title.replace(/\s+\(@[^)]+ subagent\)$/, '')
@@ -556,7 +544,21 @@ function isSessionActive(session: SessionItem): boolean {
   return currentParentSession.value?.id === session.id
 }
 
-// ── UI helpers ────────────────────────────────────────────────────────────────
+function computeDisplayTurns(): { user: DisplayMessage; assistant: DisplayMessage | null }[] {
+  const turns: { user: DisplayMessage; assistant: DisplayMessage | null }[] = []
+  const revertMessageId = currentSessionItem.value?.revert?.messageID
+  for (const message of displayMessages.value) {
+    if (message.role === 'user') {
+      if (revertMessageId && message.id >= revertMessageId) continue
+      turns.push({ user: message, assistant: null })
+      continue
+    }
+    const userId = message.id.replace(/^asst:/, '')
+    const existing = turns.find((turn) => turn.user.id === userId)
+    if (existing) existing.assistant = message
+  }
+  return turns
+}
 
 function getUserMessageText(msg: DisplayMessage): string {
   return msg.parts
@@ -565,7 +567,7 @@ function getUserMessageText(msg: DisplayMessage): string {
     .join('')
 }
 
-function resolveMediaFileKind(mime: string, filename: string): WorkspaceArtifact['kind'] | null {
+function resolveMediaFileKind(mime: string, filename: string): AIOutputItem['kind'] | null {
   if (mime.includes('image') || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(filename)) return 'image'
   if (mime.includes('video') || /\.(mp4|webm|mov|avi)$/i.test(filename)) return 'video'
   if (mime.includes('audio') || /\.(mp3|wav|ogg|flac|aac|m4a)$/i.test(filename)) return 'audio'
@@ -583,19 +585,15 @@ function formatSessionTime(date: Date): string {
 
 function getSessionPreview(session: SessionItem): string {
   const entries = sessionMessages.value[session.id] ?? []
-
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index]
     if (!entry || entry.info.role !== 'user') continue
-
     const preview = entry.parts
       .filter((part): part is TextPart => part.type === 'text' && !part.synthetic)
       .map((part) => part.text.trim())
       .find(Boolean)
-
     if (preview) return clipText(preview, 42)
   }
-
   return ''
 }
 
@@ -603,11 +601,10 @@ function getSessionMeta(session: SessionItem): string {
   const messages = sessionMessages.value[session.id] ?? []
   const imageCount = messages.reduce((count, entry) => count + entry.parts.filter((part) => {
     if (part.type !== 'file') return false
-    const mime = part.mime?.toLowerCase() ?? ''
-    const filename = part.filename || ''
+    const mime = (part as { mime?: string }).mime?.toLowerCase() ?? ''
+    const filename = (part as { filename?: string }).filename || ''
     return mime.includes('image') || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(filename)
   }).length, 0)
-
   return imageCount > 0 ? `${imageCount} 张结果` : '对话工作流'
 }
 
@@ -629,49 +626,52 @@ function clipText(value: string, max = 48): string {
   return `${normalized.slice(0, Math.max(0, max - 1))}…`
 }
 
+// ── Event handlers ──────────────────────────────────────────────────────────
+
 function handleSelectResult(id: string) {
   selectedResultId.value = id
 }
 
-// ── WorkspaceArtifactsPanel event stubs (ADR 0003, openimago-nhp) ────────
-// The panel now handles parameter editing inline; these handlers react to
-// panel emits (select, edit-params, rerun, delete).
-
-function handleEditArtifactParams(_id: string) {
-  // Parameter editor is now inline in the panel (openimago-nhp).
-  // This emit still fires for backward compat; no page-level action needed.
+function handleItemMenu(id: string, _event: MouseEvent) {
+  // TODO: open context menu / re-run / download / etc.
+  $q.notify({ color: 'info', message: `对 ${id} 打开菜单（待接入）`, icon: 'info', timeout: 1200 })
 }
 
-async function handleRerunArtifact(payload: unknown) {
-  // Call stub API placeholder (openimago-xkn / openimago-nhp)
-  try {
-    const result = await api.rerunArtifact(payload as {
-      artifactId: string
-      prompt?: string
-      model?: string
-      aspectRatio?: string
-      duration?: number
-      seed?: number
-      inputArgs?: Record<string, unknown>
-    })
-    if (result.ok) {
-      $q.notify({ color: 'positive', message: '重新生成已提交', icon: 'check', timeout: 1500 })
-    } else {
-      $q.notify({ color: 'info', message: result.message || '重新生成即将上线', icon: 'refresh', timeout: 2000 })
-    }
-  } catch {
-    $q.notify({ color: 'info', message: '重新生成即将上线', icon: 'refresh', timeout: 1500 })
-  }
+function handleFilterOutputs() {
+  // TODO: open filter popup
+  $q.notify({ color: 'info', message: '筛选面板即将上线', icon: 'filter_list', timeout: 1200 })
 }
 
-function handleDeleteArtifact(_id: string) {
-  // TODO: prompt confirm dialog, call workspace-files delete endpoint
-  $q.notify({ color: 'info', message: '删除制品功能即将上线', icon: 'delete', timeout: 1500 })
+function handleViewAll() {
+  // TODO: navigate to full results page
+  $q.notify({ color: 'info', message: '全部结果视图即将上线', icon: 'list', timeout: 1200 })
 }
 
+function onWorkspaceTabChange(id: string) {
+  activeWorkspaceTab.value = id
+  // The redesigned session workspace renders its chat surface in the center
+  // column regardless of the active tab label. We accept the tab id here so
+  // the segmented control can reflect the user's selection; non-对话 tabs are
+  // reserved for future affordances.
+}
 
+function handleOpenCommunity() {
+  // TODO: navigate to /community when the route lands
+  $q.notify({ color: 'info', message: 'OpenImago 交流群即将上线', icon: 'people', timeout: 1200 })
+}
 
-// ── Infinite scroll ───────────────────────────────────────────────────────────
+function handleOpenProUpgrade() {
+  // TODO: open Pro upgrade dialog
+  $q.notify({ color: 'info', message: 'Pro 升级流程即将上线', icon: 'crown', timeout: 1200 })
+}
+
+function handleOpenNotifications() {
+  // TODO: open notifications panel
+  $q.notify({ color: 'info', message: '通知中心即将上线', icon: 'bell', timeout: 1200 })
+  hasUnreadNotifications.value = false
+}
+
+// ── Infinite scroll ─────────────────────────────────────────────────────────
 
 function onLoadHistory(_index: number, done: (stop?: boolean) => void) {
   void loadOlderMessages()
@@ -679,7 +679,7 @@ function onLoadHistory(_index: number, done: (stop?: boolean) => void) {
     .catch(() => done(true))
 }
 
-// ── Input helpers ─────────────────────────────────────────────────────────────
+// ── Input helpers ───────────────────────────────────────────────────────────
 
 function useSuggestion(s: string) {
   draftInputMessage.value = s
@@ -705,10 +705,6 @@ async function handleSwitchSession(sid: string) {
   }
 }
 
-function handleAttachmentSelect(type: 'image' | 'audio' | 'video' | 'text') {
-  inputRef.value?.openFilePicker(type)
-}
-
 function onFilesSelected(files: File[]) {
   if (files.length === 0) return
   void Promise.all(files.map((file) => addAttachment(file))).catch(() => {
@@ -716,23 +712,21 @@ function onFilesSelected(files: File[]) {
   })
 }
 
-// ── Lifecycle ─────────────────────────────────────────────────────────────────
+// ── Lifecycle ───────────────────────────────────────────────────────────────
 
 onMounted(() => {
   void loadAgents()
   void loadCommands()
   void loadSessionList().then(() => {
-    // If landing directly on /sessions/:id, switch to that session
     const paramId = route.params.id
     if (paramId && typeof paramId === 'string' && paramId !== sessionId.value) {
       void switchSession(paramId)
     }
   })
   startEventSubscription()
-  void nextTick(() => { inputRef.value?.focus() })
+  void nextTick(() => { /* focus handled inside ChatInputDock */ })
 })
 
-// Sync session when user navigates via browser back/forward
 watch(
   () => route.params.id,
   (id) => {
@@ -758,13 +752,26 @@ onUnmounted(() => {
   position: relative;
   width: 100%;
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   color: var(--imago-text-primary);
   background: var(--imago-bg-void);
+}
+
+/* Top toolbar (full viewport width, above the 3-column body) */
+.session-workspace__topbar {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 5;
+  width: 100%;
 }
 
 .session-layout {
   z-index: 1;
   width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* Override UILayoutDrawer default white bg with our dark creative theme */
@@ -796,654 +803,107 @@ onUnmounted(() => {
   background: var(--imago-bg-void);
 }
 
-.session-topbar {
-  height: 52px;
+.chat-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.chat-meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
-  border-bottom: 1px solid var(--imago-border-soft);
-  background: var(--imago-bg-void);
-}
-
-.session-heading {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0;
-  color: var(--imago-text-secondary);
-  background: transparent;
-  border: 0;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.session-heading:hover {
-  color: var(--imago-text-primary);
-}
-
-.col.min-width-0 {
-  min-width: 0;
-}
-
-.breadcrumb-row {
-  min-width: 0;
-}
-
-.breadcrumb-parent-btn {
-  min-width: 0;
-}
-
-.breadcrumb-parent-btn :deep(.q-btn__content) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  display: block;
-  max-width: 200px;
-}
-
-.topbar-actions {
-  display: flex;
-  align-items: center;
   gap: 10px;
-}
-
-.topbar-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--imago-text-dim);
-  font-size: 12px;
-}
-
-.topbar-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--imago-radius-md);
-  background: transparent;
-  cursor: pointer;
-  color: var(--imago-text-muted);
-  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
-}
-
-.topbar-icon-btn:hover {
-  color: var(--imago-text-primary);
-  background: var(--imago-bg-raised);
-}
-
-.topbar-icon-btn--active {
-  color: var(--imago-neon-cyan);
-  border-color: var(--imago-border-cyan);
-  background: var(--imago-cyan-06);
-}
-
-/* ── Messages ────────────────────────────────────────────────────────────── */
-
-.messages-container {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 20px 24px 12px;
-  position: relative;
-}
-
-/* Scroll-to-bottom floating button — sits above the footer, centered */
-.scroll-to-bottom-btn {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translate(-50%, calc(-100% - 10px));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid var(--imago-border-light);
-  background: var(--imago-bg-raised);
-  color: var(--imago-text-secondary);
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  transition: background var(--imago-ease-fast), border-color var(--imago-ease-fast);
-  z-index: 1002;
-
-  &:hover {
-    background: var(--imago-bg-float);
-    border-color: var(--imago-border-soft);
-  }
-}
-
-.scroll-btn-fade-enter-active,
-.scroll-btn-fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-.scroll-btn-fade-enter-from,
-.scroll-btn-fade-leave-to {
-  opacity: 0;
-  transform: translate(-50%, calc(-100% - 4px));
-}
-
-.empty-chat {
-  height: 100%;
-  color: var(--imago-text-dim);
-}
-
-.empty-chat__content {
-  width: min(560px, 90%);
-  padding: 0 16px;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-/* ── AI Logo ── */
-.empty-chat__logo-wrap {
-  margin-bottom: 32px;
-  position: relative;
-  width: 160px;
-  height: 160px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.empty-chat__logo-ring {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  background: linear-gradient(135deg, var(--imago-neon-cyan), var(--imago-neon-purple)) border-box;
-  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: destination-out;
-  mask-composite: exclude;
-  animation: logo-spin 6s linear infinite;
-  box-shadow: 0 0 32px var(--imago-cyan-08), 0 0 80px rgba(168, 85, 247, 0.08);
-}
-
-.empty-chat__logo-ring::before {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  border: 1.5px solid var(--imago-border-cyan);
-}
-
-.empty-chat__logo-ring::after {
-  content: '';
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--imago-neon-cyan);
-  top: 4px;
-  left: 50%;
-  transform: translateX(-50%);
-  box-shadow: 0 0 8px var(--imago-neon-cyan);
-}
-
-.empty-chat__logo-inner {
-  width: 100px;
-  height: 100px;
-  border-radius: 50%;
-  background: var(--imago-bg-panel);
-  border: 1.5px solid var(--imago-border-purple);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: inset 0 0 20px rgba(168, 85, 247, 0.1);
-}
-
-.empty-chat__logo-img {
-  width: 52px;
-  height: 52px;
-  object-fit: contain;
-  filter: drop-shadow(0 0 8px rgba(168, 85, 247, 0.5));
-}
-
-@keyframes logo-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.empty-chat__title {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--imago-text-primary);
-  margin-bottom: 28px;
-  letter-spacing: 0.01em;
-}
-
-.suggestions {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  width: 100%;
-}
-
-.suggestion-chip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  background: var(--imago-bg-surface);
-  border: 1px solid var(--imago-border-soft);
-  border-radius: var(--imago-radius-md);
-  color: var(--imago-text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
-  text-align: left;
-  white-space: nowrap;
-}
-
-.suggestion-chip__icon {
-  color: var(--imago-neon-cyan);
-  opacity: 0.75;
+  padding: 8px 24px 4px;
   flex-shrink: 0;
 }
 
-.suggestion-chip:hover {
-  color: var(--imago-text-primary);
-  border-color: var(--imago-border-cyan-active);
-  background: var(--imago-cyan-04);
-}
-
-.suggestion-chip:hover .suggestion-chip__icon {
-  opacity: 1;
-}
-
-.message-turn + .message-turn {
-  margin-top: 30px;
-}
-
-.turn-container {
-  max-width: 760px;
-  margin: 0 auto;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.user-turn-content {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  width: 100%;
-  max-width: 100%;
-  gap: 4px;
-  margin-bottom: 10px;
-}
-
-.user-message-body {
-  max-width: min(100%, 62ch);
-  margin-left: auto;
-  padding: 10px 14px;
-  color: var(--imago-text-primary);
-  border-radius: var(--imago-radius-md);
-  border: 1px solid var(--imago-border-soft);
-  background: var(--imago-bg-surface);
-}
-
-.assistant-turn-content {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.compaction-divider {
+.chat-meta__title-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-  color: var(--imago-text-dim);
-  font-size: 12px;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
-.compaction-divider__line {
-  flex: 1;
-  height: 1px;
-  background: var(--imago-border-soft);
-}
-
-.compaction-divider__label {
+.chat-meta__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--imago-text-primary);
+  letter-spacing: 0.005em;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--imago-text-dim);
+  min-width: 0;
 }
 
-.assistant-content {
-  max-width: min(100%, 72ch);
-  word-break: break-word;
-  overflow-wrap: break-word;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
+.chat-meta__clock {
+  font-size: 11.5px;
+  color: var(--imago-text-faint);
+  font-variant-numeric: tabular-nums;
 }
 
-.user-attachments {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-  width: fit-content;
-  max-width: min(100%, 62ch);
-  margin-left: auto;
-}
-
-.user-attachment-chip {
+.chat-meta__status {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  max-width: min(100%, 220px);
-  height: 48px;
-  padding: 0 8px;
-  border-radius: 10px;
-  background: var(--imago-bg-raised);
-  border: 1px solid var(--imago-border-soft);
-  font-size: 12px;
-  line-height: 1.3;
-  min-width: 0;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--imago-text-muted);
+}
+
+.chat-meta__status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--imago-neon-cyan);
+  box-shadow: 0 0 6px var(--imago-neon-cyan);
+}
+
+.chat-body__messages {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
-.user-attachment-chip:has(.user-attachment-image) {
-  height: auto;
-  padding: 0;
+.child-session-input-disabled {
+  width: 100%;
+  padding: 14px 16px;
+  margin: 8px 20px 16px;
+  border-radius: var(--imago-radius-lg);
 }
 
-.user-attachment-image {
-  display: block;
-  width: 48px;
-  height: 48px;
-  object-fit: cover;
-  border-radius: var(--imago-radius-sm);
+.imago-dock {
+  background: var(--imago-bg-surface);
+  border: 1px solid var(--imago-border-soft);
+  border-radius: var(--imago-radius-lg);
 }
 
-.user-attachments + .user-message-body {
-  margin-top: 8px;
-}
-
-.user-comments {
+.chat-body__extras {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  align-items: flex-end;
-  width: 100%;
-  max-width: min(100%, 62ch);
-  margin-bottom: 8px;
+  flex-shrink: 0;
+  padding: 0 20px 8px;
 }
 
-.user-comment-card {
-  width: 100%;
-  max-width: 100%;
-  padding: 4px 0 4px 12px;
-  border-radius: 0;
-  background: transparent;
-  border-left: 1px solid var(--imago-border-cyan-active);
-}
-
-.user-comment-meta {
-  color: var(--imago-text-muted);
-}
-
-.user-comment-path {
-  max-width: 260px;
-}
-
-.user-comment-preview {
-  padding: 4px 0 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--imago-text-dim);
-  white-space: pre-wrap;
-}
-
-.user-context-files {
-  width: fit-content;
-  max-width: min(100%, 62ch);
-  margin-left: auto;
-  margin-bottom: 8px;
-}
-
-.user-context-files__list {
-  justify-content: flex-end;
-}
-
-.user-context-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 280px;
-  padding: 3px 0;
-  border-radius: 0;
-  background: transparent;
-  border: 0;
-  font-size: 12px;
-  line-height: 1.3;
-  color: var(--imago-text-secondary);
-}
-
-.user-message-footer {
-  min-height: 24px;
-  width: 100%;
-  max-width: min(100%, 62ch);
-}
-
-.user-message-meta {
-  font-size: 12px;
-  line-height: 1.2;
-  color: var(--imago-text-faint);
-}
-
-.user-turn-action {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border: none;
-  background: var(--imago-bg-raised);
-  color: var(--imago-text-muted);
-  cursor: pointer;
-  border-radius: 4px;
-  opacity: 0;
-  transition: opacity 150ms ease, background var(--imago-ease-fast);
-  padding: 0;
-
-  &:hover {
-    background: var(--imago-bg-surface);
-    color: var(--imago-text-primary);
-  }
-}
-
-.user-turn-content:hover .user-turn-action,
-.user-turn-content:focus-within .user-turn-action {
-  opacity: 1;
-}
-
-.assistant-turn-footer {
-  min-height: 24px;
-  width: min(100%, 72ch);
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.assistant-content:hover .assistant-turn-footer {
-  opacity: 1;
-}
-
-.assistant-copy-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border: none;
-  background: none;
-  color: var(--imago-text-dim);
-  cursor: pointer;
-  border-radius: 4px;
-  transition: color var(--imago-ease-fast), background var(--imago-ease-fast);
-  padding: 0;
-
-  &:hover {
-    color: var(--imago-text-secondary);
-    background: rgba(148 163 184 / 0.1);
-  }
-}
-
-.thinking-indicator {
-  padding: 0 0 4px;
-  color: var(--imago-text-dim);
-}
-
-.text-part {
-  width: min(100%, 72ch);
-  margin-top: 16px;
-  white-space: pre-wrap;
-  line-height: 1.65;
-  word-break: break-word;
-  overflow-wrap: break-word;
-}
-
-.assistant-content :deep(.reasoning-container),
-.assistant-content :deep(.tool-call-item),
-.assistant-content :deep(.part-meta-item) {
-  width: min(100%, 72ch);
-}
-
-.text-part :deep(p) {
-  margin: 0 0 10px;
-}
-
-.text-part :deep(p:last-child) {
-  margin-bottom: 0;
-}
-
-.text-part :deep(h1),
-.text-part :deep(h2),
-.text-part :deep(h3),
-.text-part :deep(h4) {
-  margin: 12px 0 6px;
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-.text-part :deep(code) {
-  background: var(--imago-border-light);
-  border: 1px solid var(--imago-border-soft);
-  padding: 1px 5px;
-  border-radius: var(--imago-radius-xs);
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  font-size: 0.875em;
-  word-break: break-all;
-}
-
-.text-part :deep(pre) {
-  background: var(--imago-bg-code);
-  padding: 12px 16px;
-  border-radius: var(--imago-radius-md);
-  overflow-x: auto;
-  margin: 10px 0;
-  font-size: 0.875em;
-  max-height: 400px;
-}
-
-.text-part :deep(pre code) {
-  background: none;
-  border: none;
-  padding: 0;
-  word-break: normal;
-}
-
-.text-part :deep(ul),
-.text-part :deep(ol) {
-  padding-left: 22px;
-  margin: 4px 0 10px;
-}
-
-.text-part :deep(li) {
-  margin-bottom: 3px;
-}
-
-.text-part :deep(blockquote) {
-  border-left: 3px solid var(--imago-border-dim);
-  margin: 8px 0;
-  padding: 6px 12px;
-  color: var(--imago-text-muted);
-  background: var(--imago-border-subtle);
-  border-radius: 0 var(--imago-radius-sm) var(--imago-radius-sm) 0;
-}
-
-.text-part :deep(table) {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 10px 0;
-  font-size: 13px;
-}
-
-.text-part :deep(th),
-.text-part :deep(td) {
-  border: 1px solid var(--imago-border-soft);
-  padding: 6px 10px;
-  text-align: left;
-}
-
-.text-part :deep(th) {
-  background: var(--imago-bg-raised);
-  font-weight: 600;
-}
-
-.text-part :deep(tr:nth-child(even)) {
-  background: var(--imago-border-subtle);
-}
-
-.text-part :deep(img) {
-  width: min(100%, 440px);
-  max-width: 100%;
-  max-height: 248px;
-  height: auto;
-  aspect-ratio: auto;
-  object-fit: contain;
-  border-radius: var(--imago-radius-sm);
-  display: block;
-  border: 1px solid var(--imago-border-soft);
-  background: var(--imago-bg-raised);
-}
-
-/* ── Input / composer region ─────────────────────────────────────────────── */
-
-.input-area {
-  padding: 12px 20px 16px;
-  background: var(--imago-bg-void);
-
-}
-
-.input-container {
-  max-width: 760px;
-  margin: 0 auto;
-  position: relative;
-}
-
-.todo-dock {
+.todo-dock,
+.revert-dock,
+.followup-dock {
   padding: 10px 12px;
 }
 
-.todo-dock__preview {
+.todo-dock__preview,
+.followup-dock__preview {
   max-width: 55%;
 }
 
-.todo-dock__list {
+.todo-dock__list,
+.followup-dock__list {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1451,16 +911,9 @@ onUnmounted(() => {
   overflow-y: auto;
 }
 
-.todo-dock__item {
+.todo-dock__item,
+.followup-dock__item {
   align-items: flex-start;
-}
-
-.revert-dock {
-  padding: 10px 12px;
-}
-
-.followup-dock {
-  padding: 10px 12px;
 }
 
 .followup-dock__header {
@@ -1472,10 +925,6 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.followup-dock__preview {
-  max-width: 55%;
-}
-
 .followup-dock__toggle {
   transition: transform 0.15s ease;
 }
@@ -1484,40 +933,15 @@ onUnmounted(() => {
   transform: rotate(180deg);
 }
 
-.followup-dock__list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 180px;
-  overflow-y: auto;
+.imago-dock--warning {
+  border-color: var(--imago-warning-border, rgba(245, 158, 11, 0.18));
+  background: var(--imago-warning-bg, rgba(245, 158, 11, 0.06));
 }
 
-.followup-dock__item {
-  min-width: 0;
-}
-
-.imago-dock {
-  background: var(--imago-bg-surface);
-  border: 1px solid var(--imago-border-soft);
-  border-radius: var(--imago-radius-lg);
-}
-
-.child-session-input-disabled {
-  width: 100%;
-  padding: 14px 16px;
-}
-
-/* ── Responsive ──────────────────────────────────────────────────────────── */
-
-@media (max-width: 1280px) {
-  .messages-container {
-    padding-inline: 20px;
-  }
-}
-
-@media (max-width: 900px) {
-  .messages-container {
-    padding-inline: 16px;
-  }
-}
+.text-grey-7 { color: rgba(255, 255, 255, 0.42); }
+.text-grey-5 { color: var(--imago-text-muted, #a1a1aa); }
+.text-caption { font-size: 12px; line-height: 1.4; }
+.text-body2 { font-size: 14px; line-height: 1.4; }
+.text-weight-medium { font-weight: 500; }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

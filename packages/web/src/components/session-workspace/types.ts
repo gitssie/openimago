@@ -225,3 +225,72 @@ export type StoryEditIntent =
   | { kind: 'regenerate-shot'; episodeId: string; shotId: string }
   | { kind: 'regenerate-run'; episodeId: string; runId: string }
   | { kind: 'open-artifact'; episodeId: string; artifactId: string }
+
+// ── ProjectWorkspaceGrid shared types (ADR 0003, openimago-nhp / openimago-1a3) ─
+//
+// These shapes back the workspace grid's three-column layout (left sessions /
+// story elements · center tab content · right output preview / status). The
+// page composes data into these and forwards to the layout + sub-panels.
+
+export interface ShotOutputItem {
+  id: string
+  url: string
+  filename: string
+  kind: 'image' | 'video' | 'audio'
+  timeLabel: string
+  promptText: string
+  /** Optional richer fields — only rendered when the page provides them. */
+  model?: string | null
+  resolution?: string | null
+  durationLabel?: string | null
+}
+
+export type StoryElementKind = 'character' | 'scene' | 'prop' | 'reference'
+
+export interface StoryElement {
+  id: string
+  title: string
+  preview: string
+  thumbnailUrl: string | null
+  kind: StoryElementKind
+  /** Free-form sync state — page maps from real asset/workspace file sync. */
+  syncState?: 'synced' | 'pending' | 'error' | null
+  timeLabel?: string
+}
+
+export type WorkspaceTabId =
+  | 'overview'
+  | 'storyboard'
+  | 'timeline'
+  | 'edit'
+  | 'audio'
+  | 'exports'
+
+export type CenterTabId = 'prompt' | 'camera' | 'motion' | 'style' | 'negative'
+
+export interface AssistantStatus {
+  label: string
+  tone: 'idle' | 'busy' | 'connected' | 'error'
+}
+
+export interface SessionCardItem {
+  id: string
+  title: string
+  preview: string
+  timeLabel: string
+  clockLabel: string
+  meta: string
+  active: boolean
+}
+
+// ── AI outputs panel (shared by both redesigned workspaces) ───────────────
+
+export interface AIOutputItem {
+  id: string
+  url?: string | null
+  filename?: string
+  kind: 'image' | 'video' | 'audio'
+  timeLabel: string
+  prompt?: string
+  model?: string | null
+}
