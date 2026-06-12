@@ -816,7 +816,7 @@ export function useAgentSession(
             (p: PermissionRequest) => p.tool?.callID === toolPart.callID && p.sessionID === sid
           );
           const hasLiveQuestion = questions.some(
-            (q: QuestionRequest) => (q.tool?.callID === toolPart.callID || toolPart.tool === 'question' || toolPart.tool === 'ask_question') && q.sessionID === sid
+            (q: QuestionRequest) => q.sessionID === sid || q.tool?.callID === toolPart.callID
           );
           if (!hasLivePermission && !hasLiveQuestion) {
             const runningState = toolPart.state as ToolStateRunning;
@@ -830,9 +830,14 @@ export function useAgentSession(
           }
         }
 
-        const pendingQ = questions.find((q: QuestionRequest) => q.sessionID === sid);
         const runningCallIDs = new Set(
           runningToolParts.filter(p => p.state.status === 'running').map(p => p.callID)
+        );
+        const hasRunningQuestionTool = runningToolParts.some(
+          p => p.state.status === 'running' && (p.tool === 'question' || p.tool === 'ask_question')
+        );
+        const pendingQ = questions.find(
+          (q: QuestionRequest) => q.sessionID === sid || (q.tool?.callID ? runningCallIDs.has(q.tool.callID) : hasRunningQuestionTool)
         );
         const pendingP = permissions.find(
           (p: PermissionRequest) => p.sessionID === sid && (p.tool?.callID ? runningCallIDs.has(p.tool.callID) : true)
