@@ -48,9 +48,9 @@
                   type="button"
                   class="prompt-input__icon-btn"
                   aria-label="添加附件"
-                  @click="handleAttachClick"
                 >
                   <OiIcon name="plus" :size="14" />
+                  <ImagePickerPopup @select="handleAttachmentSelect" />
                 </button>
                 <button
                   type="button"
@@ -93,9 +93,12 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import ImagePickerPopup from 'src/components/ImagePickerPopup.vue'
 import PromptInput from 'src/components/PromptInput.vue'
 import type { ComposerAttachment } from 'src/components/PromptInput.vue'
 import OiIcon from 'src/components/ui/OiIcon.vue'
+
+type AttachmentType = 'image' | 'audio' | 'video' | 'text'
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -148,8 +151,8 @@ function handleSubmit(value: string): void {
   draft.value = ''
 }
 
-function handleAttachClick(): void {
-  inputRef.value?.openFilePicker?.()
+function handleAttachmentSelect(type: AttachmentType): void {
+  inputRef.value?.openFilePicker?.(type)
 }
 </script>
 

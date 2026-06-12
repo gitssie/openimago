@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createI18n } from 'vue-i18n'
 
 import ChatInputDock from 'src/components/workspace/ChatInputDock.vue'
+import ImagePickerPopup from 'src/components/ImagePickerPopup.vue'
 import PromptInput from 'src/components/PromptInput.vue'
 
 function makeI18n() {
@@ -22,6 +23,10 @@ function makeI18n() {
         },
         gallery: {
           composerPlaceholder: 'Type an idea, paste a script, or describe the video you want...',
+          typeAudio: '音频',
+          typeImage: '图片',
+          typeText: '文本',
+          typeVideo: '视频',
         },
       },
     },
@@ -54,6 +59,7 @@ describe('ChatInputDock', () => {
     const leadingControls = promptInput.findAll('.prompt-input__bar-left .prompt-input__icon-btn, .prompt-input__bar-left .prompt-input__select')
     expect(leadingControls).toHaveLength(4)
     expect(leadingControls[0]?.attributes('aria-label')).toBe('添加附件')
+    expect(promptInput.findComponent(ImagePickerPopup).exists()).toBe(true)
     expect(promptInput.text()).toContain('GPT-4o Mini')
     expect(promptInput.text()).toContain('Skill')
     expect(promptInput.text()).toContain('元素')
@@ -65,12 +71,20 @@ describe('ChatInputDock', () => {
     expect(wrapper.findComponent(PromptInput).props('placeholder')).toBe('Describe a workspace task…')
   })
 
-  it('keeps the default attach control wired to PromptInput file picker', async () => {
+  it.each([
+    ['image', 'image/*'],
+    ['audio', 'audio/*'],
+    ['video', 'video/*'],
+    ['text', 'text/plain,application/pdf,.md,.csv,.json'],
+  ] as const)('opens the %s file picker from the upload type menu', (type, accept) => {
     const clickSpy = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => undefined)
     const wrapper = mountDock()
+    const picker = wrapper.findComponent(ImagePickerPopup)
 
-    await wrapper.find('.prompt-input__icon-btn').trigger('click')
+    picker.vm.$emit('select', type)
 
+    const fileInput = wrapper.find<HTMLInputElement>('input[type="file"]')
+    expect(fileInput.element.accept).toBe(accept)
     expect(clickSpy).toHaveBeenCalledTimes(1)
     clickSpy.mockRestore()
   })
