@@ -4,10 +4,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import AgentMarkdownRender from '../../../components/session-workspace/AgentMarkdownRender.vue'
 
 const renderMock = vi.hoisted(() => vi.fn(() => '<svg data-testid="mermaid-svg"></svg>'))
+const initializeMock = vi.hoisted(() => vi.fn())
 
 vi.mock('mermaid', () => ({
   default: {
-    initialize: vi.fn(),
+    initialize: initializeMock,
     render: renderMock,
   },
 }))
@@ -27,6 +28,7 @@ vi.mock('markstream-vue', () => ({
 describe('AgentMarkdownRender', () => {
   afterEach(() => {
     renderMock.mockClear()
+    initializeMock.mockClear()
   })
 
   it('renders final Mermaid fences as diagram containers instead of code blocks', async () => {
@@ -42,6 +44,26 @@ describe('AgentMarkdownRender', () => {
     })
 
     expect(wrapper.find('pre code.language-mermaid').exists()).toBe(false)
+  })
+
+  it('initializes Mermaid with transparent diagram backgrounds', async () => {
+    const wrapper = mount(AgentMarkdownRender, {
+      props: {
+        content: '```mermaid\nflowchart TD\n  A --> B\n```',
+        final: true,
+      },
+    })
+
+    await vi.waitFor(() => {
+      expect(wrapper.find('.agent-mermaid svg').exists()).toBe(true)
+    })
+
+    expect(initializeMock).toHaveBeenCalledWith(expect.objectContaining({
+      themeVariables: expect.objectContaining({
+        background: 'transparent',
+        mainBkg: 'transparent',
+      }),
+    }))
   })
 
   it('keeps non-Mermaid fences as code blocks', () => {

@@ -27,6 +27,17 @@ function ensureMermaidInitialized() {
     theme: 'dark',
     securityLevel: 'strict',
     fontFamily: 'Inter, system-ui, sans-serif',
+    themeVariables: {
+      background: 'transparent',
+      mainBkg: 'transparent',
+      primaryColor: 'transparent',
+      secondaryColor: 'rgba(8, 13, 22, 0.35)',
+      tertiaryColor: 'rgba(8, 13, 22, 0.25)',
+      clusterBkg: 'rgba(8, 13, 22, 0.18)',
+      clusterBorder: 'rgba(0, 229, 255, 0.18)',
+      primaryBorderColor: 'rgba(0, 229, 255, 0.28)',
+      lineColor: 'rgba(148, 233, 255, 0.78)',
+    },
   })
   initialized = true
 }
@@ -71,9 +82,10 @@ onMounted(() => { void renderDiagram() })
 .agent-mermaid {
   margin: 12px 0;
   overflow-x: auto;
-  border: 1px solid rgba(0 240 255 / 0.16);
+  border: 1px solid rgba(0 229 255 / 0.16);
   border-radius: var(--imago-radius-md);
-  background: linear-gradient(145deg, rgba(255 255 255 / 0.035), rgba(0 240 255 / 0.025));
+  background: rgba(8 13 22 / 0.45);
+  box-shadow: 0 0 24px rgba(0 229 255 / 0.055);
 }
 
 .agent-mermaid__diagram {
@@ -86,6 +98,7 @@ onMounted(() => { void renderDiagram() })
 .agent-mermaid__diagram :deep(svg) {
   max-width: 100%;
   height: auto;
+  background: transparent !important;
 }
 
 .agent-mermaid__fallback {
