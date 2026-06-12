@@ -145,7 +145,7 @@
                   <AgentSimplePart v-else-if="part.type === 'snapshot'" icon="history" title="Snapshot" :description="part.snapshot ?? ''" />
                   <AgentSimplePart v-else-if="part.type === 'retry'" icon="refresh" title="Retry" :description="`Attempt ${(part as { attempt?: number }).attempt}: ${formatRetryError((part as { error?: unknown }).error)}`" />
                   <div v-else-if="part.type === 'text'" class="text-part">
-                    <MarkdownRender
+                    <AgentMarkdownRender
                       :content="partText.get(part.id) ?? (part as { text: string }).text ?? ''"
                       :final="!(isLoading && isActiveAssistantTurn(turn))"
                     />
@@ -190,8 +190,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { QInfiniteScroll } from 'quasar'
 import { useI18n } from 'vue-i18n'
 import type { AgentPart, FilePart, TextPart, ToolPart } from '@opencode-ai/sdk/v2'
-import { MarkdownRender } from 'markstream-vue'
 import 'markstream-vue/index.css'
+import AgentMarkdownRender from './AgentMarkdownRender.vue'
 import OiIcon from 'src/components/ui/OiIcon.vue'
 import AgentReasoning from 'src/components/AgentReasoning.vue'
 import AgentToolCall from 'src/components/AgentToolCall.vue'
