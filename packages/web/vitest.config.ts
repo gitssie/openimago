@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 import { quasar, transformAssetUrls } from '@quasar/vite-plugin'
 import { resolve } from 'path'
@@ -22,6 +22,7 @@ export default defineConfig({
     environment: 'happy-dom',
     setupFiles: ['./src/__tests__/setup.ts'],
     css: true,
+    exclude: [...configDefaults.exclude, 'e2e/**'],
   },
   server: {
     fs: {
