@@ -1,5 +1,5 @@
 <template>
-  <div class="agent-question-dock imago-dock">
+  <div class="agent-question-dock imago-dock" :class="dockPlacementClass">
     <!-- Header: "1 of N questions" + progress dots -->
     <div class="question-header row items-center no-wrap q-px-sm q-pt-xs">
       <span class="text-caption text-grey-6 col">{{ t('agentQuestion.questionCount', { current: tabIndex + 1, total }) }}</span>
@@ -159,6 +159,7 @@ const props = defineProps<{
   request: QuestionRequest;
   onReply: (requestID: string, answers: QuestionAnswer[]) => Promise<void>;
   onReject: (requestID: string) => Promise<void>;
+  placement?: 'popup' | 'inline';
 }>();
 const { t } = useI18n();
 
@@ -177,6 +178,7 @@ const questions = computed(() => props.request.questions);
 const total = computed(() => questions.value.length);
 const currentQuestion = computed(() => questions.value[tabIndex.value]!);
 const isLast = computed(() => tabIndex.value >= total.value - 1);
+const dockPlacementClass = computed(() => `agent-question-dock--${props.placement ?? 'inline'}`);
 
 const customText = computed({
   get: () => customTexts.value[tabIndex.value] ?? '',
@@ -296,6 +298,11 @@ async function rejectAll() {
 
 <style lang="scss" scoped>
 .agent-question-dock {
+  background: var(--imago-bg-panel);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.agent-question-dock--popup {
   position: absolute;
   bottom: 100%;
   left: 50%;
@@ -303,8 +310,13 @@ async function rejectAll() {
   width: calc(100% - 32px);
   max-width: 480px;
   margin-bottom: 12px;
-  background: var(--imago-bg-panel);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.agent-question-dock--inline {
+  position: relative;
+  width: 100%;
+  max-width: none;
+  margin: 0;
 }
 
 .question-header {

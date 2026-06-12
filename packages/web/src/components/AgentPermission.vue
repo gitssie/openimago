@@ -1,5 +1,5 @@
 <template>
-  <div class="agent-permission-dock imago-dock">
+  <div class="agent-permission-dock imago-dock" :class="dockPlacementClass">
     <!-- Header -->
     <div class="perm-header row items-center no-wrap q-px-sm q-pt-xs q-pb-xs">
       <q-icon name="security" size="16px" color="warning" class="q-mr-xs" />
@@ -74,10 +74,13 @@ import type { PermissionRequest } from '@opencode-ai/sdk/v2';
 const props = defineProps<{
   request: PermissionRequest;
   onRespond: (requestID: string, response: 'once' | 'always' | 'reject') => Promise<void>;
+  placement?: 'popup' | 'inline';
 }>();
 
 const sending = ref(false);
 const { t } = useI18n();
+
+const dockPlacementClass = computed(() => `agent-permission-dock--${props.placement ?? 'inline'}`);
 
 const PERMISSION_LABELS: Record<string, string> = {
   read: t('agentPermission.readFile'),
@@ -112,6 +115,11 @@ async function respond(response: 'once' | 'always' | 'reject') {
 
 <style lang="scss" scoped>
 .agent-permission-dock {
+  background: var(--imago-bg-panel);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.agent-permission-dock--popup {
   position: absolute;
   bottom: 100%;
   left: 50%;
@@ -119,8 +127,13 @@ async function respond(response: 'once' | 'always' | 'reject') {
   width: calc(100% - 32px);
   max-width: 480px;
   margin-bottom: 12px;
-  background: var(--imago-bg-panel);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.agent-permission-dock--inline {
+  position: relative;
+  width: 100%;
+  max-width: none;
+  margin: 0;
 }
 
 .perm-header {
