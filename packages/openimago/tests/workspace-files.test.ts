@@ -388,3 +388,61 @@ describe("workspace-files service auth (x-api-key)", () => {
     expect(body.error.code).toBe("NOT_FOUND")
   })
 })
+
+// ---------------------------------------------------------------------------
+// Mounting regression: the real createApp() must expose the workspace-files
+// routes. Without this, /api/platform/workspace-files falls through to the
+// proxy catch-all (JWT-only) and the service channel 401s — the e2e bug
+// that left the AI-outputs panel empty (openimago-y21b).
+// ---------------------------------------------------------------------------
+describe("workspace-files routes are mounted in the production app", () => {
+  test("POST /api/platform/workspace-files is reachable via createApp() service channel", async () => {
+    const { createApp } = await import("../src/server/app")
+    const realApp = createApp()
+
+    const reg = await registerUser("wsfmount@example.com")
+    await ensureSession(SESSION_ID, reg.workspaceId)
+
+    const res = await realApp.fetch(
+      new Request("http://localhost/api/platform/workspace-files", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": SERVICE_API_KEY,
+        },
+        body: JSON.stringify({
+          sessionId: SESSION_ID,
+          kind: "image",
+          mime: "image/png",
+          accessPreviewHref: "https://picsum.photos/seed/mount/512",
+        }),
+      }),
+    )
+
+    // 201 proves the route is mounted AND the service-auth channel works.
+    // A 401/404 here means the route was never registered in app.ts.
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as Record<string, any>
+    expect(body.workspaceFileId).toMatch(/^wsf_/)
+  })
+
+  test("GET /api/platform/sessions/:id/workspace-files is reachable via createApp()", async () => {
+    const { createApp } = await import("../src/server/app")
+    const realApp = createApp()
+
+    const reg = await registerUser("wsfmountlist@example.com")
+    await ensureSession(SESSION_ID, reg.workspaceId)
+
+    const res = await realApp.fetch(
+      new Request(
+        `http://localhost/api/platform/sessions/${SESSION_ID}/workspace-files`,
+        { headers: { authorization: `Bearer ${reg.token}` } },
+      ),
+    )
+
+    // 200 proves the GET route is mounted and not shadowed by workDir/outputs.
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, any>
+    expect(Array.isArray(body.workspaceFiles)).toBe(true)
+  })
+})
