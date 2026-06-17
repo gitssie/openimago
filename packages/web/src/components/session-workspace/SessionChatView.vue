@@ -522,9 +522,6 @@ function getAssistantCopyText(message: DisplayMessage | null): string {
       if (part.type === 'text') {
         return [props.partText.get(part.id) ?? (part as { text: string }).text ?? '']
       }
-      if (part.type === 'reasoning' && (part as { text?: string }).text?.trim()) {
-        return [(part as { text: string }).text]
-      }
       return []
     })
     .map((value) => value.trim())
