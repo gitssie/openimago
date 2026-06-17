@@ -301,8 +301,10 @@ import TopbarActionButton from 'src/components/workspace/TopbarActionButton.vue'
 import WorkspaceTopBar from 'src/components/workspace/WorkspaceTopBar.vue'
 import { UILayout, UILayoutDrawer, UILayoutPage, UILayoutPageContainer } from 'src/components/ui/layout'
 import { useAgentSession, type DisplayMessage } from 'src/composables/useAgentSession'
+import { api } from 'src/api/client'
 import type { SessionItem } from 'src/services/agents'
 import type { AIOutputItem } from 'src/components/session-workspace/types'
+import { workspaceFileToAIOutputItem, mergeAIOutputItems } from 'src/utils/session-output-mapper'
 
 // ── Local types ─────────────────────────────────────────────────────────────
 
@@ -336,6 +338,7 @@ const followupCollapsed = ref(false)
 const isSessionSwitching = ref(false)
 const draftInputMessage = ref('')
 const selectedResultId = ref<string | null>(null)
+const sessionFileItems = ref<AIOutputItem[]>([])
 const sidebarCollapsed = ref(false)
 const rightPanelVisible = ref(true)
 const activeWorkspaceTab = ref<string>('conversation')
@@ -502,7 +505,28 @@ const generatedResults = computed<AIOutputItem[]>(() => {
     .sort((left, right) => right.timeLabel.localeCompare(left.timeLabel))
 })
 
-const aiOutputItems = computed<AIOutputItem[]>(() => generatedResults.value)
+// AI outputs panel data: DB-backed workspace-files (survive refresh) merged
+// with inline `file` message parts (uploads / non-tool media). API items lead
+// and win de-dup so tool products always appear even before history reloads.
+const aiOutputItems = computed<AIOutputItem[]>(() =>
+  mergeAIOutputItems(sessionFileItems.value, generatedResults.value),
+)
+
+async function fetchSessionFiles(): Promise<void> {
+  const sid = sessionId.value
+  if (!sid) {
+    sessionFileItems.value = []
+    return
+  }
+  try {
+    const files = await api.sessionWorkspaceFiles(sid)
+    // Guard against a race where the session switched mid-flight.
+    if (sessionId.value !== sid) return
+    sessionFileItems.value = files.map((wf) => workspaceFileToAIOutputItem(wf, formatResultTime))
+  } catch {
+    if (sessionId.value === sid) sessionFileItems.value = []
+  }
+}
 
 // ── Session helpers ────────────────────────────────────────────────────────
 
@@ -737,6 +761,20 @@ watch(
     else if (!sid && sessionId.value) void switchSession('')
   },
 )
+
+// Pull DB-backed workspace files whenever the active session changes
+// (initial load, route change, sidebar switch).
+watch(
+  sessionId,
+  () => { void fetchSessionFiles() },
+  { immediate: true },
+)
+
+// A generation turn just finished (isLoading true → false): the media tool may
+// have registered new workspace files, so re-pull to surface them in the panel.
+watch(isLoading, (loading, wasLoading) => {
+  if (wasLoading && !loading) void fetchSessionFiles()
+})
 
 onUnmounted(() => {
   stopEventSubscription()
