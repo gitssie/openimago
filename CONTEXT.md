@@ -69,6 +69,33 @@ All sessions in this deployment have `project_id = "global"` because directories
 
 ---
 
+## Story Domain
+
+The structured creative state of a Project, authored by the AI agent and stored as schema JSON files in the project directory (ADR 0004). The filesystem is the source of truth; the frontend reads these via the `projectStory*` APIs.
+
+### Bible
+Global, episode-independent canon for a Project: world settings, **Characters**, **Scenes**, and **Style Seeds**. Stored in `story/bible.json`. Characters/Scenes/StyleSeeds are reusable definitions referenced by Shots.
+
+### Series
+The index of Episodes for a Project plus overall status. Stored in `story/series.json`.
+
+### Episode
+One unit of the Series — a script with a logline, synopsis, and an ordered list of **Shots**. Stored in `story/episodes/ep_NNN.json`. A Project may have many Episodes; the workspace shows one **current Episode** at a time.
+
+### Scene
+A reusable *setting* defined in the Bible (e.g. "neon-alley"): location, mood, lighting. A Scene is **not** a storyboard card. Shots reference a Scene via `sceneId`. (Historical note: earlier UI copy called storyboard cards "场景" — that was wrong; the cards are Shots.)
+
+### Shot (镜头)
+A single storyboard frame within an Episode (`EpisodeShot`): `shotNumber`, the `sceneId` it takes place in, a `description` (director's notes), camera/lighting notes, dialog, referenced Characters, and a `status` (`pending → in_progress → generated → review → approved`). A Shot has **no title field** — it is identified by its `shotNumber` and `description`. The storyboard panel's cards are Shots of the current Episode.
+
+### Run (生成运行)
+One execution of a generation tool, recorded in `story/runs/ep_NNN.runs.json` (`GenerationRun`). Carries the resolved params and, on success, a `result` with `artifactId`, `kind`, and `access.thumbnail`/`access.preview` URLs. A Run links to a Shot via `shotId` — but Runs that generate Bible-level concept art (Character/Scene design) have `shotId: null` and link only to a Workflow node. A Shot's generated media is the set of completed Runs whose `shotId` matches it.
+
+### Artifact / Output
+Agent-generated media (image/video/audio) produced by a Run, scanned from the project `outputs/` directory and exposed via the `projectOutputs` API. The right-hand "AI 产出" panel lists these. Distinct from an **Asset** (user-uploaded reference, see above).
+
+---
+
 ## Visual Direction
 
 暗黑创意工坊 (Dark + Neon)。深色背景 + 高对比度 + 霓虹点缀。暗底让用户生成的图片/视频成为视觉焦点。字体倾向几何感无衬线体。动效精简而有冲击力：页面入场交错动画、hover 发光效果、消息流平滑滚动。
