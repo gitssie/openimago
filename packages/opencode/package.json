@@ -9,7 +9,7 @@
     "build": "bun build src/plugins/openimago.ts --target=bun --outfile=dist/plugins/openimago.js",
     "test": "bun test",
     "check": "bun run typecheck && bun run build && bun test",
-    "deploy:plugin": "bun run build && docker cp dist/plugins/openimago.js opencode-serve:/root/.config/opencode/plugins/openimago.js && docker cp opencode.json opencode-serve:/root/.config/opencode/opencode.json && docker restart opencode-serve"
+    "deploy:plugin": "bun run build && docker exec opencode-serve sh -c 'rm -rf /root/.config/opencode/tools /root/.config/opencode/lib /root/.config/opencode/plugins && rm -f /root/.config/opencode/index.js /root/.config/opencode/index.d.ts /root/.config/opencode/index.js.map && mkdir -p /root/.config/opencode/plugins' && docker cp dist/plugins/openimago.js opencode-serve:/root/.config/opencode/plugins/openimago.js && docker cp opencode.json opencode-serve:/root/.config/opencode/opencode.json && docker restart opencode-serve"
   },
   "dependencies": {
     "@google/genai": "^2.8.0",
