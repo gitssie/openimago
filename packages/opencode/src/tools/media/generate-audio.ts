@@ -1,16 +1,21 @@
 import { tool, type ToolDefinition } from "@opencode-ai/plugin"
 import { Effect } from "effect"
 import { MediaGenerationService } from "../../lib/media/service.js"
+import {
+  WorkspaceFilesClient,
+  buildMediaToolOutput,
+} from "../../lib/media/workspace-files.js"
 import { mediaDefaultLayer } from "../../lib/media/layer.js"
-import { jsonResult } from "../../lib/tool-result.js"
 
 /**
- * creates the `imago_generate_audio` tool.
+ * creates the `audio_generate` tool.
  *
- * Generates audio (TTS) via the Effect IOC media service chain:
- *   MediaGenerationService → MediaProviderRouter → MediaProvider
+ * Generates audio (TTS) via the Effect IOC media service chain, registers the
+ * result as a workspace file, and returns a contract-compliant
+ * MediaToolOutputV1 (see docs/integration/media-tool-integration-contract.md)
+ * as `state.output` so the openimago frontend renders an inline media card.
  *
- * Provider selection goes through the router, not if/else inside the tool.
+ * The tool name uses the `audio_*` prefix the frontend detects.
  */
 export function createGenerateAudioTool(): ToolDefinition {
   return tool({
@@ -45,33 +50,53 @@ export function createGenerateAudioTool(): ToolDefinition {
         .optional()
         .describe("Workspace directory for billing context"),
     },
-    async execute(args) {
+    async execute(args, ctx) {
+      const sessionId = args.sessionId ?? ctx.sessionID
+      const model = args.model ?? "mock-audio-model"
+
       const effect = Effect.gen(function* () {
         const svc = yield* MediaGenerationService
-        return yield* svc.generateAudio({
-          model: args.model ?? "mock-audio-model",
+        const result = yield* svc.generateAudio({
+          model,
           text: args.prompt,
           voiceId: args.voiceId,
           outputFormat: args.outputFormat,
-          sessionId: args.sessionId,
-          directory: args.directory,
+          sessionId,
+          directory: args.directory ?? ctx.directory,
+        })
+
+        const meta = (result.metadata ?? {}) as Record<string, unknown>
+        const provider = meta.provider as string | undefined
+        const mime = (meta.mime as string | undefined) ?? "audio/mpeg"
+
+        const client = yield* WorkspaceFilesClient
+        const registered = yield* client.register({
+          sessionId,
+          kind: "audio",
+          mime,
+          accessPreviewHref: result.url,
+          ...(args.outputName ? { filename: args.outputName } : {}),
+          ...(typeof meta.duration === "number" ? { duration: meta.duration } : {}),
+          prompt: args.prompt,
+          ...(provider ? { provider } : {}),
+          model,
+          metadata: {
+            outputFormat: args.outputFormat,
+            ...(args.voiceId ? { voiceId: args.voiceId } : {}),
+          },
+        })
+
+        return buildMediaToolOutput({
+          kind: "audio",
+          registered,
+          prompt: args.prompt,
+          provider,
+          model,
         })
       }).pipe(Effect.provide(mediaDefaultLayer))
 
-      const result = await Effect.runPromise(effect)
-
-      return jsonResult(
-        {
-          kind: "audio",
-          url: result.url,
-          provider: (result.metadata as Record<string, unknown>)?.provider,
-          model: (result.metadata as Record<string, unknown>)?.model,
-          ...(args.outputName ? { outputName: args.outputName } : {}),
-          ...(args.voiceId ? { voiceId: args.voiceId } : {}),
-          outputFormat: args.outputFormat,
-        },
-        `Audio generated — ${args.prompt.slice(0, 50)}${args.prompt.length > 50 ? "…" : ""}`,
-      ).output
+      const output = await Effect.runPromise(effect)
+      return JSON.stringify(output)
     },
   })
 }

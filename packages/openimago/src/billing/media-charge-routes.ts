@@ -1,55 +1,18 @@
 import { Hono } from "hono"
-import { logger } from "../server/logger"
 import {
   parseChargeBody,
   parseRefundBody,
   executePrecharge,
   executeRefund,
 } from "./media-charge-commands"
-
-// ── Internal API key validation ──────────────────────────────────────────
-
-/**
- * Internal API key for service-to-service media charge requests.
- *
- * Must be set via OPENIMAGO_INTERNAL_API_KEY env var.
- * If not set, the route will reject all requests with a clear error.
- */
-function getInternalApiKey(): string | undefined {
-  return process.env.OPENIMAGO_INTERNAL_API_KEY
-}
+import { validateServiceApiKey } from "../server/service-auth"
 
 // ── Routes ───────────────────────────────────────────────────────────────
 
 export const mediaChargeRoutes = new Hono()
 
-function validateApiKey(c: any): Response | null {
-  const expectedKey = getInternalApiKey()
-  if (!expectedKey) {
-    logger.error("media-charge: OPENIMAGO_INTERNAL_API_KEY not configured")
-    return c.json(
-      {
-        error: {
-          code: "CONFIGURATION_REQUIRED",
-          message:
-            "Internal API key not configured. Set OPENIMAGO_INTERNAL_API_KEY.",
-        },
-      },
-      500,
-    )
-  }
-
-  const apiKey = c.req.header("x-api-key")
-  if (!apiKey || apiKey !== expectedKey) {
-    logger.warn("media-charge: invalid or missing x-api-key")
-    return c.json(
-      { error: { code: "UNAUTHORIZED", message: "Invalid API key" } },
-      401,
-    )
-  }
-
-  return null // auth passed
-}
+/** Validate the x-api-key service auth header (OPENIMAGO_INTERNAL_API_KEY). */
+const validateApiKey = validateServiceApiKey
 
 /**
  * POST /api/platform/billing/media-charge

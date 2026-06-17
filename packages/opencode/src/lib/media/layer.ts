@@ -16,6 +16,7 @@ import {
 } from "./service.js"
 import { MediaConfig, layer as configLayer } from "./config.js"
 import { BillingReporter, layer as billingLayer } from "./billing.js"
+import { WorkspaceFilesClient, layer as workspaceFilesLayer } from "./workspace-files.js"
 import { createGoogleProvider } from "./providers/google.js"
 import { createOpenAIProvider } from "./providers/openai.js"
 import { createFalImageProvider, createFalVideoProvider } from "./providers/fal.js"
@@ -89,10 +90,18 @@ export const mediaDefaultLayer = Layer.suspend(() => {
   )
 
   // Compose the full service stack
-  return serviceLayer.pipe(
+  const generationStack = serviceLayer.pipe(
     Layer.provide(routerLayer),
     Layer.provide(populatedRegistry),
     Layer.provide(billingLayer),
     Layer.provide(configLayer),
   )
+
+  // Workspace-files registration client (needs config for backend URL + key)
+  const workspaceFilesStack = workspaceFilesLayer.pipe(
+    Layer.provide(configLayer),
+  )
+
+  // Expose both MediaGenerationService and WorkspaceFilesClient to tools
+  return Layer.merge(generationStack, workspaceFilesStack)
 })

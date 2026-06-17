@@ -9,28 +9,32 @@ describe("tool registry", () => {
     expect(registry.imago_status.description).toContain("diagnostic")
   })
 
-  test("registers imago_generate_image media tool", () => {
+  test("registers image_generate media tool with contract prefix", () => {
     const registry = createToolRegistry()
 
-    expect(registry.imago_generate_image).toBeDefined()
-    expect(registry.imago_generate_image.description).toContain("image")
+    expect(registry.image_generate).toBeDefined()
+    expect(registry.image_generate.description).toContain("image")
   })
 
-  test("registers imago_generate_video media tool", () => {
+  test("registers video_generate media tool with contract prefix", () => {
     const registry = createToolRegistry()
 
-    expect(registry.imago_generate_video).toBeDefined()
-    expect(registry.imago_generate_video.description).toContain("video")
+    expect(registry.video_generate).toBeDefined()
+    expect(registry.video_generate.description).toContain("video")
   })
 
-  test("all expected tool names are present", () => {
+  test("media tool names use the frontend-detected media prefixes", () => {
     const registry = createToolRegistry()
     const names = Object.keys(registry)
 
     expect(names).toContain("imago_status")
-    expect(names).toContain("imago_generate_image")
-    expect(names).toContain("imago_generate_video")
-    expect(names).toContain("imago_generate_audio")
+    expect(names).toContain("image_generate")
+    expect(names).toContain("video_generate")
+    expect(names).toContain("audio_generate")
     expect(names.length).toBe(4)
+
+    // No legacy imago_generate_* names remain — they would not match the
+    // frontend's image_*/video_*/audio_* media detection.
+    expect(names.some((n) => n.startsWith("imago_generate_"))).toBe(false)
   })
 })

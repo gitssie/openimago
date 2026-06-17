@@ -52,7 +52,6 @@ async function ensureSession(id: string, workspaceId: string) {
 }
 
 async function buildWorkspaceFilesApp(): Promise<Hono> {
-  const { authMiddleware } = await import("../src/server/middleware")
   const { workspaceFilesRoutes, sessionWorkspaceFilesRoutes } = await import(
     "../src/workspace-files/routes"
   )
@@ -60,27 +59,25 @@ async function buildWorkspaceFilesApp(): Promise<Hono> {
   const a = new Hono()
   a.route("/auth", authRoutes)
 
-  const platform = new Hono()
-  platform.use("*", authMiddleware)
-  platform.route("/workspace-files", workspaceFilesRoutes)
-
-  const sessions = new Hono()
-  sessions.use("*", authMiddleware)
-  sessions.route("/sessions", sessionWorkspaceFilesRoutes)
-
-  a.route("/api/platform", platform)
-  a.route("/api/platform", sessions)
+  // Mount routes exactly as the production app does — each router owns its
+  // auth middleware (JWT and/or x-api-key service channel).
+  a.route("/api/platform/workspace-files", workspaceFilesRoutes)
+  a.route("/api/platform/sessions", sessionWorkspaceFilesRoutes)
 
   return a
 }
 
+const SERVICE_API_KEY = "test-service-key-wsf"
+
 beforeAll(async () => {
   await setup()
   await setupSessionTable()
+  process.env.OPENIMAGO_INTERNAL_API_KEY = SERVICE_API_KEY
   app = await buildWorkspaceFilesApp()
 })
 
 afterAll(async () => {
+  delete process.env.OPENIMAGO_INTERNAL_API_KEY
   await teardown()
 })
 
@@ -306,5 +303,88 @@ describe("workspace-files routes", () => {
     )
 
     expect(res.status).toBe(401)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Service auth channel (x-api-key) — for trusted backend callers (OpenCode plugin)
+// ---------------------------------------------------------------------------
+describe("workspace-files service auth (x-api-key)", () => {
+  test("registers a file with a valid x-api-key and no JWT", async () => {
+    const reg = await registerUser("wsfsvc@example.com")
+    await ensureSession(SESSION_ID, reg.workspaceId)
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/platform/workspace-files", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": SERVICE_API_KEY,
+        },
+        body: JSON.stringify({
+          sessionId: SESSION_ID,
+          kind: "image",
+          mime: "image/png",
+          filename: "svc.png",
+          width: 256,
+          height: 256,
+          accessPreviewHref: "http://cdn.example.com/svc-preview.png",
+          prompt: "service registered cat",
+          provider: "mock-image",
+          model: "mock-image-model",
+        }),
+      }),
+    )
+
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as Record<string, any>
+    expect(body.workspaceFileId).toMatch(/^wsf_/)
+    expect(body.result.kind).toBe("image")
+    expect(body.result.access.preview.href).toBe("http://cdn.example.com/svc-preview.png")
+    expect(body.result.provider).toBe("mock-image")
+  })
+
+  test("rejects when x-api-key is invalid", async () => {
+    const res = await app.fetch(
+      new Request("http://localhost/api/platform/workspace-files", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": "wrong-key",
+        },
+        body: JSON.stringify({
+          sessionId: SESSION_ID,
+          kind: "image",
+          mime: "image/png",
+          accessPreviewHref: "http://cdn.example.com/img.png",
+        }),
+      }),
+    )
+
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as Record<string, any>
+    expect(body.error.code).toBe("UNAUTHORIZED")
+  })
+
+  test("returns 404 for non-existent session on the service channel", async () => {
+    const res = await app.fetch(
+      new Request("http://localhost/api/platform/workspace-files", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": SERVICE_API_KEY,
+        },
+        body: JSON.stringify({
+          sessionId: "service-nonexistent-session",
+          kind: "image",
+          mime: "image/png",
+          accessPreviewHref: "http://cdn.example.com/img.png",
+        }),
+      }),
+    )
+
+    expect(res.status).toBe(404)
+    const body = (await res.json()) as Record<string, any>
+    expect(body.error.code).toBe("NOT_FOUND")
   })
 })

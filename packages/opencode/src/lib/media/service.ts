@@ -131,7 +131,7 @@ export const layer = Layer.effect(
           // Pre-charge: validate eligibility BEFORE calling provider
           const { sourceId } = yield* billing.reportPrecharge({
             usage: estimatedUsage,
-            toolName: "imago_generate_image",
+            toolName: "image_generate",
             sessionId: params.sessionId ?? "",
             directory: params.directory ?? "",
           })
@@ -143,7 +143,7 @@ export const layer = Layer.effect(
             // Provider failed after pre-charge — refund
             yield* billing.reportRefund({
               usage: estimatedUsage,
-              toolName: "imago_generate_image",
+              toolName: "image_generate",
               sessionId: params.sessionId ?? "",
               directory: params.directory ?? "",
               originalChargeSourceId: sourceId,
@@ -176,7 +176,7 @@ export const layer = Layer.effect(
           // Pre-charge: validate eligibility BEFORE calling provider
           const { sourceId } = yield* billing.reportPrecharge({
             usage: estimatedUsage,
-            toolName: "imago_generate_video",
+            toolName: "video_generate",
             sessionId: params.sessionId ?? "",
             directory: params.directory ?? "",
           })
@@ -188,7 +188,7 @@ export const layer = Layer.effect(
             // Provider failed after pre-charge — refund
             yield* billing.reportRefund({
               usage: estimatedUsage,
-              toolName: "imago_generate_video",
+              toolName: "video_generate",
               sessionId: params.sessionId ?? "",
               directory: params.directory ?? "",
               originalChargeSourceId: sourceId,
@@ -221,7 +221,7 @@ export const layer = Layer.effect(
           // Pre-charge: validate eligibility BEFORE calling provider
           const { sourceId } = yield* billing.reportPrecharge({
             usage: estimatedUsage,
-            toolName: "imago_generate_audio",
+            toolName: "audio_generate",
             sessionId: params.sessionId ?? "",
             directory: params.directory ?? "",
           })
@@ -243,7 +243,7 @@ export const layer = Layer.effect(
             // Provider failed after pre-charge — refund
             yield* billing.reportRefund({
               usage: estimatedUsage,
-              toolName: "imago_generate_audio",
+              toolName: "audio_generate",
               sessionId: params.sessionId ?? "",
               directory: params.directory ?? "",
               originalChargeSourceId: sourceId,

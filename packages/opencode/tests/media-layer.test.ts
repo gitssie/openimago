@@ -18,13 +18,13 @@ describe("Effect IOC media layer", () => {
       }).pipe(Effect.provide(mediaDefaultLayer)),
     )
 
-    expect(result.url).toStartWith("mock://image")
-    expect(result.url).toContain("prompt=")
-    expect(result.url).toContain("cat")
-    expect(result.url).toContain("skateboard")
+    // Loadable picsum.photos URL (per media-tool-integration-contract)
+    expect(result.url).toStartWith("https://picsum.photos/seed/")
+    expect(result.url).toContain("/1024/1024")
     expect(result.metadata).toBeDefined()
     expect((result.metadata as Record<string, unknown>).provider).toBe("mock-image")
     expect((result.metadata as Record<string, unknown>).model).toBe("mock-image-model")
+    expect((result.metadata as Record<string, unknown>).mime).toBe("image/jpeg")
   })
 
   test("mediaDefaultLayer generates mock video with exact model match", async () => {
@@ -38,9 +38,12 @@ describe("Effect IOC media layer", () => {
       }).pipe(Effect.provide(mediaDefaultLayer)),
     )
 
-    expect(result.url).toStartWith("mock://video")
+    // Loadable public sample MP4 (per media-tool-integration-contract)
+    expect(result.url).toStartWith("https://")
+    expect(result.url).toEndWith(".mp4")
     expect((result.metadata as Record<string, unknown>).provider).toBe("mock-video")
     expect((result.metadata as Record<string, unknown>).model).toBe("mock-video-model")
+    expect((result.metadata as Record<string, unknown>).mime).toBe("video/mp4")
   })
 
   test("unknown model falls back to first provider of requested kind", async () => {
@@ -55,7 +58,7 @@ describe("Effect IOC media layer", () => {
     )
 
     // Falls back to first image provider (mock-image)
-    expect(result.url).toStartWith("mock://image")
+    expect(result.url).toStartWith("https://picsum.photos/seed/")
     expect((result.metadata as Record<string, unknown>).provider).toBe("mock-image")
   })
 
@@ -149,12 +152,12 @@ describe("Effect IOC media layer", () => {
       }).pipe(Effect.provide(mediaDefaultLayer)),
     )
 
-    expect(result.url).toStartWith("mock://audio")
-    expect(result.url).toContain("text=")
-    expect(result.url).toContain("Hello")
+    // Loadable WAV data URI (per media-tool-integration-contract)
+    expect(result.url).toStartWith("data:audio/wav;base64,")
     expect(result.metadata).toBeDefined()
     expect((result.metadata as Record<string, unknown>).provider).toBe("mock-audio")
     expect((result.metadata as Record<string, unknown>).model).toBe("mock-audio-model")
+    expect((result.metadata as Record<string, unknown>).mime).toBe("audio/wav")
   })
 
   test("mock audio provider rejects image generation with GenerateError", async () => {

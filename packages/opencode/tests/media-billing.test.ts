@@ -33,7 +33,7 @@ function makeConfigLayer(overrides?: Partial<MediaConfigData>): Layer.Layer<Medi
 function makeDefaultChargeRequest(usage?: GenerateUsage) {
   return {
     usage: usage ?? makeUsage(),
-    toolName: "imago_generate_image",
+    toolName: "image_generate",
     sessionId: "test-session",
     directory: "/workspace/test-project",
   }
@@ -161,7 +161,7 @@ describe("BillingReporter", () => {
       expect(body.directory).toBe("/workspace/test-project")
       expect(body.provider).toBe("mock-image")
       expect(body.model).toBe("mock-image-model")
-      expect(body.toolName).toBe("imago_generate_image")
+      expect(body.toolName).toBe("image_generate")
       expect(body.mediaKind).toBe("image")
       expect(body.amountMicros).toBe(-100)
       expect(body.quantity).toBe(1)

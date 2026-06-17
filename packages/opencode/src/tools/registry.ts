@@ -12,11 +12,15 @@ import { createGenerateAudioTool } from "./media/generate-audio.js"
  * here when they are ready — the plugin entry picks them up
  * automatically.
  *
- * Naming convention: imago_<domain>_<action>
- *   - imago_status           — diagnostic/workspace info
- *   - imago_generate_image   — image generation
- *   - imago_generate_video   — video generation
- *   - imago_generate_audio   — audio/TTS generation
+ * Naming convention:
+ *   - Diagnostics use the imago_<domain>_<action> convention.
+ *   - Media tools use the contract media prefixes (image_* / video_* / audio_*)
+ *     that the openimago frontend detects to render inline media cards. See
+ *     docs/integration/media-tool-integration-contract.md and ADR 0002.
+ *       - imago_status     — diagnostic/workspace info
+ *       - image_generate   — image generation
+ *       - video_generate   — video generation
+ *       - audio_generate   — audio/TTS generation
  */
 export function createToolRegistry(): Record<string, ToolDefinition> {
   return {
@@ -24,12 +28,12 @@ export function createToolRegistry(): Record<string, ToolDefinition> {
     imago_status: createImagoStatusTool(),
 
     /** Image generation tool — text-to-image via Effect IOC media chain */
-    imago_generate_image: createGenerateImageTool(),
+    image_generate: createGenerateImageTool(),
 
     /** Video generation tool — text-to-video via Effect IOC media chain */
-    imago_generate_video: createGenerateVideoTool(),
+    video_generate: createGenerateVideoTool(),
 
     /** Audio generation tool — text-to-speech via Effect IOC media chain */
-    imago_generate_audio: createGenerateAudioTool(),
+    audio_generate: createGenerateAudioTool(),
   }
 }
