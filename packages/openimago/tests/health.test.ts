@@ -46,3 +46,34 @@ test("health check detects OpenCode down", async () => {
   expect(body.status).toBe("ok")
   expect(body.opencode).toBe("disconnected")
 })
+
+// 3. Health check normalizes a 0.0.0.0 upstream URL so it can connect.
+//    A 0.0.0.0 fetch target is unroutable; normalization rewrites it to
+//    127.0.0.1, where our stub /global/health server actually listens.
+test("health check normalizes 0.0.0.0 upstream to a routable loopback", async () => {
+  const stub = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(req) {
+      if (new URL(req.url).pathname === "/global/health") {
+        return new Response("ok", { status: 200 })
+      }
+      return new Response("not found", { status: 404 })
+    },
+  })
+
+  try {
+    const routes = createHealthRoutes({
+      opencodeUrl: `http://0.0.0.0:${stub.port}`,
+    })
+    const app000 = new Hono()
+    app000.route("/", routes)
+
+    const res = await app000.fetch(new Request("http://localhost/health"))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, any>
+    expect(body.opencode).toBe("connected")
+  } finally {
+    stub.stop(true)
+  }
+})

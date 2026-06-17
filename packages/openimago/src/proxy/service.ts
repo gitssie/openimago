@@ -12,7 +12,7 @@ import { logger } from "../server/logger"
  * body instead of throwing. We replace `0.0.0.0` with `127.0.0.1` so
  * the proxy always uses a routable loopback address.
  */
-function normalizeUpstreamUrl(url: string): string {
+export function normalizeUpstreamUrl(url: string): string {
   try {
     const parsed = new URL(url)
     if (parsed.hostname === "0.0.0.0") {

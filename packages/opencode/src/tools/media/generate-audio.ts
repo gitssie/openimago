@@ -4,6 +4,7 @@ import { MediaGenerationService } from "../../lib/media/service.js"
 import {
   WorkspaceFilesClient,
   buildMediaToolOutput,
+  registerOrFallback,
 } from "../../lib/media/workspace-files.js"
 import { mediaDefaultLayer } from "../../lib/media/layer.js"
 
@@ -70,7 +71,7 @@ export function createGenerateAudioTool(): ToolDefinition {
         const mime = (meta.mime as string | undefined) ?? "audio/mpeg"
 
         const client = yield* WorkspaceFilesClient
-        const registered = yield* client.register({
+        const registered = yield* registerOrFallback(client, {
           sessionId,
           kind: "audio",
           mime,

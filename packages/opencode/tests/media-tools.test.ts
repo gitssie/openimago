@@ -142,3 +142,37 @@ describe("audio_generate tool execution", () => {
     expect(out.provider).toBe("mock-audio")
   })
 })
+
+describe("media tool registration failure — graceful degradation", () => {
+  test("still returns a valid MediaToolOutputV1 with a mock_ id when registration fails", async () => {
+    // Backend rejects registration (simulates missing env / unreachable backend).
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+      const url = typeof input === "string" ? input : input.toString()
+      if (url.includes("/api/platform/workspace-files")) {
+        return new Response(
+          JSON.stringify({ error: { code: "CONFIGURATION_REQUIRED", message: "no key" } }),
+          { status: 500, headers: { "content-type": "application/json" } },
+        )
+      }
+      throw new Error(`Unexpected fetch in test: ${url}`)
+    }) as typeof fetch
+
+    const { createGenerateImageTool } = await import(
+      "../src/tools/media/generate-image.ts"
+    )
+
+    const tool = createGenerateImageTool()
+    const raw = await tool.execute(
+      { prompt: "degrade test", model: "mock-image-model" } as any,
+      mockToolContext,
+    )
+
+    // No session.error — output is still a valid, renderable media card.
+    const out = JSON.parse(outputString(raw))
+    expect(out.version).toBe(1)
+    expect(out.kind).toBe("image")
+    expect(out.status).toBe("completed")
+    expect(out.result.workspaceFileId).toStartWith("mock_")
+    expect(out.result.access.preview.href).toStartWith("https://picsum.photos/seed/")
+  })
+})

@@ -105,6 +105,66 @@ export class WorkspaceFilesClient extends Context.Tag(
   "openimago/WorkspaceFilesClient",
 )<WorkspaceFilesClient, WorkspaceFilesClientInterface>() {}
 
+// ── Fallback (graceful degradation) ─────────────────────────────────────────
+
+/** Generate a non-persistent fallback workspace-file id (`mock_<random>`). */
+export function generateFallbackWorkspaceFileId(): string {
+  const rand =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID().replace(/-/g, "")
+      : Math.random().toString(36).slice(2) + Date.now().toString(36)
+  return `mock_${rand}`
+}
+
+/**
+ * Build a degraded `RegisteredWorkspaceFile` from the generation input when the
+ * backend registration is unavailable (missing env / backend unreachable).
+ *
+ * The media still renders in chat via the provider's loadable preview URL, but
+ * it is NOT persisted — the durable workspaceFileId is a `mock_` placeholder,
+ * so the right-side panel / project outputs will not list it until a real
+ * registration succeeds.
+ */
+export function buildFallbackRegisteredFile(
+  input: RegisterWorkspaceFileInput,
+): RegisteredWorkspaceFile {
+  return {
+    workspaceFileId: generateFallbackWorkspaceFileId(),
+    access: { preview: { href: input.accessPreviewHref } },
+    mime: input.mime,
+    ...(input.filename !== undefined ? { filename: input.filename } : {}),
+    ...(input.width !== undefined ? { width: input.width } : {}),
+    ...(input.height !== undefined ? { height: input.height } : {}),
+    ...(input.duration !== undefined ? { duration: input.duration } : {}),
+    ...(input.seed !== undefined ? { seed: input.seed } : {}),
+    ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
+  }
+}
+
+/**
+ * Register a workspace file, gracefully degrading on failure.
+ *
+ * On registration error (missing env / backend unreachable) this logs a
+ * warning and resolves with a non-persistent `mock_` fallback so the media
+ * card still renders in chat instead of failing the whole session. The
+ * returned Effect therefore never fails.
+ */
+export function registerOrFallback(
+  client: WorkspaceFilesClientInterface,
+  input: RegisterWorkspaceFileInput,
+): Effect.Effect<RegisteredWorkspaceFile> {
+  return client.register(input).pipe(
+    Effect.catchAll((error) =>
+      Effect.gen(function* () {
+        yield* Effect.logWarning(
+          `workspace-files registration failed; degrading to non-persistent mock id: ${error.message}`,
+        )
+        return buildFallbackRegisteredFile(input)
+      }),
+    ),
+  )
+}
+
 // ── Builder ──────────────────────────────────────────────────────────────────
 
 /**

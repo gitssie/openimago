@@ -1,5 +1,6 @@
 import type { DB } from "../db/client"
 import { sql } from "drizzle-orm"
+import { normalizeUpstreamUrl } from "../proxy/service"
 
 const startTime = Date.now()
 
@@ -8,7 +9,11 @@ export async function healthCheck(opts?: {
   opencodeUrl?: string
 }) {
   const db = opts?.db!
-  const opencodeUrl = opts?.opencodeUrl ?? process.env.OPENCODE_URL ?? "http://localhost:3000"
+  const rawOpencodeUrl =
+    opts?.opencodeUrl ?? process.env.OPENCODE_URL ?? "http://localhost:3000"
+  // Normalize 0.0.0.0 → 127.0.0.1 so the health probe can actually connect
+  // (Bun's fetch cannot reach the 0.0.0.0 bind address). Shared with the proxy.
+  const opencodeUrl = normalizeUpstreamUrl(rawOpencodeUrl)
 
   let dbStatus: "connected" | "disconnected" = "disconnected"
   let opencodeStatus: "connected" | "disconnected" = "disconnected"

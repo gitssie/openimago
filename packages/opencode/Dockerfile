@@ -5,28 +5,26 @@ ENV TZ=Asia/Shanghai
 # Set system timezone
 RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 
-# ── Build plugin project (TypeScript → JS) ─────────────────────────────
+# ── Build a self-contained plugin bundle ───────────────────────────────
 # The build context is packages/opencode/ (set by docker-compose.yml).
-# We compile src/ into dist/ using Bun's tsc, then copy the whole
-# compiled tree to /root/.config/opencode/.  This preserves relative
-# imports so plugins, tools, and lib modules all resolve correctly
-# without hand-copying each individual module.
+# We bundle src/plugins/openimago.ts into a single self-contained JS file
+# with `bun build`. All relative imports (tools, lib) AND npm dependencies
+# — including @opencode-ai/plugin (an unpublished dev build that cannot be
+# `bun install`ed at runtime), effect, openai, @fal-ai/client, @google/genai
+# and zod — are inlined. Only Node built-ins stay external. This removes
+# the previous startup `bun install` step that failed to resolve the
+# unpublished @opencode-ai/plugin dev version.
 WORKDIR /tmp/opencode-build
 COPY package.json tsconfig.json tsconfig.build.json ./
 COPY src/ ./src/
-RUN bun install --production && bun run build
+RUN bun install && bun run build
 
-# ── Install runtime dependencies in config directory ───────────────────
-# OpenCode runs "bun install" in /root/.config/opencode/ at startup to
-# install plugin dependencies.  We pre-seed it during image build.
-COPY package.json /root/.config/opencode/package.json
-
-# ── Copy compiled output as runtime plugins ────────────────────────────
+# ── Copy the bundled plugin as the runtime plugin ──────────────────────
 # OpenCode auto-discovers /root/.config/opencode/plugins/*.js.
-# The whole dist/ tree is copied so relative imports between
-# plugins ← tools ← lib resolve without extra wiring.
+# The bundle is fully self-contained, so no node_modules / package.json /
+# `bun install` is needed in the config directory.
 RUN mkdir -p /root/.config/opencode/plugins
-RUN cp -r /tmp/opencode-build/dist/* /root/.config/opencode/
+RUN cp /tmp/opencode-build/dist/plugins/openimago.js /root/.config/opencode/plugins/openimago.js
 
 # ── Config ─────────────────────────────────────────────────────────────
 COPY opencode.json /root/.config/opencode/opencode.json

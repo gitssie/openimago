@@ -6,9 +6,10 @@
   "main": "src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "bun build src/plugins/openimago.ts --target=bun --outfile=dist/plugins/openimago.js",
     "test": "bun test",
-    "check": "bun run typecheck && bun run build && bun test"
+    "check": "bun run typecheck && bun run build && bun test",
+    "deploy:plugin": "bun run build && docker cp dist/plugins/openimago.js opencode-serve:/root/.config/opencode/plugins/openimago.js && docker cp opencode.json opencode-serve:/root/.config/opencode/opencode.json && docker restart opencode-serve"
   },
   "dependencies": {
     "@google/genai": "^2.8.0",
