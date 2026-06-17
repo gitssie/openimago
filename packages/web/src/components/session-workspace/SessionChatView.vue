@@ -1000,13 +1000,13 @@ onUnmounted(() => {
 }
 
 .assistant-turn-actions {
-  position: absolute;
-  top: 4px;
-  right: 4px;
+  /* Flow below the assistant content as the last child of .assistant-content.
+     Assistant content is left-aligned, so the bar is left-aligned too. */
+  min-height: 22px;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 4px;
-  z-index: 1;
   opacity: 0;
   transition: opacity 0.15s ease;
   pointer-events: none;
