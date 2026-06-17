@@ -3,7 +3,7 @@
     <div ref="messagesAreaRef" class="messages-container">
       <q-inner-loading :showing="isSessionSwitching" color="grey-5" />
 
-      <div v-if="!initialLoading && !isSessionSwitching && displayMessages.length === 0" class="empty-chat flex flex-center">
+      <div v-if="!isSessionSwitching && displayMessages.length === 0" class="empty-chat flex flex-center">
         <div class="empty-chat__content">
           <div class="empty-chat__logo-wrap">
             <div class="empty-chat__logo-ring">
@@ -227,6 +227,7 @@ const props = defineProps<{
   historyLoading: boolean
   currentSessionItem: SessionItem | null
   activeAttentionCallId: string | null
+  isSessionSwitching: boolean
 }>()
 
 const emit = defineEmits<{
@@ -238,8 +239,6 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const isSessionSwitching = ref(false)
-const initialLoading = ref(false)
 const messagesAreaRef = ref<HTMLElement | null>(null)
 const infiniteScrollRef = ref<QInfiniteScroll | null>(null)
 

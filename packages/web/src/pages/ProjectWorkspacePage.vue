@@ -117,6 +117,7 @@
                     :history-loading="historyLoading"
                     :current-session-item="currentSessionItem"
                     :active-attention-call-id="activeAttentionCallId"
+                    :is-session-switching="messagesLoading"
                     @load-history="onLoadHistory"
                     @switch-session="handleSwitchSession"
                     @revert-turn="(msgId) => void revertMessage(msgId)"
@@ -345,6 +346,7 @@ const {
   displayMessages,
   historyExhausted,
   historyLoading,
+  messagesLoading,
   inputMessage,
   isLoading,
   isConnected,

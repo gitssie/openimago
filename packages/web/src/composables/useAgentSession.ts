@@ -182,6 +182,7 @@ export function useAgentSession(
   /** Per-part accumulated delta text */
   const partText = ref<Map<string, string>>(new Map());
   const historyLoading = ref(false);
+  const messagesLoading = ref(false);
 
   const pendingQuestion = ref<QuestionRequest | null>(null);
   const pendingPermission = ref<PermissionRequest | null>(null);
@@ -776,6 +777,7 @@ export function useAgentSession(
     const pending = messageLoadInflight.get(sid);
     if (pending) return pending;
 
+    messagesLoading.value = true;
     resetChatState();
     const task = (async () => {
       const [page, todos, sessionInfo] = await Promise.all([
@@ -852,6 +854,7 @@ export function useAgentSession(
       // silent
     }).finally(() => {
       messageLoadInflight.delete(sid);
+      messagesLoading.value = false;
     });
 
     messageLoadInflight.set(sid, task);
@@ -1572,6 +1575,7 @@ Usage: search(search_query="<your query>", search_type="GRAPH_COMPLETION", datas
     childSessions,
     sessionMessages,
     historyLoading,
+    messagesLoading,
     datasets,
     selectedDatasets,
     pendingAttachments,
