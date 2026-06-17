@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm"
-import { readFile, access } from "fs/promises"
+import { readFile, access, writeFile, rename } from "fs/promises"
 import path from "path"
 import { db } from "../db/client"
 import { projects } from "../db/schema"
@@ -67,6 +67,20 @@ export interface StoryEpisode {
   status: string
   shots: Record<string, unknown>[]
   updatedAt: string
+}
+
+/** A single shot appended by the UI (ADR 0004 EpisodeShot, ADR 0005 write). */
+export interface EpisodeShot {
+  id: string
+  shotNumber: number
+  sceneId: string
+  description: string
+  cameraNotes: string
+  lightingNotes: string
+  dialog: Record<string, unknown>[]
+  characterIds: string[]
+  referenceArtifactIds: string[]
+  status: string
 }
 
 export interface StoryWorkflow {
@@ -147,6 +161,35 @@ export class StoryService {
   }
 
   /**
+   * Atomically write JSON to a path inside the project directory: write a
+   * temp file then rename over the target, so a crash never leaves a
+   * half-written story file. Re-applies the path-traversal guard.
+   */
+  private async writeJsonFileAtomic(
+    projectDir: string,
+    relativePath: string,
+    data: unknown,
+    projectId: string,
+  ): Promise<{ status: 200 } | { error: { code: string; message: string }; status: number }> {
+    const resolved = path.resolve(path.join(projectDir, relativePath))
+    const resolvedDir = path.resolve(projectDir)
+    if (!resolved.startsWith(resolvedDir + path.sep) && resolved !== resolvedDir) {
+      logger.warn({ projectId, relativePath }, "story: path traversal blocked (write)")
+      return { error: { code: "FORBIDDEN", message: "Invalid story path" }, status: 403 }
+    }
+
+    const tmpPath = `${resolved}.tmp-${process.pid}-${Date.now()}`
+    try {
+      await writeFile(tmpPath, `${JSON.stringify(data, null, 2)}\n`, "utf-8")
+      await rename(tmpPath, resolved)
+      return { status: 200 }
+    } catch (err) {
+      logger.error({ projectId, relativePath, err }, "story: failed to write story file")
+      return { error: { code: "INTERNAL_ERROR", message: "Failed to write story file" }, status: 500 }
+    }
+  }
+
+  /**
    * Read a text file (like AGENTS.md) from the project directory.
    */
   private async readTextFile(
@@ -217,6 +260,93 @@ export class StoryService {
     const dir = await this.resolveProjectDir(projectId, userId)
     if (typeof dir !== "string") return dir
     return this.readJsonFile<StoryEpisode>(dir, `${STORY_EPISODES_DIR}/${safeFile}`, projectId)
+  }
+
+  /**
+   * Append a new (empty, pending) shot to an episode (ADR 0005).
+   *
+   * Optimistic concurrency: when `expectedUpdatedAt` is provided and differs
+   * from the file's current `updatedAt`, returns 409 without writing. On
+   * success the shot is appended (shotNumber = max + 1, unique slug id),
+   * `updatedAt` is bumped, and the file is written atomically.
+   */
+  async addShot(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    expectedUpdatedAt?: string,
+  ): Promise<
+    | { data: { shot: EpisodeShot; updatedAt: string }; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const safeFile = `${episodeId}.json`
+    if (!SAFE_EPISODE_PATTERN.test(safeFile)) {
+      logger.warn({ projectId, episodeId }, "story: invalid episode ID (addShot)")
+      return { error: { code: "VALIDATION_ERROR", message: "Invalid episode ID" }, status: 400 }
+    }
+
+    const dir = await this.resolveProjectDir(projectId, userId)
+    if (typeof dir !== "string") return dir
+
+    const relativePath = `${STORY_EPISODES_DIR}/${safeFile}`
+    const read = await this.readJsonFile<StoryEpisode>(dir, relativePath, projectId)
+    if ("error" in read) return read
+
+    const episode = read.data
+
+    // Optimistic concurrency guard (ADR 0005): refuse stale writes.
+    if (expectedUpdatedAt !== undefined && expectedUpdatedAt !== episode.updatedAt) {
+      logger.info(
+        { projectId, episodeId, expectedUpdatedAt, actual: episode.updatedAt },
+        "story: addShot conflict — stale updatedAt",
+      )
+      return {
+        error: { code: "CONFLICT", message: "Episode was modified since last read" },
+        status: 409,
+      }
+    }
+
+    const shots = Array.isArray(episode.shots) ? episode.shots : []
+    const maxShotNumber = shots.reduce((max, s) => {
+      const n = typeof s["shotNumber"] === "number" ? s["shotNumber"] : 0
+      return n > max ? n : max
+    }, 0)
+    const nextNumber = maxShotNumber + 1
+
+    // Stable, unique slug. Suffix on the rare id collision.
+    const existingIds = new Set(shots.map((s) => String(s["id"] ?? "")))
+    const baseId = `s${String(nextNumber).padStart(2, "0")}-new`
+    let shotId = baseId
+    let suffix = 2
+    while (existingIds.has(shotId)) {
+      shotId = `${baseId}-${suffix}`
+      suffix += 1
+    }
+
+    const newShot: EpisodeShot = {
+      id: shotId,
+      shotNumber: nextNumber,
+      sceneId: "",
+      description: "",
+      cameraNotes: "",
+      lightingNotes: "",
+      dialog: [],
+      characterIds: [],
+      referenceArtifactIds: [],
+      status: "pending",
+    }
+
+    const now = new Date().toISOString()
+    const updatedEpisode: StoryEpisode = {
+      ...episode,
+      shots: [...shots, newShot as unknown as Record<string, unknown>],
+      updatedAt: now,
+    }
+
+    const write = await this.writeJsonFileAtomic(dir, relativePath, updatedEpisode, projectId)
+    if ("error" in write) return write
+
+    return { data: { shot: newShot, updatedAt: now }, status: 200 }
   }
 
   async getEpisodeWorkflow(projectId: string, userId: string, episodeId: string) {

@@ -133,7 +133,10 @@
     </div>
 
     <!-- ── Footer: add scene button ──────────────────────────────── -->
-    <footer v-if="!readOnly" class="left-panel__footer">
+    <!-- Shown when fully editable, OR when read-only but shot-adding is
+         explicitly enabled (ADR 0005 first write). Other write buttons
+         stay hidden under readOnly. -->
+    <footer v-if="!readOnly || canAddShot" class="left-panel__footer">
       <button
         type="button"
         class="left-panel__add-scene"
@@ -167,10 +170,17 @@ withDefaults(defineProps<{
   viewDensity?: 'grid' | 'list'
   /** When true, hides all write affordances (add scene/image, image-type). */
   readOnly?: boolean
+  /**
+   * Opt-in: show the footer "添加场景" button even while readOnly, enabling the
+   * single supported write (append a shot, ADR 0005). Other write buttons stay
+   * hidden under readOnly.
+   */
+  canAddShot?: boolean
 }>(), {
   selectedId: null,
   viewDensity: 'grid',
   readOnly: false,
+  canAddShot: false,
 })
 
 const emit = defineEmits<{

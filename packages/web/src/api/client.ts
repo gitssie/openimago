@@ -1,5 +1,15 @@
 import { useAuthStore } from 'src/stores/auth'
 
+/** Error carrying the HTTP status so callers can branch (e.g. 409 conflict). */
+export class ApiError extends Error {
+  readonly status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
 function apiUrl(path: string): string {
   return path
 }
@@ -25,7 +35,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       auth.clearAuth()
       auth.requestReauth()
     }
-    throw new Error(err.message || err.error?.message || `HTTP ${res.status}`)
+    throw new ApiError(err.message || err.error?.message || `HTTP ${res.status}`, res.status)
   }
   if (res.status === 204) return undefined as T
   if (!isJson) {
@@ -199,6 +209,20 @@ export interface OpenimagoStoryEpisode {
   status: string
   shots: Record<string, unknown>[]
   updatedAt: string
+}
+
+/** A shot appended via the story write API (ADR 0005). */
+export interface OpenimagoEpisodeShot {
+  id: string
+  shotNumber: number
+  sceneId: string
+  description: string
+  cameraNotes: string
+  lightingNotes: string
+  dialog: Record<string, unknown>[]
+  characterIds: string[]
+  referenceArtifactIds: string[]
+  status: string
 }
 
 export interface OpenimagoStoryWorkflow {
@@ -488,6 +512,15 @@ export const api = {
     request<{ runs: OpenimagoStoryRuns }>(`/api/platform/projects/${projectId}/story/episodes/${episodeId}/runs`)
       .then((r) => r.runs)
       .catch(() => null),
+  // Story writes (ADR 0005) — append a shot with optimistic concurrency.
+  addEpisodeShot: (projectId: string, episodeId: string, expectedUpdatedAt?: string) =>
+    request<{ shot: OpenimagoEpisodeShot; updatedAt: string }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/shots`,
+      {
+        method: 'POST',
+        body: JSON.stringify(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}),
+      },
+    ),
   projectStoryAgents: (projectId: string) =>
     request(`/api/platform/projects/${projectId}/story/agents`)
       .then(() => null)

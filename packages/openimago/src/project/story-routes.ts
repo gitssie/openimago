@@ -59,6 +59,33 @@ storyRoutes.get("/:id/story/episodes/:epId", async (c) => {
   return c.json({ episode: result.data })
 })
 
+// POST /api/platform/projects/:id/story/episodes/:epId/shots
+// Append a new (empty, pending) shot to the episode (ADR 0005, optimistic
+// concurrency via optional expectedUpdatedAt in the body).
+storyRoutes.post("/:id/story/episodes/:epId/shots", async (c) => {
+  const userId = c.get("userId") as string
+  const projectId = c.req.param("id")
+  const episodeId = c.req.param("epId")
+
+  let expectedUpdatedAt: string | undefined
+  try {
+    const body = (await c.req.json()) as { expectedUpdatedAt?: unknown }
+    if (typeof body?.expectedUpdatedAt === "string") {
+      expectedUpdatedAt = body.expectedUpdatedAt
+    }
+  } catch {
+    // No / empty body — proceed without the concurrency guard.
+  }
+
+  const result = await storyService.addShot(projectId, userId, episodeId, expectedUpdatedAt)
+
+  if ("error" in result) {
+    return c.json({ error: result.error }, result.status as any)
+  }
+
+  return c.json({ shot: result.data.shot, updatedAt: result.data.updatedAt }, 201)
+})
+
 // GET /api/platform/projects/:id/story/episodes/:epId/workflow
 storyRoutes.get("/:id/story/episodes/:epId/workflow", async (c) => {
   const userId = c.get("userId") as string

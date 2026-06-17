@@ -69,6 +69,7 @@
           :selected-id="selectedSceneId"
           :view-density="storyboardDensity"
           :read-only="true"
+          :can-add-shot="canAddShot"
           @scene-select="onSceneSelect"
           @scene-add="onSceneAdd"
           @scene-add-image="onSceneAddImage"
@@ -266,7 +267,7 @@ import WorkspaceSessionChip from 'src/components/workspace/WorkspaceSessionChip.
 import { useAgentSession } from 'src/composables/useAgentSession'
 import type { TextPart } from '@opencode-ai/sdk/v2'
 import type { SessionItem } from 'src/services/agents'
-import { api, type OpenimagoProject, type OpenimagoStoryBible, type OpenimagoStorySeries, type OpenimagoStoryEpisode, type OpenimagoStoryWorkflow, type OpenimagoStoryRuns, type WorkspaceFile } from 'src/api/client'
+import { api, ApiError, type OpenimagoProject, type OpenimagoStoryBible, type OpenimagoStorySeries, type OpenimagoStoryEpisode, type OpenimagoStoryWorkflow, type OpenimagoStoryRuns, type WorkspaceFile } from 'src/api/client'
 import WorkspaceArtifactsPanel from 'src/components/session-workspace/WorkspaceArtifactsPanel.vue'
 import { UILayout, UILayoutDrawer, UILayoutPage, UILayoutPageContainer } from 'src/components/ui/layout'
 import type {
@@ -340,6 +341,7 @@ const rightPanelOpen = ref(true)
 const activeWorkspaceTab = ref<string>('storyboard')
 const selectedTimelineNodeId = ref<string | null>(null)
 const selectedTimelineRunId = ref<string | null>(null)
+const addingShot = ref(false)
 const storyboardDensity = ref<'grid' | 'list'>('grid')
 const outputLayout = ref<'grid' | 'rows'>('grid')
 const hasUnreadNotifications = ref(true)
@@ -588,6 +590,10 @@ const isChatSurfaceTab = computed(
   () => activeWorkspaceTab.value === 'conversation' || activeWorkspaceTab.value === 'storyboard',
 )
 
+// Shot-adding is the single supported story write (ADR 0005); enabled once an
+// episode is selected so the new shot has a target.
+const canAddShot = computed(() => Boolean(currentStoryEpisodeId.value))
+
 // ── WorkspaceArtifact[] for WorkspaceArtifactsPanel (ADR 0003) ───────────
 
 const projectArtifacts = computed<WorkspaceArtifact[]>(() => {
@@ -812,8 +818,57 @@ function onSceneImageType(id: string) {
   $q.notify({ color: 'info', message: `切换场景 ${id} 的素材类型（待接入）`, icon: 'category', timeout: 1200 })
 }
 
-function onAddScene() {
-  $q.notify({ color: 'info', message: '添加场景（待接入）', icon: 'info', timeout: 1200 })
+/** Replace one episode in storyEpisodes with the latest from the backend. */
+async function refreshEpisode(episodeId: string): Promise<OpenimagoStoryEpisode | null> {
+  const fresh = await api.projectStoryEpisode(projectId.value, episodeId)
+  if (!fresh) return null
+  const idx = storyEpisodes.value.findIndex((ep) => ep.id === episodeId)
+  if (idx >= 0) storyEpisodes.value.splice(idx, 1, fresh)
+  else storyEpisodes.value.push(fresh)
+  return fresh
+}
+
+/**
+ * Append a new shot to the current episode (ADR 0005). Sends the episode's
+ * last-read updatedAt for optimistic concurrency; on 409 it refetches and
+ * retries once, then surfaces the conflict if it still loses.
+ */
+async function onAddScene() {
+  const episodeId = currentStoryEpisodeId.value
+  if (!episodeId || addingShot.value) return
+  const current = storyEpisodes.value.find((ep) => ep.id === episodeId)
+
+  addingShot.value = true
+  try {
+    let expectedUpdatedAt = current?.updatedAt
+    try {
+      await api.addEpisodeShot(projectId.value, episodeId, expectedUpdatedAt)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        // Stale read — refetch, then retry once with the latest updatedAt.
+        const fresh = await refreshEpisode(episodeId)
+        expectedUpdatedAt = fresh?.updatedAt
+        try {
+          await api.addEpisodeShot(projectId.value, episodeId, expectedUpdatedAt)
+        } catch (retryErr) {
+          if (retryErr instanceof ApiError && retryErr.status === 409) {
+            $q.notify({ color: 'warning', message: '该集已被更新，请重试', icon: 'sync_problem', timeout: 2000 })
+            return
+          }
+          throw retryErr
+        }
+      } else {
+        throw err
+      }
+    }
+    // Success — refresh the episode so the new shot appears in the left panel.
+    await refreshEpisode(episodeId)
+    $q.notify({ color: 'positive', message: '已添加镜头', icon: 'check', timeout: 1200 })
+  } catch {
+    $q.notify({ color: 'negative', message: '添加镜头失败', icon: 'error', timeout: 2000 })
+  } finally {
+    addingShot.value = false
+  }
 }
 
 function onContextDownload() {
