@@ -81,7 +81,14 @@
       <!-- ── Center page: grid + chat + input dock ────────────────────── -->
       <UILayoutPageContainer>
         <UILayoutPage class="project-workspace-page">
+          <!--
+            Center content switches with the top-bar tab. The chat/storyboard
+            surface (ProjectWorkspaceGrid) stays mounted via v-show so the chat
+            session and its scroll state survive tab switches; the overview /
+            timeline panels mount on demand.
+          -->
           <ProjectWorkspaceGrid
+            v-show="isChatSurfaceTab"
             ref="gridRef"
             :project-name="projectName"
             :project-status="projectStatus"
@@ -151,6 +158,28 @@
               </div>
             </template>
           </ProjectWorkspaceGrid>
+
+          <!-- 概览 tab → story bible + episode list -->
+          <StoryOverviewPanel
+            v-if="activeWorkspaceTab === 'overview'"
+            class="project-workspace-page__story-view"
+            :bible="storyBibleSummary"
+            :episodes="storyEpisodeSummaries"
+            :selected-episode-id="currentStoryEpisodeId"
+            @episode-select="onEpisodeSelect"
+          />
+
+          <!-- 时间线 tab → workflow DAG + run history for the current episode -->
+          <StoryTimelinePanel
+            v-else-if="activeWorkspaceTab === 'timeline'"
+            class="project-workspace-page__story-view"
+            :nodes="currentStoryWorkflowNodes"
+            :runs="currentStoryRuns"
+            :selected-node-id="selectedTimelineNodeId"
+            :selected-run-id="selectedTimelineRunId"
+            @node-select="(id) => { selectedTimelineNodeId = id }"
+            @run-select="(id) => { selectedTimelineRunId = id }"
+          />
         </UILayoutPage>
       </UILayoutPageContainer>
 
@@ -266,6 +295,9 @@ import {
   rawRunsToRunSummaries,
 } from 'src/utils/story-summary-mapper'
 import { workspaceFileToAIOutputItem } from 'src/utils/session-output-mapper'
+import { formatRelativeTime } from 'src/utils/format-time'
+import StoryOverviewPanel from 'src/components/session-workspace/StoryOverviewPanel.vue'
+import StoryTimelinePanel from 'src/components/session-workspace/StoryTimelinePanel.vue'
 
 // ── Local types ─────────────────────────────────────────────────────────────
 
@@ -306,6 +338,8 @@ const gridRef = ref<{ setActiveWorkspaceTab: (tab: WorkspaceTabId) => void; getA
 const leftPanelOpen = ref(true)
 const rightPanelOpen = ref(true)
 const activeWorkspaceTab = ref<string>('storyboard')
+const selectedTimelineNodeId = ref<string | null>(null)
+const selectedTimelineRunId = ref<string | null>(null)
 const storyboardDensity = ref<'grid' | 'list'>('grid')
 const outputLayout = ref<'grid' | 'rows'>('grid')
 const hasUnreadNotifications = ref(true)
@@ -548,6 +582,12 @@ const currentStoryRuns = computed<StoryRunSummary[]>(() => {
   return rawRunsToRunSummaries(storyRuns.value)
 })
 
+// The chat/storyboard surface (Grid + chat) backs both the 对话 and 故事板 tabs;
+// overview/timeline render their own center panels instead.
+const isChatSurfaceTab = computed(
+  () => activeWorkspaceTab.value === 'conversation' || activeWorkspaceTab.value === 'storyboard',
+)
+
 // ── WorkspaceArtifact[] for WorkspaceArtifactsPanel (ADR 0003) ───────────
 
 const projectArtifacts = computed<WorkspaceArtifact[]>(() => {
@@ -713,6 +753,31 @@ const creditsLabel = '—'
 
 function onWorkspaceTabChange(tab: string) {
   activeWorkspaceTab.value = tab
+}
+
+function onEpisodeSelect(episodeId: string) {
+  if (episodeId === currentStoryEpisodeId.value) return
+  currentStoryEpisodeId.value = episodeId
+}
+
+/** Pull the workflow DAG + run history for one episode (ADR 0004). */
+async function fetchEpisodeWorkflowRuns(episodeId: string): Promise<void> {
+  const pid = projectId.value
+  try {
+    const [wf, runs] = await Promise.all([
+      api.projectStoryWorkflow(pid, episodeId),
+      api.projectStoryRuns(pid, episodeId),
+    ])
+    // Guard against an out-of-order resolve after another episode was selected.
+    if (currentStoryEpisodeId.value !== episodeId) return
+    storyWorkflow.value = wf
+    storyRuns.value = runs
+  } catch {
+    if (currentStoryEpisodeId.value === episodeId) {
+      storyWorkflow.value = null
+      storyRuns.value = null
+    }
+  }
 }
 
 function onGridOutputSelect(id: string) {
@@ -905,18 +970,9 @@ async function fetchStoryData() {
       )
       storyEpisodes.value = episodes.filter((ep): ep is OpenimagoStoryEpisode => ep !== null)
       if (epIds.length > 0 && !currentStoryEpisodeId.value) {
-        const firstEpId = epIds[0]!
-        currentStoryEpisodeId.value = firstEpId
-        void Promise.all([
-          api.projectStoryWorkflow(pid, firstEpId),
-          api.projectStoryRuns(pid, firstEpId),
-        ]).then(([wf, runs]) => {
-          storyWorkflow.value = wf
-          storyRuns.value = runs
-        }).catch(() => {
-          storyWorkflow.value = null
-          storyRuns.value = null
-        })
+        // Setting the episode id triggers the watcher, which pulls the
+        // episode's workflow/runs (see watch(currentStoryEpisodeId)).
+        currentStoryEpisodeId.value = epIds[0]!
       }
     }
   } catch {
@@ -991,11 +1047,7 @@ async function fetchProjectFiles() {
 }
 
 function formatResultTime(date: Date): string {
-  const diff = Date.now() - date.getTime()
-  if (diff < 60_000) return '刚刚'
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`
-  return date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
+  return formatRelativeTime(date)
 }
 
 // ── Lifecycle ───────────────────────────────────────────────────────────────
@@ -1036,6 +1088,20 @@ watch(isLoading, (loading, wasLoading) => {
   }
 })
 
+// When the selected episode changes, pull its workflow DAG + run history so the
+// timeline tab and the left storyboard shots track the chosen episode. Reset
+// per-episode timeline selection to avoid highlighting a stale node/run.
+watch(currentStoryEpisodeId, (episodeId) => {
+  selectedTimelineNodeId.value = null
+  selectedTimelineRunId.value = null
+  if (!episodeId) {
+    storyWorkflow.value = null
+    storyRuns.value = null
+    return
+  }
+  void fetchEpisodeWorkflowRuns(episodeId)
+})
+
 onUnmounted(() => {
   stopEventSubscription()
 })
@@ -1046,9 +1112,6 @@ onUnmounted(() => {
 const _storyRefsKept = {
   creditsLabel,
   storyPanelError,
-  storyBibleSummary,
-  storyEpisodeSummaries,
-  currentStoryWorkflowNodes,
   currentStorySceneId,
   storySelectedCharacterId,
   storySelectedStyleSeedId,
@@ -1121,6 +1184,15 @@ function onSessionSelect(sid: string) {
 
 .project-workspace-page {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+// Overview / timeline tab center panels fill the page below the top bar.
+.project-workspace-page__story-view {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 // ── Center stack (chat + input dock) ───────────────────────────────────────
