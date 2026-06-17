@@ -72,7 +72,31 @@
               <OiIcon name="check" :size="14" />
             </span>
           </button>
-          <p v-if="scene.description" class="scene-card__description ellipsis-2">
+          <!-- Description: inline-editable when editable; click to edit, save
+               on blur / Enter (Shift+Enter inserts a newline). -->
+          <textarea
+            v-if="editable && editingId === scene.id"
+            ref="editEls"
+            v-model="editDraft"
+            class="scene-card__description-edit"
+            rows="2"
+            :aria-label="`编辑 ${scene.title} 描述`"
+            @click.stop
+            @keydown.enter.exact.prevent="commitEdit(scene.id)"
+            @blur="commitEdit(scene.id)"
+          />
+          <p
+            v-else-if="editable"
+            class="scene-card__description scene-card__description--editable ellipsis-2"
+            role="button"
+            tabindex="0"
+            :aria-label="`编辑 ${scene.title} 描述`"
+            @click.stop="beginEdit(scene.id, scene.description ?? '')"
+            @keydown.enter.prevent="beginEdit(scene.id, scene.description ?? '')"
+          >
+            {{ scene.description || '点击添加描述' }}
+          </p>
+          <p v-else-if="scene.description" class="scene-card__description ellipsis-2">
             {{ scene.description }}
           </p>
           <div class="scene-card__thumbs" :aria-label="`${scene.title} 缩略图`">
@@ -142,6 +166,40 @@
               <span>{{ generatingIds.includes(scene.id) ? '生成中…' : '生成' }}</span>
             </button>
           </div>
+
+          <!-- Edit actions (ADR 0005): reorder + delete. MVP reorder uses
+               up/down buttons (no drag lib). Per-card loading prevents repeats. -->
+          <div v-if="editable" class="scene-card__edit-actions">
+            <button
+              type="button"
+              class="scene-card__edit-btn"
+              :disabled="index === 0 || mutatingIds.includes(scene.id)"
+              :aria-label="`上移 ${scene.title}`"
+              @click.stop="emit('shot-move', scene.id, 'up')"
+            >
+              <OiIcon name="chevron-down" :size="12" class="scene-card__chevron-up" />
+            </button>
+            <button
+              type="button"
+              class="scene-card__edit-btn"
+              :disabled="index === scenes.length - 1 || mutatingIds.includes(scene.id)"
+              :aria-label="`下移 ${scene.title}`"
+              @click.stop="emit('shot-move', scene.id, 'down')"
+            >
+              <OiIcon name="chevron-down" :size="12" />
+            </button>
+            <span class="scene-card__edit-spacer" />
+            <button
+              type="button"
+              class="scene-card__edit-btn scene-card__edit-btn--danger"
+              :disabled="mutatingIds.includes(scene.id)"
+              :aria-label="`删除 ${scene.title}`"
+              @click.stop="requestDelete(scene.id, scene.title)"
+            >
+              <OiIcon name="image-card" :size="12" />
+              <span>删除</span>
+            </button>
+          </div>
         </li>
       </ol>
 
@@ -170,6 +228,7 @@
 </template>
 
 <script setup lang="ts">
+import { nextTick, ref } from 'vue'
 import OiIcon from 'src/components/ui/OiIcon.vue'
 
 // ── Public shape ────────────────────────────────────────────────────────────
@@ -184,7 +243,7 @@ export interface StoryboardScene {
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   scenes: StoryboardScene[]
   selectedId?: string | null
   viewDensity?: 'grid' | 'list'
@@ -203,6 +262,14 @@ withDefaults(defineProps<{
   canGenerate?: boolean
   /** Shot ids currently generating — drives per-card loading state. */
   generatingIds?: ReadonlyArray<string>
+  /**
+   * Opt-in: enable per-card shot editing (inline description, reorder, delete;
+   * ADR 0005). Independent of readOnly so the read-only storyboard can expose
+   * just these targeted edits.
+   */
+  editable?: boolean
+  /** Shot ids with an in-flight mutation — drives per-card disabled state. */
+  mutatingIds?: ReadonlyArray<string>
 }>(), {
   selectedId: null,
   viewDensity: 'grid',
@@ -210,6 +277,8 @@ withDefaults(defineProps<{
   canAddShot: false,
   canGenerate: false,
   generatingIds: () => [],
+  editable: false,
+  mutatingIds: () => [],
 })
 
 const emit = defineEmits<{
@@ -218,9 +287,46 @@ const emit = defineEmits<{
   (e: 'scene-add', id: string): void
   (e: 'scene-image-type', id: string): void
   (e: 'scene-generate', id: string): void
+  (e: 'shot-delete', id: string): void
+  (e: 'shot-update', id: string, patch: { description: string }): void
+  (e: 'shot-move', id: string, direction: 'up' | 'down'): void
   (e: 'add-scene'): void
   (e: 'view-change', density: 'grid' | 'list'): void
 }>()
+
+// ── Inline description editing ────────────────────────────────────────────────
+
+const editingId = ref<string | null>(null)
+const editDraft = ref('')
+const editEls = ref<HTMLTextAreaElement[]>([])
+
+function beginEdit(id: string, current: string): void {
+  editingId.value = id
+  editDraft.value = current
+  void nextTick(() => {
+    const el = editEls.value[0]
+    if (el) {
+      el.focus()
+      el.select()
+    }
+  })
+}
+
+function commitEdit(id: string): void {
+  if (editingId.value !== id) return
+  const next = editDraft.value.trim()
+  const original = props.scenes.find((s) => s.id === id)?.description ?? ''
+  editingId.value = null
+  if (next !== original) emit('shot-update', id, { description: next })
+}
+
+// ── Delete with confirm ───────────────────────────────────────────────────────
+
+function requestDelete(id: string, title: string): void {
+  // Lightweight confirm keeps this component presentational (no $q dependency).
+  if (typeof window !== 'undefined' && !window.confirm(`确定删除「${title}」？`)) return
+  emit('shot-delete', id)
+}
 </script>
 
 <style lang="scss" scoped>
@@ -402,6 +508,36 @@ const emit = defineEmits<{
   color: var(--imago-text-muted);
 }
 
+.scene-card__description--editable {
+  cursor: text;
+  border-radius: var(--imago-radius-sm);
+  padding: 2px 4px;
+  margin: 0 -4px;
+  transition: background 120ms ease;
+}
+
+.scene-card__description--editable:hover {
+  background: var(--imago-cyan-04);
+}
+
+.scene-card__description-edit {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--imago-text-primary);
+  background: var(--imago-bg-raised);
+  border: 1px solid var(--imago-border-cyan);
+  border-radius: var(--imago-radius-sm);
+  padding: 6px 8px;
+}
+
+.scene-card__description-edit:focus-visible {
+  outline: none;
+  border-color: var(--imago-border-cyan-active);
+}
+
 .scene-card__thumbs {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -541,6 +677,53 @@ const emit = defineEmits<{
 
 @media (prefers-reduced-motion: reduce) {
   .scene-card__spin { animation: none; }
+}
+
+// ── Edit actions (reorder + delete) ───────────────────────────────────────────
+
+.scene-card__edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scene-card__edit-spacer {
+  flex: 1 1 auto;
+}
+
+.scene-card__edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--imago-border-soft);
+  border-radius: var(--imago-radius-md);
+  background: transparent;
+  color: var(--imago-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.scene-card__edit-btn:hover:not(:disabled) {
+  color: var(--imago-text-primary);
+  border-color: var(--imago-border-cyan);
+  background: var(--imago-cyan-06);
+}
+
+.scene-card__edit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.scene-card__edit-btn--danger:hover:not(:disabled) {
+  color: var(--imago-neon-pink);
+  border-color: rgba(255, 45, 149, 0.4);
+  background: rgba(255, 45, 149, 0.08);
+}
+
+.scene-card__chevron-up {
+  transform: rotate(180deg);
 }
 
 // ── Empty state ─────────────────────────────────────────────────────────────

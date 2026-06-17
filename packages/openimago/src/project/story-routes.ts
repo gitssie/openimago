@@ -104,6 +104,83 @@ storyRoutes.post("/:id/story/episodes/:epId/shots/:shotId/generate", async (c) =
   return c.json({ run: result.data.run }, 201)
 })
 
+// PATCH /api/platform/projects/:id/story/episodes/:epId/shots/reorder
+// Reorder shots (ADR 0005). Registered BEFORE the :shotId PATCH so the static
+// "reorder" segment is not parsed as a shot id.
+storyRoutes.patch("/:id/story/episodes/:epId/shots/reorder", async (c) => {
+  const userId = c.get("userId") as string
+  const projectId = c.req.param("id")
+  const episodeId = c.req.param("epId")
+
+  let orderedShotIds: string[] = []
+  let expectedUpdatedAt: string | undefined
+  try {
+    const body = (await c.req.json()) as { orderedShotIds?: unknown; expectedUpdatedAt?: unknown }
+    if (Array.isArray(body?.orderedShotIds)) {
+      orderedShotIds = body.orderedShotIds.filter((x): x is string => typeof x === "string")
+    }
+    if (typeof body?.expectedUpdatedAt === "string") expectedUpdatedAt = body.expectedUpdatedAt
+  } catch {
+    // Empty/invalid body — orderedShotIds stays empty → reorderShots returns 400.
+  }
+
+  const result = await storyService.reorderShots(projectId, userId, episodeId, orderedShotIds, expectedUpdatedAt)
+  if ("error" in result) {
+    return c.json({ error: result.error }, result.status as any)
+  }
+  return c.json({ updatedAt: result.data.updatedAt })
+})
+
+// DELETE /api/platform/projects/:id/story/episodes/:epId/shots/:shotId
+// Delete a shot, renumber the rest (ADR 0005, optimistic concurrency).
+storyRoutes.delete("/:id/story/episodes/:epId/shots/:shotId", async (c) => {
+  const userId = c.get("userId") as string
+  const projectId = c.req.param("id")
+  const episodeId = c.req.param("epId")
+  const shotId = c.req.param("shotId")
+
+  let expectedUpdatedAt: string | undefined
+  try {
+    const body = (await c.req.json()) as { expectedUpdatedAt?: unknown }
+    if (typeof body?.expectedUpdatedAt === "string") expectedUpdatedAt = body.expectedUpdatedAt
+  } catch {
+    // No / empty body — proceed without the concurrency guard.
+  }
+
+  const result = await storyService.deleteShot(projectId, userId, episodeId, shotId, expectedUpdatedAt)
+  if ("error" in result) {
+    return c.json({ error: result.error }, result.status as any)
+  }
+  return c.json({ updatedAt: result.data.updatedAt })
+})
+
+// PATCH /api/platform/projects/:id/story/episodes/:epId/shots/:shotId
+// Update whitelisted shot fields (ADR 0005, optimistic concurrency).
+storyRoutes.patch("/:id/story/episodes/:epId/shots/:shotId", async (c) => {
+  const userId = c.get("userId") as string
+  const projectId = c.req.param("id")
+  const episodeId = c.req.param("epId")
+  const shotId = c.req.param("shotId")
+
+  let patch: Record<string, unknown> = {}
+  let expectedUpdatedAt: string | undefined
+  try {
+    const body = (await c.req.json()) as Record<string, unknown>
+    if (body && typeof body === "object") {
+      patch = body
+      if (typeof body.expectedUpdatedAt === "string") expectedUpdatedAt = body.expectedUpdatedAt
+    }
+  } catch {
+    // Empty body — no fields to apply (updateShot will still no-op-write).
+  }
+
+  const result = await storyService.updateShot(projectId, userId, episodeId, shotId, patch, expectedUpdatedAt)
+  if ("error" in result) {
+    return c.json({ error: result.error }, result.status as any)
+  }
+  return c.json({ shot: result.data.shot, updatedAt: result.data.updatedAt })
+})
+
 // GET /api/platform/projects/:id/story/episodes/:epId/workflow
 storyRoutes.get("/:id/story/episodes/:epId/workflow", async (c) => {
   const userId = c.get("userId") as string

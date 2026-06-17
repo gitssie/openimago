@@ -390,6 +390,175 @@ export class StoryService {
   }
 
   /**
+   * Shared prelude for episode write ops (ADR 0005): validate the episode id,
+   * resolve+authorize the project dir, read the episode, and apply the
+   * optimistic-concurrency guard. Returns the loaded episode + write path, or
+   * an error envelope to forward verbatim.
+   */
+  private async loadEpisodeForWrite(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    expectedUpdatedAt: string | undefined,
+    op: string,
+  ): Promise<
+    | { dir: string; relativePath: string; episode: StoryEpisode }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const safeFile = `${episodeId}.json`
+    if (!SAFE_EPISODE_PATTERN.test(safeFile)) {
+      logger.warn({ projectId, episodeId, op }, "story: invalid episode ID")
+      return { error: { code: "VALIDATION_ERROR", message: "Invalid episode ID" }, status: 400 }
+    }
+
+    const dir = await this.resolveProjectDir(projectId, userId)
+    if (typeof dir !== "string") return dir
+
+    const relativePath = `${STORY_EPISODES_DIR}/${safeFile}`
+    const read = await this.readJsonFile<StoryEpisode>(dir, relativePath, projectId)
+    if ("error" in read) return read
+
+    const episode = read.data
+    if (expectedUpdatedAt !== undefined && expectedUpdatedAt !== episode.updatedAt) {
+      logger.info(
+        { projectId, episodeId, op, expectedUpdatedAt, actual: episode.updatedAt },
+        "story: write conflict — stale updatedAt",
+      )
+      return { error: { code: "CONFLICT", message: "Episode was modified since last read" }, status: 409 }
+    }
+
+    return { dir, relativePath, episode }
+  }
+
+  /**
+   * Delete a shot from an episode (ADR 0005). Remaining shots are renumbered
+   * 1..N. Optimistic concurrency + atomic write + bumped updatedAt.
+   */
+  async deleteShot(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    shotId: string,
+    expectedUpdatedAt?: string,
+  ): Promise<
+    | { data: { updatedAt: string }; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const loaded = await this.loadEpisodeForWrite(projectId, userId, episodeId, expectedUpdatedAt, "deleteShot")
+    if ("error" in loaded) return loaded
+    const { dir, relativePath, episode } = loaded
+
+    const shots = Array.isArray(episode.shots) ? episode.shots : []
+    const idx = shots.findIndex((s) => String(s["id"] ?? "") === shotId)
+    if (idx < 0) {
+      return { error: { code: "NOT_FOUND", message: `Shot not found: ${shotId}` }, status: 404 }
+    }
+
+    const remaining = shots.filter((_, i) => i !== idx)
+    const renumbered = remaining.map((s, i) => ({ ...s, shotNumber: i + 1 }))
+
+    const now = new Date().toISOString()
+    const updatedEpisode: StoryEpisode = { ...episode, shots: renumbered, updatedAt: now }
+    const write = await this.writeJsonFileAtomic(dir, relativePath, updatedEpisode, projectId)
+    if ("error" in write) return write
+
+    return { data: { updatedAt: now }, status: 200 }
+  }
+
+  /**
+   * Update whitelisted fields of a shot (ADR 0005). Only
+   * description / sceneId / cameraNotes / lightingNotes are applied; other keys
+   * are ignored. Optimistic concurrency + atomic write + bumped updatedAt.
+   */
+  async updateShot(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    shotId: string,
+    patch: Record<string, unknown>,
+    expectedUpdatedAt?: string,
+  ): Promise<
+    | { data: { shot: Record<string, unknown>; updatedAt: string }; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const loaded = await this.loadEpisodeForWrite(projectId, userId, episodeId, expectedUpdatedAt, "updateShot")
+    if ("error" in loaded) return loaded
+    const { dir, relativePath, episode } = loaded
+
+    const shots = Array.isArray(episode.shots) ? episode.shots : []
+    const idx = shots.findIndex((s) => String(s["id"] ?? "") === shotId)
+    if (idx < 0) {
+      return { error: { code: "NOT_FOUND", message: `Shot not found: ${shotId}` }, status: 404 }
+    }
+
+    const ALLOWED = ["description", "sceneId", "cameraNotes", "lightingNotes"] as const
+    const applied: Record<string, string> = {}
+    for (const key of ALLOWED) {
+      const value = patch[key]
+      if (typeof value === "string") applied[key] = value
+    }
+
+    const updatedShot = { ...shots[idx]!, ...applied }
+    const updatedShots = shots.map((s, i) => (i === idx ? updatedShot : s))
+
+    const now = new Date().toISOString()
+    const updatedEpisode: StoryEpisode = { ...episode, shots: updatedShots, updatedAt: now }
+    const write = await this.writeJsonFileAtomic(dir, relativePath, updatedEpisode, projectId)
+    if ("error" in write) return write
+
+    return { data: { shot: updatedShot, updatedAt: now }, status: 200 }
+  }
+
+  /**
+   * Reorder an episode's shots to match `orderedShotIds` and rewrite
+   * shotNumber = 1..N (ADR 0005). The id set must exactly match the existing
+   * shots (same count, same members) or 400 is returned. Optimistic
+   * concurrency + atomic write + bumped updatedAt.
+   */
+  async reorderShots(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    orderedShotIds: string[],
+    expectedUpdatedAt?: string,
+  ): Promise<
+    | { data: { updatedAt: string }; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const loaded = await this.loadEpisodeForWrite(projectId, userId, episodeId, expectedUpdatedAt, "reorderShots")
+    if ("error" in loaded) return loaded
+    const { dir, relativePath, episode } = loaded
+
+    const shots = Array.isArray(episode.shots) ? episode.shots : []
+    const currentIds = shots.map((s) => String(s["id"] ?? ""))
+
+    // The provided order must be a permutation of the existing ids: same length,
+    // no dupes, same membership.
+    const orderedSet = new Set(orderedShotIds)
+    const currentSet = new Set(currentIds)
+    const sameSet =
+      orderedShotIds.length === currentIds.length &&
+      orderedSet.size === orderedShotIds.length &&
+      orderedShotIds.every((id) => currentSet.has(id))
+    if (!sameSet) {
+      return {
+        error: { code: "VALIDATION_ERROR", message: "orderedShotIds must match the current shot set" },
+        status: 400,
+      }
+    }
+
+    const byId = new Map(shots.map((s) => [String(s["id"] ?? ""), s]))
+    const reordered = orderedShotIds.map((id, i) => ({ ...byId.get(id)!, shotNumber: i + 1 }))
+
+    const now = new Date().toISOString()
+    const updatedEpisode: StoryEpisode = { ...episode, shots: reordered, updatedAt: now }
+    const write = await this.writeJsonFileAtomic(dir, relativePath, updatedEpisode, projectId)
+    if ("error" in write) return write
+
+    return { data: { updatedAt: now }, status: 200 }
+  }
+
+  /**
    * Generate a keyframe for a shot (ADR 0005 — "generation = backend command").
    *
    * THIS IS A MOCK COMMAND: it does not call opencode/agent or a real provider.

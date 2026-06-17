@@ -72,11 +72,16 @@
           :can-add-shot="canAddShot"
           :can-generate="canAddShot"
           :generating-ids="generatingShotIds"
+          :editable="canAddShot"
+          :mutating-ids="mutatingShotIds"
           @scene-select="onSceneSelect"
           @scene-add="onSceneAdd"
           @scene-add-image="onSceneAddImage"
           @scene-image-type="onSceneImageType"
           @scene-generate="onShotGenerate"
+          @shot-delete="onShotDelete"
+          @shot-update="onShotUpdate"
+          @shot-move="onShotMove"
           @add-scene="onAddScene"
           @view-change="(d) => { storyboardDensity = d }"
         />
@@ -346,6 +351,7 @@ const selectedTimelineNodeId = ref<string | null>(null)
 const selectedTimelineRunId = ref<string | null>(null)
 const addingShot = ref(false)
 const generatingShotIds = ref<string[]>([])
+const mutatingShotIds = ref<string[]>([])
 const storyboardDensity = ref<'grid' | 'list'>('grid')
 const outputLayout = ref<'grid' | 'rows'>('grid')
 const hasUnreadNotifications = ref(true)
@@ -900,6 +906,93 @@ async function onShotGenerate(shotId: string) {
   } finally {
     generatingShotIds.value = generatingShotIds.value.filter((id) => id !== shotId)
   }
+}
+
+/**
+ * Run a shot mutation (delete/update/reorder, ADR 0005) with the shared write
+ * lifecycle: per-shot loading guard, optimistic concurrency via the episode's
+ * updatedAt, refetch-and-retry-once on 409, refresh on success.
+ *
+ * `mutate(expectedUpdatedAt)` performs one API call; it is retried with a fresh
+ * updatedAt if the first attempt 409s.
+ */
+async function runShotMutation(
+  shotId: string,
+  mutate: (expectedUpdatedAt: string | undefined) => Promise<unknown>,
+  successMessage: string,
+): Promise<void> {
+  const episodeId = currentStoryEpisodeId.value
+  if (!episodeId || mutatingShotIds.value.includes(shotId)) return
+
+  mutatingShotIds.value = [...mutatingShotIds.value, shotId]
+  try {
+    const current = storyEpisodes.value.find((ep) => ep.id === episodeId)
+    let expectedUpdatedAt = current?.updatedAt
+    try {
+      await mutate(expectedUpdatedAt)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        const fresh = await refreshEpisode(episodeId)
+        expectedUpdatedAt = fresh?.updatedAt
+        try {
+          await mutate(expectedUpdatedAt)
+        } catch (retryErr) {
+          if (retryErr instanceof ApiError && retryErr.status === 409) {
+            $q.notify({ color: 'warning', message: '该集已更新，请重试', icon: 'sync_problem', timeout: 2000 })
+            return
+          }
+          throw retryErr
+        }
+      } else {
+        throw err
+      }
+    }
+    await refreshEpisode(episodeId)
+    $q.notify({ color: 'positive', message: successMessage, icon: 'check', timeout: 1200 })
+  } catch {
+    $q.notify({ color: 'negative', message: '操作失败', icon: 'error', timeout: 2000 })
+  } finally {
+    mutatingShotIds.value = mutatingShotIds.value.filter((id) => id !== shotId)
+  }
+}
+
+function onShotDelete(shotId: string) {
+  const episodeId = currentStoryEpisodeId.value
+  if (!episodeId) return
+  void runShotMutation(
+    shotId,
+    (expected) => api.deleteShot(projectId.value, episodeId, shotId, expected),
+    '已删除镜头',
+  )
+}
+
+function onShotUpdate(shotId: string, patch: { description: string }) {
+  const episodeId = currentStoryEpisodeId.value
+  if (!episodeId) return
+  void runShotMutation(
+    shotId,
+    (expected) => api.updateShot(projectId.value, episodeId, shotId, patch, expected),
+    '已更新镜头',
+  )
+}
+
+/** MVP reorder: move one shot up/down by one, then persist the full order. */
+function onShotMove(shotId: string, direction: 'up' | 'down') {
+  const episodeId = currentStoryEpisodeId.value
+  if (!episodeId) return
+  const ids = currentStoryShots.value.map((s) => s.id)
+  const from = ids.indexOf(shotId)
+  if (from < 0) return
+  const to = direction === 'up' ? from - 1 : from + 1
+  if (to < 0 || to >= ids.length) return
+  const reordered = [...ids]
+  const [moved] = reordered.splice(from, 1)
+  reordered.splice(to, 0, moved!)
+  void runShotMutation(
+    shotId,
+    (expected) => api.reorderShots(projectId.value, episodeId, reordered, expected),
+    '已调整顺序',
+  )
 }
 
 function onContextDownload() {

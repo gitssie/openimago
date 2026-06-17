@@ -545,6 +545,39 @@ export const api = {
       `/api/platform/projects/${projectId}/story/episodes/${episodeId}/shots/${shotId}/generate`,
       { method: 'POST', body: '{}' },
     ),
+  // Story writes (ADR 0005) — delete a shot (renumbers the rest).
+  deleteShot: (projectId: string, episodeId: string, shotId: string, expectedUpdatedAt?: string) =>
+    request<{ updatedAt: string }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/shots/${shotId}`,
+      {
+        method: 'DELETE',
+        body: JSON.stringify(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}),
+      },
+    ),
+  // Story writes (ADR 0005) — update whitelisted shot fields.
+  updateShot: (
+    projectId: string,
+    episodeId: string,
+    shotId: string,
+    patch: { description?: string; sceneId?: string; cameraNotes?: string; lightingNotes?: string },
+    expectedUpdatedAt?: string,
+  ) =>
+    request<{ shot: OpenimagoEpisodeShot; updatedAt: string }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/shots/${shotId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ ...patch, ...(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}) }),
+      },
+    ),
+  // Story writes (ADR 0005) — reorder shots, rewriting shotNumber 1..N.
+  reorderShots: (projectId: string, episodeId: string, orderedShotIds: string[], expectedUpdatedAt?: string) =>
+    request<{ updatedAt: string }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/shots/reorder`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ orderedShotIds, ...(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}) }),
+      },
+    ),
   projectStoryAgents: (projectId: string) =>
     request(`/api/platform/projects/${projectId}/story/agents`)
       .then(() => null)
