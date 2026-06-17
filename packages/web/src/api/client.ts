@@ -225,6 +225,24 @@ export interface OpenimagoEpisodeShot {
   status: string
 }
 
+/** A generation run returned by the mock generate endpoint (ADR 0005). */
+export interface OpenimagoGenerationRun {
+  id: string
+  nodeId: string
+  shotId: string
+  status: string
+  params: { prompt: string; model: string }
+  result: {
+    artifactId: string
+    kind: string
+    mime: string
+    filename: string
+    access: { preview: string; thumbnail: string }
+  }
+  startedAt: string
+  completedAt: string
+}
+
 export interface OpenimagoStoryWorkflow {
   schemaVersion: number
   episodeId: string
@@ -520,6 +538,12 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}),
       },
+    ),
+  // Story writes (ADR 0005) — mock generation: append a completed run + mark shot generated.
+  generateShot: (projectId: string, episodeId: string, shotId: string) =>
+    request<{ run: OpenimagoGenerationRun }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/shots/${shotId}/generate`,
+      { method: 'POST', body: '{}' },
     ),
   projectStoryAgents: (projectId: string) =>
     request(`/api/platform/projects/${projectId}/story/agents`)

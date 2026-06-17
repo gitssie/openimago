@@ -21,6 +21,28 @@ const STORY_RUNS_DIR = "story/runs"
 const SAFE_EPISODE_PATTERN = /^ep_[a-z0-9_]+\.json$/
 const SAFE_EP_RELATED_PATTERN = /^ep_[a-z0-9_]+\.(workflow|runs)\.json$/
 
+// ── Mock generation helpers (ADR 0005 mock command) ───────────────────────────
+
+/** Stable, positive 32-bit FNV-1a hash (mirrors opencode mockImageProvider). */
+function stableHash(input: string): number {
+  let h = 0x811c9dc5
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return h >>> 0
+}
+
+/** Browser-loadable picsum.photos URL seeded from a stable hash of `seed`. */
+function mockImageUrl(seed: string): string {
+  return `https://picsum.photos/seed/${stableHash(seed).toString(36)}/1024/1024`
+}
+
+/** Short random slug for run / artifact ids. */
+function randomSlug(): string {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface StoryManifest {
@@ -81,6 +103,24 @@ export interface EpisodeShot {
   characterIds: string[]
   referenceArtifactIds: string[]
   status: string
+}
+
+/** A generation run appended to runs.json (ADR 0004 GenerationRun). */
+export interface GenerationRun {
+  id: string
+  nodeId: string
+  shotId: string
+  status: string
+  params: { prompt: string; model: string }
+  result: {
+    artifactId: string
+    kind: string
+    mime: string
+    filename: string
+    access: { preview: string; thumbnail: string }
+  }
+  startedAt: string
+  completedAt: string
 }
 
 export interface StoryWorkflow {
@@ -347,6 +387,107 @@ export class StoryService {
     if ("error" in write) return write
 
     return { data: { shot: newShot, updatedAt: now }, status: 200 }
+  }
+
+  /**
+   * Generate a keyframe for a shot (ADR 0005 — "generation = backend command").
+   *
+   * THIS IS A MOCK COMMAND: it does not call opencode/agent or a real provider.
+   * It synchronously appends a `completed` GenerationRun to runs.json with a
+   * picsum.photos result (model = "mock-image-model", artifactId = mock_*) and
+   * flips the shot's status to "generated". A real provider is a follow-up.
+   *
+   * runs.json is append-only (no updatedAt, no 409). The episode write reuses
+   * the optimistic episode write path (atomic + bumped updatedAt).
+   */
+  async generateShot(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    shotId: string,
+  ): Promise<
+    | { data: { run: GenerationRun }; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const safeEpisodeFile = `${episodeId}.json`
+    if (!SAFE_EPISODE_PATTERN.test(safeEpisodeFile)) {
+      logger.warn({ projectId, episodeId }, "story: invalid episode ID (generateShot)")
+      return { error: { code: "VALIDATION_ERROR", message: "Invalid episode ID" }, status: 400 }
+    }
+
+    const dir = await this.resolveProjectDir(projectId, userId)
+    if (typeof dir !== "string") return dir
+
+    const episodePath = `${STORY_EPISODES_DIR}/${safeEpisodeFile}`
+    const epRead = await this.readJsonFile<StoryEpisode>(dir, episodePath, projectId)
+    if ("error" in epRead) return epRead
+    const episode = epRead.data
+
+    const shots = Array.isArray(episode.shots) ? episode.shots : []
+    const shotIdx = shots.findIndex((s) => String(s["id"] ?? "") === shotId)
+    if (shotIdx < 0) {
+      return { error: { code: "NOT_FOUND", message: `Shot not found: ${shotId}` }, status: 404 }
+    }
+    const shot = shots[shotIdx]!
+
+    const description = typeof shot["description"] === "string" ? shot["description"] : ""
+    const shotNumber = typeof shot["shotNumber"] === "number" ? shot["shotNumber"] : shotIdx + 1
+    const prompt = description.trim() || `shot ${shotNumber}`
+
+    // ── Mock provider result (picsum, hash-seeded like opencode mockImage) ──
+    const imageUrl = mockImageUrl(`${shotId}${prompt}`)
+    const now = new Date().toISOString()
+    const run: GenerationRun = {
+      id: `run_${randomSlug()}`,
+      nodeId: "",
+      shotId,
+      status: "completed",
+      params: { prompt, model: "mock-image-model" },
+      result: {
+        artifactId: `mock_${randomSlug()}`,
+        kind: "image",
+        mime: "image/png",
+        filename: `${shotId}.png`,
+        access: { preview: imageUrl, thumbnail: imageUrl },
+      },
+      startedAt: now,
+      completedAt: now,
+    }
+
+    // ── Append to runs.json (append-only; initialize when missing) ──
+    const runsFile = `${episodeId}.runs.json`
+    if (!SAFE_EP_RELATED_PATTERN.test(runsFile)) {
+      return { error: { code: "VALIDATION_ERROR", message: "Invalid episode ID" }, status: 400 }
+    }
+    const runsPath = `${STORY_RUNS_DIR}/${runsFile}`
+    const runsRead = await this.readJsonFile<StoryRuns>(dir, runsPath, projectId)
+    const runsDoc: StoryRuns =
+      "error" in runsRead
+        ? { schemaVersion: 1, episodeId, runs: [] }
+        : runsRead.data
+    const existingRuns = Array.isArray(runsDoc.runs) ? runsDoc.runs : []
+    const updatedRuns: StoryRuns = {
+      ...runsDoc,
+      schemaVersion: runsDoc.schemaVersion ?? 1,
+      episodeId: runsDoc.episodeId ?? episodeId,
+      runs: [...existingRuns, run as unknown as Record<string, unknown>],
+    }
+    const runsWrite = await this.writeJsonFileAtomic(dir, runsPath, updatedRuns, projectId)
+    if ("error" in runsWrite) return runsWrite
+
+    // ── Flip shot status → generated (atomic episode write + bump updatedAt) ──
+    const updatedShots = shots.map((s, i) =>
+      i === shotIdx ? { ...s, status: "generated" } : s,
+    )
+    const updatedEpisode: StoryEpisode = {
+      ...episode,
+      shots: updatedShots,
+      updatedAt: now,
+    }
+    const epWrite = await this.writeJsonFileAtomic(dir, episodePath, updatedEpisode, projectId)
+    if ("error" in epWrite) return epWrite
+
+    return { data: { run }, status: 200 }
   }
 
   async getEpisodeWorkflow(projectId: string, userId: string, episodeId: string) {

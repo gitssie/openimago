@@ -122,6 +122,26 @@
               <span>添加</span>
             </button>
           </div>
+
+          <!-- Generate action (ADR 0005). Available in read-only mode only when
+               shot generation is explicitly enabled; per-card loading state. -->
+          <div v-if="canGenerate" class="scene-card__generate">
+            <button
+              type="button"
+              class="scene-card__generate-btn"
+              :disabled="generatingIds.includes(scene.id)"
+              :aria-busy="generatingIds.includes(scene.id)"
+              :aria-label="`为 ${scene.title} 生成关键帧`"
+              @click.stop="emit('scene-generate', scene.id)"
+            >
+              <OiIcon
+                name="enhance-wave"
+                :size="12"
+                :class="{ 'scene-card__spin': generatingIds.includes(scene.id) }"
+              />
+              <span>{{ generatingIds.includes(scene.id) ? '生成中…' : '生成' }}</span>
+            </button>
+          </div>
         </li>
       </ol>
 
@@ -176,11 +196,20 @@ withDefaults(defineProps<{
    * hidden under readOnly.
    */
   canAddShot?: boolean
+  /**
+   * Opt-in: show the per-card "生成" action (mock keyframe generation, ADR
+   * 0005), independent of the other write affordances.
+   */
+  canGenerate?: boolean
+  /** Shot ids currently generating — drives per-card loading state. */
+  generatingIds?: ReadonlyArray<string>
 }>(), {
   selectedId: null,
   viewDensity: 'grid',
   readOnly: false,
   canAddShot: false,
+  canGenerate: false,
+  generatingIds: () => [],
 })
 
 const emit = defineEmits<{
@@ -188,6 +217,7 @@ const emit = defineEmits<{
   (e: 'scene-add-image', id: string): void
   (e: 'scene-add', id: string): void
   (e: 'scene-image-type', id: string): void
+  (e: 'scene-generate', id: string): void
   (e: 'add-scene'): void
   (e: 'view-change', density: 'grid' | 'list'): void
 }>()
@@ -465,6 +495,52 @@ const emit = defineEmits<{
 .scene-card__add:hover {
   color: var(--imago-neon-cyan);
   background: var(--imago-cyan-06);
+}
+
+// ── Generate action ───────────────────────────────────────────────────────────
+
+.scene-card__generate {
+  display: flex;
+}
+
+.scene-card__generate-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--imago-border-cyan);
+  border-radius: var(--imago-radius-md);
+  background: transparent;
+  color: var(--imago-text-secondary);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.scene-card__generate-btn:hover:not(:disabled) {
+  color: var(--imago-neon-cyan);
+  border-color: var(--imago-border-cyan-active);
+  background: var(--imago-cyan-06);
+}
+
+.scene-card__generate-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.scene-card__spin {
+  animation: scene-card-spin 1s linear infinite;
+}
+
+@keyframes scene-card-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-card__spin { animation: none; }
 }
 
 // ── Empty state ─────────────────────────────────────────────────────────────

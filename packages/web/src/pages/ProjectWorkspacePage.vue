@@ -70,10 +70,13 @@
           :view-density="storyboardDensity"
           :read-only="true"
           :can-add-shot="canAddShot"
+          :can-generate="canAddShot"
+          :generating-ids="generatingShotIds"
           @scene-select="onSceneSelect"
           @scene-add="onSceneAdd"
           @scene-add-image="onSceneAddImage"
           @scene-image-type="onSceneImageType"
+          @scene-generate="onShotGenerate"
           @add-scene="onAddScene"
           @view-change="(d) => { storyboardDensity = d }"
         />
@@ -342,6 +345,7 @@ const activeWorkspaceTab = ref<string>('storyboard')
 const selectedTimelineNodeId = ref<string | null>(null)
 const selectedTimelineRunId = ref<string | null>(null)
 const addingShot = ref(false)
+const generatingShotIds = ref<string[]>([])
 const storyboardDensity = ref<'grid' | 'list'>('grid')
 const outputLayout = ref<'grid' | 'rows'>('grid')
 const hasUnreadNotifications = ref(true)
@@ -818,13 +822,19 @@ function onSceneImageType(id: string) {
   $q.notify({ color: 'info', message: `切换场景 ${id} 的素材类型（待接入）`, icon: 'category', timeout: 1200 })
 }
 
-/** Replace one episode in storyEpisodes with the latest from the backend. */
+/** Replace one episode in storyEpisodes with the latest from the backend. When
+ *  it is the current episode, also re-pull its runs so the timeline and the
+ *  left-panel shot thumbnails (sourced from completed runs) refresh. */
 async function refreshEpisode(episodeId: string): Promise<OpenimagoStoryEpisode | null> {
   const fresh = await api.projectStoryEpisode(projectId.value, episodeId)
   if (!fresh) return null
   const idx = storyEpisodes.value.findIndex((ep) => ep.id === episodeId)
   if (idx >= 0) storyEpisodes.value.splice(idx, 1, fresh)
   else storyEpisodes.value.push(fresh)
+  if (episodeId === currentStoryEpisodeId.value) {
+    const runs = await api.projectStoryRuns(projectId.value, episodeId)
+    if (episodeId === currentStoryEpisodeId.value) storyRuns.value = runs
+  }
   return fresh
 }
 
@@ -868,6 +878,27 @@ async function onAddScene() {
     $q.notify({ color: 'negative', message: '添加镜头失败', icon: 'error', timeout: 2000 })
   } finally {
     addingShot.value = false
+  }
+}
+
+/**
+ * Trigger mock generation for a shot (ADR 0005 — backend mock command appends a
+ * completed run + flips the shot to generated). On success, refresh the episode
+ * so the new keyframe thumbnail + status + timeline run appear.
+ */
+async function onShotGenerate(shotId: string) {
+  const episodeId = currentStoryEpisodeId.value
+  if (!episodeId || generatingShotIds.value.includes(shotId)) return
+
+  generatingShotIds.value = [...generatingShotIds.value, shotId]
+  try {
+    await api.generateShot(projectId.value, episodeId, shotId)
+    await refreshEpisode(episodeId)
+    $q.notify({ color: 'positive', message: '已生成关键帧', icon: 'check', timeout: 1200 })
+  } catch {
+    $q.notify({ color: 'negative', message: '生成失败', icon: 'error', timeout: 2000 })
+  } finally {
+    generatingShotIds.value = generatingShotIds.value.filter((id) => id !== shotId)
   }
 }
 
