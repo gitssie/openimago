@@ -94,6 +94,7 @@
               </span>
             </div>
             <button
+              v-if="!readOnly"
               type="button"
               class="scene-card__thumb scene-card__thumb--add"
               :aria-label="`为 ${scene.title} 添加图片`"
@@ -102,7 +103,7 @@
               <OiIcon name="plus" :size="14" />
             </button>
           </div>
-          <div class="scene-card__footer">
+          <div v-if="!readOnly" class="scene-card__footer">
             <button
               type="button"
               class="scene-card__select"
@@ -132,7 +133,7 @@
     </div>
 
     <!-- ── Footer: add scene button ──────────────────────────────── -->
-    <footer class="left-panel__footer">
+    <footer v-if="!readOnly" class="left-panel__footer">
       <button
         type="button"
         class="left-panel__add-scene"
@@ -164,9 +165,12 @@ withDefaults(defineProps<{
   scenes: StoryboardScene[]
   selectedId?: string | null
   viewDensity?: 'grid' | 'list'
+  /** When true, hides all write affordances (add scene/image, image-type). */
+  readOnly?: boolean
 }>(), {
   selectedId: null,
   viewDensity: 'grid',
+  readOnly: false,
 })
 
 const emit = defineEmits<{

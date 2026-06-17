@@ -205,6 +205,10 @@ export interface StoryRunSummary {
   model: string
   prompt: string
   resultArtifactId: string | null
+  /** Thumbnail URL from the run's inlined result.access (authoritative). */
+  thumbnailUrl: string | null
+  /** Full-size preview URL from the run's inlined result.access. */
+  previewUrl: string | null
   error: string | null
 }
 

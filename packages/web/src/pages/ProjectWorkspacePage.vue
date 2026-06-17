@@ -65,9 +65,10 @@
         @update:model-value="leftPanelOpen = $event"
       >
         <ProjectWorkspaceLeftPanel
-          :scenes="storyboardScenes"
+          :scenes="storyboardShots"
           :selected-id="selectedSceneId"
           :view-density="storyboardDensity"
+          :read-only="true"
           @scene-select="onSceneSelect"
           @scene-add="onSceneAdd"
           @scene-add-image="onSceneAddImage"
@@ -223,7 +224,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import SessionChatView from 'src/components/session-workspace/SessionChatView.vue'
 import ProjectWorkspaceGrid from 'src/components/session-workspace/ProjectWorkspaceGrid.vue'
-import ProjectWorkspaceLeftPanel from 'src/components/session-workspace/ProjectWorkspaceLeftPanel.vue'
+import ProjectWorkspaceLeftPanel, { type StoryboardScene } from 'src/components/session-workspace/ProjectWorkspaceLeftPanel.vue'
 import ProjectWorkspaceRightPanel from 'src/components/session-workspace/ProjectWorkspaceRightPanel.vue'
 import AgentQuestion from 'src/components/AgentQuestion.vue'
 import AgentPermission from 'src/components/AgentPermission.vue'
@@ -466,39 +467,26 @@ const storyElements = computed<StoryElement[]>(() => {
   return items
 })
 
-// ── Storyboard scenes (left drawer) ─────────────────────────────────────────
+// ── Storyboard shots (left drawer) ──────────────────────────────────────────
 
-const storyboardScenes = computed(() => {
-  // Build a flat ordered list of scene cards from the project outputs and
-  // story-derived scene elements. The page wires this directly into the
-  // redesigned ProjectWorkspaceLeftPanel. Each card has up to 4 thumbnails.
-  const out: { id: string; title: string; description: string; thumbnails: Array<string | null>; imageTypeLabel?: string }[] = []
-  const fallbackDescriptions = [
-    '戴黑框眼镜，性格内向',
-    '短发霸氣张扬，身穿校服，气场强势',
-    '班长兼校花，外表高冷，气质出众',
-  ]
-  const allElements = storyElements.value.filter((el) => el.kind === 'scene')
-  const sourceCount = Math.max(allElements.length, projectOutputs.value.length, fallbackDescriptions.length)
-  for (let i = 0; i < sourceCount; i += 1) {
-    const element = allElements[i]
-    const output = projectOutputs.value[i]
-    const title = element?.title || output?.filename || `场景 ${String(i + 1).padStart(2, '0')}`
-    const description = element?.preview || output?.promptText || fallbackDescriptions[i] || ''
-    const thumbnails: Array<string | null> = []
-    if (output?.url) thumbnails.push(output.url)
-    for (let j = 1; j < 4; j += 1) {
-      const candidate = projectOutputs.value[(i + j) % Math.max(1, projectOutputs.value.length)]
-      thumbnails.push(candidate?.url ?? null)
-    }
-    out.push({
-      id: element?.id || output?.id || `scene-${i}`,
-      title,
-      description,
-      thumbnails,
-    })
+const storyboardShots = computed<StoryboardScene[]>(() => {
+  // Each card is a Shot (镜头) of the current episode. Thumbnails come from the
+  // shot's own completed runs (run.result.access.thumbnail, inlined in the run
+  // — the authoritative source; no join against projectOutputs). Concept-art
+  // runs have shotId === null, so they never match a shot here.
+  const thumbsByShot = new Map<string, string[]>()
+  for (const run of currentStoryRuns.value) {
+    if (run.status !== 'completed' || !run.shotId || !run.thumbnailUrl) continue
+    const list = thumbsByShot.get(run.shotId) ?? []
+    list.push(run.thumbnailUrl)
+    thumbsByShot.set(run.shotId, list)
   }
-  return out
+  return currentStoryShots.value.map((shot) => ({
+    id: shot.id,
+    title: `镜头 ${String(shot.shotNumber).padStart(2, '0')}`,
+    description: shot.description,
+    thumbnails: thumbsByShot.get(shot.id) ?? [],
+  }))
 })
 
 // ── Storyboard context strip (above the chat) ───────────────────────────────
@@ -506,12 +494,12 @@ const storyboardScenes = computed(() => {
 const contextStrip = computed(() => {
   // Prefer the selected scene; fall back to the selected output.
   const scene = selectedSceneId.value
-    ? storyboardScenes.value.find((s) => s.id === selectedSceneId.value)
+    ? storyboardShots.value.find((s) => s.id === selectedSceneId.value)
     : null
   if (scene) {
     return {
       title: scene.title,
-      subtitle: scene.description,
+      subtitle: scene.description ?? '',
       meta: null,
       thumbnailUrl: scene.thumbnails[0] ?? null,
       kind: 'scene' as const,
@@ -1030,9 +1018,7 @@ const _storyRefsKept = {
   storyPanelError,
   storyBibleSummary,
   storyEpisodeSummaries,
-  currentStoryShots,
   currentStoryWorkflowNodes,
-  currentStoryRuns,
   currentStorySceneId,
   storySelectedCharacterId,
   storySelectedStyleSeedId,

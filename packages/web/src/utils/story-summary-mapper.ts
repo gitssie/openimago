@@ -191,8 +191,19 @@ export function rawWorkflowToNodeSummaries(
 
 // ── Runs → run summaries ──────────────────────────────────────────────────────
 
+/** Guard: extract a nested record (object) safely, returns empty record otherwise. */
+function safeRecord(v: unknown): Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : {}
+}
+
 export function rawRunsToRunSummaries(runs: OpenimagoStoryRuns): StoryRunSummary[] {
   return (runs.runs ?? []).map((run) => {
+    // Real schema (ADR 0004, docs/story-schema/runs/ep_001.runs.json) nests the
+    // artifact + access URLs under `run.result`; running/queued runs omit it.
+    const result = safeRecord(run['result'])
+    const access = safeRecord(result['access'])
     return {
       id: safeStr(run['id']) || '',
       nodeId: safeStr(run['nodeId']) || safeStr(run['toolNodeId']) || '',
@@ -202,7 +213,13 @@ export function rawRunsToRunSummaries(runs: OpenimagoStoryRuns): StoryRunSummary
       completedAt: safeStr(run['completedAt']) || safeStr(run['finishedAt']) || null,
       model: safeStr(run['model']) || '',
       prompt: safeStr(run['prompt']) || safeStr(run['inputPrompt']) || '',
-      resultArtifactId: safeStr(run['resultArtifactId']) || safeStr(run['artifactId']) || null,
+      resultArtifactId:
+        safeStr(result['artifactId'])
+        || safeStr(run['resultArtifactId'])
+        || safeStr(run['artifactId'])
+        || null,
+      thumbnailUrl: safeStr(access['thumbnail']) || null,
+      previewUrl: safeStr(access['preview']) || null,
       error: safeStr(run['error']) || safeStr(run['errorMessage']) || null,
     }
   })

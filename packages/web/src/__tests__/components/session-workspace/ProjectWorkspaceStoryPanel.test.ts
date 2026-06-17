@@ -139,6 +139,8 @@ function makeRun(over: Partial<StoryRunSummary> = {}): StoryRunSummary {
     model: over.model ?? 'nano-banana',
     prompt: over.prompt ?? 'Wide shot...',
     resultArtifactId: over.resultArtifactId ?? 'artifact-1',
+    thumbnailUrl: over.thumbnailUrl ?? null,
+    previewUrl: over.previewUrl ?? null,
     error: over.error ?? null,
   }
 }
