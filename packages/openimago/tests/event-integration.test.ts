@@ -14,6 +14,38 @@ import { signJwt } from "../src/auth/jwt"
 
 let app: Hono
 
+/** opencode upstream URL — same convention as health.test.ts / proxy.test.ts. */
+const OPENCODE_URL = process.env.OPENCODE_URL ?? "http://localhost:4096"
+
+/**
+ * Probe whether the live opencode upstream is reachable. The two tests below
+ * depend on real upstream event timing (session.updated / auth.expired) and are
+ * non-deterministic without it, so we skip them when no upstream is running.
+ *
+ * We probe the actual SSE endpoint the EventLayer connects to (/global/event)
+ * with a short timeout: a healthy upstream answers 200 and opens the stream,
+ * while a down/absent upstream yields a 5xx (e.g. 502) or a network error.
+ */
+async function upstreamReachable(): Promise<boolean> {
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), 1500)
+  try {
+    const res = await fetch(`${OPENCODE_URL}/global/event`, {
+      method: "GET",
+      signal: ac.signal,
+    })
+    // Don't hold the long-lived SSE stream open.
+    await res.body?.cancel()
+    return res.status < 500
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+const UPSTREAM_AVAILABLE = await upstreamReachable()
+
 beforeAll(async () => {
   await setup(); await setupSessionTable(); await setupMessageTable()
   app = createApp()
@@ -113,7 +145,7 @@ describe("/api/event SSE endpoint", () => {
     expect(events.map((e: any) => e.type)).toContain("server.connected")
   }, 15_000)
 
-  test("receives session.updated after creating a session", async () => {
+  test.skipIf(!UPSTREAM_AVAILABLE)("receives session.updated after creating a session", async () => {
     const reg = await registerUser("sse_sess")
     // userId is already set on WorkspaceTable during registerUser → no manual mapping needed
 
@@ -182,7 +214,7 @@ describe("/api/event SSE endpoint", () => {
     }
   }, 20_000)
 
-  test("closes SSE stream with auth.expired when short-lived token expires", async () => {
+  test.skipIf(!UPSTREAM_AVAILABLE)("closes SSE stream with auth.expired when short-lived token expires", async () => {
     // Register a user via the normal flow to get a userId
     const reg = await registerUser("sse_auth_exp")
     // Generate a short-lived token (expires in 2 seconds) for the same user
