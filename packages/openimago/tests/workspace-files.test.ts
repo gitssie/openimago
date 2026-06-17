@@ -4,8 +4,9 @@ import { eq } from "drizzle-orm"
 import { setup, teardown, setupSessionTable } from "./helper"
 import { authRoutes } from "../src/auth/routes"
 import { SessionTable } from "../src/db/session-schema"
+import { WorkspaceTable } from "../src/db/workspace-schema"
 import { db } from "../src/db/client"
-import { workspaceGeneratedFiles } from "../src/db/schema"
+import { workspaceGeneratedFiles, projects } from "../src/db/schema"
 
 const SESSION_ID = "test-session-wsf-001"
 
@@ -444,5 +445,156 @@ describe("workspace-files routes are mounted in the production app", () => {
     expect(res.status).toBe(200)
     const body = (await res.json()) as Record<string, any>
     expect(Array.isArray(body.workspaceFiles)).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Project-level aggregation (openimago-owy7).
+// Reliable identity = workspace.project_id (verified against live DB:
+// session.directory is workspace-scoped, not project-scoped, so a directory
+// join returns nothing; session.project_id is always "global").
+// ---------------------------------------------------------------------------
+describe("project-level workspace-files aggregation", () => {
+  let userId: string
+  let token: string
+  let projectId: string
+  let projectWorkspaceId: string
+
+  /** Create a project owned by userId plus a workspace linked to it. */
+  async function setupProjectWorkspace(uid: string, suffix: string) {
+    const pid = `proj_wsf_${suffix}`
+    const wid = `wrk_wsf_${suffix}`
+    const dir = `/opt/work/${pid}`
+    await db
+      .insert(projects)
+      .values({ id: pid, userId: uid, name: `P-${suffix}`, directory: dir })
+      .onConflictDoUpdate({ target: projects.id, set: { userId: uid, directory: dir } })
+    await db
+      .insert(WorkspaceTable)
+      .values({
+        id: wid,
+        type: "worktree",
+        name: "",
+        directory: `/opt/work/${wid}`,
+        project_id: pid,
+        time_used: Date.now(),
+        userId: uid,
+      })
+      .onConflictDoUpdate({ target: WorkspaceTable.id, set: { project_id: pid } })
+    return { pid, wid }
+  }
+
+  /** Insert an active generated file directly (bypassing the registration route). */
+  async function insertFile(id: string, sessionId: string, workspaceId: string) {
+    const now = new Date()
+    await db.insert(workspaceGeneratedFiles).values({
+      id,
+      sessionId,
+      workspaceId,
+      kind: "image",
+      mimeType: "image/png",
+      filename: `${id}.png`,
+      accessLocators: { preview: { href: `http://cdn.example.com/${id}.png` } },
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
+
+  beforeAll(async () => {
+    const reg = await registerUser("wsfproj@example.com")
+    token = reg.token
+    // Resolve the userId from the issued token via the project we create.
+    // We need the real userId — fetch it through /auth/me-equivalent: the
+    // registration response embeds it indirectly via workspaceId, so instead
+    // read it back from the users table by the workspace owner is overkill;
+    // simplest: decode is unavailable, so create project via a known userId.
+    const meApp = new Hono()
+    meApp.route("/auth", authRoutes)
+    const meRes = await meApp.fetch(
+      new Request("http://localhost/auth/me", {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+    )
+    const me = (await meRes.json()) as Record<string, any>
+    userId = me.id as string
+
+    const { pid, wid } = await setupProjectWorkspace(userId, "main")
+    projectId = pid
+    projectWorkspaceId = wid
+
+    // Two sessions in the same project workspace, each with a file.
+    await ensureSession("ses_wsf_proj_a", projectWorkspaceId)
+    await ensureSession("ses_wsf_proj_b", projectWorkspaceId)
+    await insertFile("wsf_proj_a1", "ses_wsf_proj_a", projectWorkspaceId)
+    await insertFile("wsf_proj_b1", "ses_wsf_proj_b", projectWorkspaceId)
+  })
+
+  test("aggregates generated files across all sessions of the project", async () => {
+    const { createApp } = await import("../src/server/app")
+    const realApp = createApp()
+
+    const res = await realApp.fetch(
+      new Request(
+        `http://localhost/api/platform/projects/${projectId}/workspace-files`,
+        { headers: { authorization: `Bearer ${token}` } },
+      ),
+    )
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, any>
+    const ids = body.workspaceFiles.map((f: Record<string, any>) => f.workspaceFileId)
+    expect(ids).toContain("wsf_proj_a1")
+    expect(ids).toContain("wsf_proj_b1")
+  })
+
+  test("returns an empty list for a project with no generated files", async () => {
+    await setupProjectWorkspace(userId, "empty")
+    const { createApp } = await import("../src/server/app")
+    const realApp = createApp()
+
+    const res = await realApp.fetch(
+      new Request(
+        `http://localhost/api/platform/projects/proj_wsf_empty/workspace-files`,
+        { headers: { authorization: `Bearer ${token}` } },
+      ),
+    )
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, any>
+    expect(body.workspaceFiles).toEqual([])
+  })
+
+  test("rejects a project owned by another user with 403", async () => {
+    const other = await registerUser("wsfprojother@example.com")
+    const { createApp } = await import("../src/server/app")
+    const realApp = createApp()
+
+    const res = await realApp.fetch(
+      new Request(
+        `http://localhost/api/platform/projects/${projectId}/workspace-files`,
+        { headers: { authorization: `Bearer ${other.token}` } },
+      ),
+    )
+
+    expect(res.status).toBe(403)
+    const body = (await res.json()) as Record<string, any>
+    expect(body.error.code).toBe("FORBIDDEN")
+  })
+
+  test("returns 404 for a non-existent project", async () => {
+    const { createApp } = await import("../src/server/app")
+    const realApp = createApp()
+
+    const res = await realApp.fetch(
+      new Request(
+        `http://localhost/api/platform/projects/proj_does_not_exist/workspace-files`,
+        { headers: { authorization: `Bearer ${token}` } },
+      ),
+    )
+
+    expect(res.status).toBe(404)
+    const body = (await res.json()) as Record<string, any>
+    expect(body.error.code).toBe("NOT_FOUND")
   })
 })

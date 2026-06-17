@@ -12,7 +12,7 @@ import { promptsRoutes } from "../prompts/routes"
 import { assetsRoutes } from "../assets/routes"
 import { tempUploadRoutes } from "../temp-uploads/routes"
 import { galleryRoutes, galleryFilesRoutes } from "../gallery/routes"
-import { workspaceFilesRoutes, sessionWorkspaceFilesRoutes } from "../workspace-files/routes"
+import { workspaceFilesRoutes, sessionWorkspaceFilesRoutes, projectWorkspaceFilesRoutes } from "../workspace-files/routes"
 import { authMiddleware, adminMiddleware } from "./middleware"
 import { createProxyRoutes, type SubscribeFn } from "../proxy/routes"
 import { billingRoutes } from "../billing/routes"
@@ -65,6 +65,7 @@ export function createApp() {
   app.route("/api/platform/projects", projectRoutes)
   app.route("/api/platform/projects", projectOutputsRoutes)
   app.route("/api/platform/projects", projectFilesRoutes)
+  app.route("/api/platform/projects", projectWorkspaceFilesRoutes)
   app.route("/api/platform/sessions", workDirRoutes)
   app.route("/api/platform/work-dirs", workDirRoutes)
   app.route("/api/platform/files", filesRoutes)

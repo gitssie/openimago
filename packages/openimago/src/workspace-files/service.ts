@@ -1,7 +1,8 @@
 import { eq, and, desc } from "drizzle-orm"
 import { db } from "../db/client"
-import { workspaceGeneratedFiles } from "../db/schema"
+import { workspaceGeneratedFiles, projects } from "../db/schema"
 import { SessionTable } from "../db/session-schema"
+import { WorkspaceTable } from "../db/workspace-schema"
 import { workspaceFileId as generateWorkspaceFileId } from "../utils/ids"
 import { logger } from "../server/logger"
 
@@ -307,6 +308,61 @@ export class WorkspaceFilesService {
       .orderBy(desc(workspaceGeneratedFiles.createdAt))
 
     const records = files.map(rowToRecord)
+
+    return { workspaceFiles: records, status: 200 }
+  }
+
+  /**
+   * Aggregate all tool-generated workspace files for a project.
+   *
+   * Project identity is resolved via the workspace→project link
+   * (`workspace.project_id`), NOT via session.directory: verified against the
+   * live DB, session directories are workspace-scoped (`/opt/work/wrk_*`) while
+   * project directories are project-scoped (`/opt/work/proj_*`), so a
+   * `session.directory = project.directory` join returns nothing. Sessions also
+   * carry `project_id = "global"`, so that column is unusable for filtering.
+   *
+   * Join: workspace_generated_files → workspace ON workspace_id
+   *       WHERE workspace.project_id = projectId AND status = 'active'.
+   */
+  async listProjectFiles(
+    projectId: string,
+    userId: string,
+  ): Promise<
+    | { workspaceFiles: WorkspaceFileRecord[]; status: 200 }
+    | { error: { code: string; message: string }; status: 404 | 403 }
+  > {
+    // Verify project exists and is owned by the requesting user
+    const projectRows = await db
+      .select({ userId: projects.userId })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1)
+
+    if (projectRows.length === 0) {
+      return { error: { code: "NOT_FOUND", message: "Project not found" }, status: 404 }
+    }
+
+    if (projectRows[0]!.userId !== userId) {
+      return { error: { code: "FORBIDDEN", message: "Not project owner" }, status: 403 }
+    }
+
+    const files = await db
+      .select({ file: workspaceGeneratedFiles })
+      .from(workspaceGeneratedFiles)
+      .innerJoin(
+        WorkspaceTable,
+        eq(WorkspaceTable.id, workspaceGeneratedFiles.workspaceId),
+      )
+      .where(
+        and(
+          eq(WorkspaceTable.project_id, projectId),
+          eq(workspaceGeneratedFiles.status, "active"),
+        ),
+      )
+      .orderBy(desc(workspaceGeneratedFiles.createdAt))
+
+    const records = files.map((row) => rowToRecord(row.file))
 
     return { workspaceFiles: records, status: 200 }
   }

@@ -72,7 +72,25 @@ sessionWorkspaceFilesRoutes.get("/:id/workspace-files", async (c) => {
   })
 
   if ("error" in result) {
-    return c.json({ error: result.error }, result.status as any)
+    return c.json({ error: result.error }, result.status as ContentfulStatusCode)
+  }
+
+  return c.json({ workspaceFiles: result.workspaceFiles })
+})
+
+/** GET /api/platform/projects/:id/workspace-files — aggregate all tool-generated
+ *  workspace files across the project's sessions (resolved via workspace.project_id). */
+export const projectWorkspaceFilesRoutes = new Hono()
+projectWorkspaceFilesRoutes.use("/*", authMiddleware)
+
+projectWorkspaceFilesRoutes.get("/:id/workspace-files", async (c) => {
+  const projectId = c.req.param("id")
+  const userId = c.get("userId") as string
+
+  const result = await workspaceFilesService.listProjectFiles(projectId, userId)
+
+  if ("error" in result) {
+    return c.json({ error: result.error }, result.status as ContentfulStatusCode)
   }
 
   return c.json({ workspaceFiles: result.workspaceFiles })

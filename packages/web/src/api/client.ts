@@ -443,6 +443,13 @@ export const api = {
   sessionWorkspaceFiles: (sessionId: string) =>
     request<{ workspaceFiles: WorkspaceFile[] }>(`/api/platform/sessions/${sessionId}/workspace-files?source=tool`).then((r) => r.workspaceFiles ?? []),
 
+  // Project-level generated files (ADR 0002, openimago-owy7) — aggregates the
+  // DB-backed workspace_generated_files across all sessions of the project
+  // (resolved via workspace.project_id). Distinct from projectOutputs, which
+  // scans the project directory on disk.
+  projectWorkspaceFiles: (projectId: string) =>
+    request<{ workspaceFiles: WorkspaceFile[] }>(`/api/platform/projects/${projectId}/workspace-files`).then((r) => r.workspaceFiles ?? []),
+
   // Project outputs — aggregated media results across project sessions
   projectOutputs: (projectId: string) =>
     request<{ outputs: WorkspaceFile[] }>(`/api/platform/projects/${projectId}/outputs`).then((r) => r.outputs ?? []),

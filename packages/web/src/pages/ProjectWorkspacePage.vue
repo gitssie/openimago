@@ -237,7 +237,7 @@ import WorkspaceSessionChip from 'src/components/workspace/WorkspaceSessionChip.
 import { useAgentSession } from 'src/composables/useAgentSession'
 import type { TextPart } from '@opencode-ai/sdk/v2'
 import type { SessionItem } from 'src/services/agents'
-import { api, type OpenimagoProject, type OpenimagoStoryBible, type OpenimagoStorySeries, type OpenimagoStoryEpisode, type OpenimagoStoryWorkflow, type OpenimagoStoryRuns } from 'src/api/client'
+import { api, type OpenimagoProject, type OpenimagoStoryBible, type OpenimagoStorySeries, type OpenimagoStoryEpisode, type OpenimagoStoryWorkflow, type OpenimagoStoryRuns, type WorkspaceFile } from 'src/api/client'
 import WorkspaceArtifactsPanel from 'src/components/session-workspace/WorkspaceArtifactsPanel.vue'
 import { UILayout, UILayoutDrawer, UILayoutPage, UILayoutPageContainer } from 'src/components/ui/layout'
 import type {
@@ -265,6 +265,7 @@ import {
   rawWorkflowToNodeSummaries,
   rawRunsToRunSummaries,
 } from 'src/utils/story-summary-mapper'
+import { workspaceFileToAIOutputItem } from 'src/utils/session-output-mapper'
 
 // ── Local types ─────────────────────────────────────────────────────────────
 
@@ -316,6 +317,10 @@ const projectStatus = computed<'active' | 'archived'>(() => project.value?.statu
 
 const projectOutputs = ref<OutputItem[]>([])
 const projectOutputsLoading = ref(false)
+// DB-backed generated media for the right-side "AI 产出" panel (openimago-owy7).
+// Kept separate from projectOutputs (filesystem scan) so the storyboard
+// fallback that reads projectOutputs/projectFiles is not affected.
+const projectWorkspaceFileItems = ref<AIOutputItem[]>([])
 const selectedOutputId = ref<string | null>(null)
 const selectedSceneId = ref<string | null>(null)
 const projectFiles = ref<OutputItem[]>([])
@@ -402,14 +407,9 @@ const selectedGridOutput = computed<ShotOutputItem | null>(
   () => gridOutputs.value.find((item) => item.id === selectedOutputId.value) ?? null,
 )
 
-const aiOutputItems = computed<AIOutputItem[]>(() => projectOutputs.value.map((item) => ({
-  id: item.id,
-  url: item.url,
-  filename: item.filename,
-  kind: item.kind,
-  timeLabel: item.timeLabel,
-  prompt: item.promptText,
-})))
+// Right-side "AI 产出" panel is now sourced from the DB-backed
+// workspace_generated_files (openimago-owy7), persistent across refresh.
+const aiOutputItems = computed<AIOutputItem[]>(() => projectWorkspaceFileItems.value)
 
 // ── Story elements (unchanged from prior version) ───────────────────────────
 
@@ -952,6 +952,24 @@ async function fetchProjectOutputs() {
   }
 }
 
+async function fetchProjectWorkspaceFiles() {
+  const pid = projectId.value
+  if (!pid) {
+    projectWorkspaceFileItems.value = []
+    return
+  }
+  try {
+    const files = await api.projectWorkspaceFiles(pid)
+    // Guard against a race where the route changed mid-flight.
+    if (projectId.value !== pid) return
+    projectWorkspaceFileItems.value = files.map((wf: WorkspaceFile) =>
+      workspaceFileToAIOutputItem(wf, formatResultTime),
+    )
+  } catch {
+    if (projectId.value === pid) projectWorkspaceFileItems.value = []
+  }
+}
+
 async function fetchProjectFiles() {
   projectFilesLoading.value = true
   try {
@@ -987,6 +1005,7 @@ onMounted(() => {
   void loadCommands()
   void fetchProjectData()
   void fetchProjectOutputs()
+  void fetchProjectWorkspaceFiles()
   void fetchProjectFiles()
   void fetchStoryData()
   void loadSessionList().then(() => {
@@ -1005,6 +1024,17 @@ watch(
     if (s && s !== sessionId.value) void switchSession(s)
   },
 )
+
+// After a generation round completes (isLoading true → false), refresh the
+// DB-backed "AI 产出" panel so newly generated media appears without a manual
+// reload (openimago-owy7). Also refresh the filesystem-scanned projectOutputs
+// so the storyboard fallback stays in sync.
+watch(isLoading, (loading, wasLoading) => {
+  if (wasLoading && !loading) {
+    void fetchProjectWorkspaceFiles()
+    void fetchProjectOutputs()
+  }
+})
 
 onUnmounted(() => {
   stopEventSubscription()
