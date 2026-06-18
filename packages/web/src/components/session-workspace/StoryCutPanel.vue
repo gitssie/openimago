@@ -42,9 +42,10 @@
         {{ orphanCount }} 个片段的源镜头已不存在，已标记为缺失（灰色虚线）。
       </div>
 
-      <!-- omniclip mounts its editor element here (browser-only). -->
+      <!-- omniclip's editor custom element (registered by the fork on load). -->
       <div ref="editorHost" class="story-cut__editor" data-testid="cut-editor-host">
-        <p v-if="!editorReady" class="story-cut__loading">
+        <construct-editor v-if="editorReady" class="story-cut__construct" />
+        <p v-else class="story-cut__loading">
           {{ editorError ? editorError : '正在加载剪辑器…' }}
         </p>
       </div>
@@ -53,12 +54,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onBeforeUnmount } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import OiIcon from 'src/components/ui/OiIcon.vue'
 import type { StoryRunSummary, StoryShotSummary } from 'src/components/session-workspace/types'
 import type { EpisodeCut } from 'src/utils/cut/cut-types'
-import { cutToOmniclipState } from 'src/utils/cut/cut-omniclip-mapper'
 import { makeShotMediaResolver } from 'src/utils/cut/shot-media-resolver'
+import { buildHydrationPayload } from 'src/utils/cut/cut-hydration'
 import { dispatchCutEdit, type CutEdit } from 'src/utils/cut/cut-edit-dispatcher'
 import { buildClipMenuItems } from 'src/utils/cut/clip-menu-items'
 import type { LoadOmniclipFork, OmniclipForkApi } from 'src/utils/cut/fork-contract'
@@ -195,33 +196,42 @@ async function mountAndHydrate(): Promise<void> {
       }),
     )
 
-    // Compute the target omniclip state from the canonical cut (pure, tested).
-    // The actual per-clip media import + state application is done by the fork
-    // at runtime; cutToOmniclipState gives the intended shape and surfaces
-    // orphans for the data-no-file path.
-    if (props.cut) {
-      // Browser import happens inside the fork; here we hand it the cut + a
-      // resolver of source URLs. (Full wiring validated locally.)
-      void cutToOmniclipState
-    }
+    // Render <construct-editor> now that the fork is loaded.
     editorReady.value = true
+
+    // Hydrate from the canonical cut (openimago-addv). buildHydrationPayload is
+    // pure + unit-tested: it maps cut.json clips (ordered) + the media resolver
+    // → the fork's HydrateClip[] (url + trim) and the transitions in omniclip
+    // ms, splitting out orphans (which surface via the data-no-file path). The
+    // fork imports each clip's media (importFromUrl) and places it as a trimmed
+    // effect, then applies transitions.
+    if (props.cut) {
+      const { clips, transitions } = buildHydrationPayload(props.cut, mediaResolver.value)
+      await fork.hydrateFromCut(clips, transitions)
+    }
   } catch (err) {
     editorError.value = '剪辑器初始化失败（需要支持 WebCodecs 的浏览器环境）'
     console.error('StoryCutPanel: failed to initialise omniclip editor', err)
   }
 }
 
-watch(
-  () => [props.episodeId, isEmptyCut.value] as const,
-  () => {
-    editorReady.value = false
-    editorError.value = null
-    unregisterClipMenu?.()
-    unregisterClipMenu = null
-    void mountAndHydrate()
-  },
-  { immediate: true },
-)
+/** Reset editor state and (re)mount once the host div is in the DOM. */
+function remountEditor(): void {
+  editorReady.value = false
+  editorError.value = null
+  unregisterClipMenu?.()
+  unregisterClipMenu = null
+  // nextTick so the editorHost div is bound before mountAndHydrate reads it.
+  // (GAP 1, openimago-addv: an immediate watch ran during setup() before the
+  // ref existed → early return → the editor never mounted.)
+  void nextTick(() => mountAndHydrate())
+}
+
+// First mount: the host div exists by onMounted, so this never early-returns.
+onMounted(remountEditor)
+
+// Re-mount when the episode changes or the cut transitions empty↔non-empty.
+watch(() => [props.episodeId, isEmptyCut.value] as const, remountEditor)
 
 onBeforeUnmount(() => {
   unregisterClipMenu?.()

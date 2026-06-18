@@ -17,12 +17,14 @@ import type {
 } from 'src/_spike/omniclip/fork-contract'
 import { OMNI_THEME_VARS, IMAGO_TO_OMNI_THEME } from 'src/_spike/omniclip/fork-contract'
 import { importFromUrl } from './capabilities/import-from-url'
+import { hydrateFromCut } from './capabilities/hydrate-from-cut'
 import { registerClipMenuItems } from './capabilities/clip-menu'
 import { setTransition, clearTransition, readTransitions } from './capabilities/transitions'
 
 /** The fork API the host depends on. */
 export const omniclipFork: OmniclipForkApi = {
   importFromUrl,
+  hydrateFromCut,
   registerClipMenuItems,
   setTransition,
   clearTransition,

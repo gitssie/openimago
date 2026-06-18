@@ -108,8 +108,19 @@ The Cut editor now lives in the project workspace **时间线** tab, replacing t
 old workflow-DAG panel. The panel (`StoryCutPanel.vue`) hydrates from `cut.json`,
 mounts the fork's `<construct-editor>`, and persists edits via the cut endpoints
 with the cut's own optimistic-concurrency clock. Wiring logic (mapper, media
-resolver, edit dispatcher, 409 retry) is unit-tested in `src/utils/cut/`; the
-mounted editor + the editor→`persistEdit` event bridge are browser-validated.
+resolver, edit dispatcher, 409 retry, hydration payload builder) is unit-tested
+in `src/utils/cut/`; the mounted editor + the editor→`persistEdit` event bridge
+are browser-validated.
+
+> **Mount + hydration now real (openimago-addv):** the 4eiw scaffold left the
+> mount as a stub. The panel now (1) loads the fork in `onMounted`/`nextTick`
+> (so the `editorHost` div exists — the previous `immediate` watch ran during
+> `setup()` before the ref bound and early-returned), (2) renders
+> `<construct-editor v-if="editorReady">`, and (3) hydrates: `buildHydrationPayload`
+> (pure, tested) maps `cut.json` → the fork's `hydrateFromCut(clips, transitions)`,
+> which `importFromUrl`s each clip's media and places it as a trimmed effect, then
+> applies transitions. The editor→`persistEdit` event bridge (omniclip
+> effect-change → `CutEdit`) is the last browser-side wiring to confirm.
 
 Run on a project that has an episode with at least one **completed** shot run
 (so there is media to cut), in a Chromium browser with `crossOriginIsolated`.

@@ -144,8 +144,19 @@ export type ReadTransitions = () => OmniTransition[]
 
 // ─── The full fork API the host depends on ─────────────────────────────────────
 
+/** One clip to lay onto the timeline during hydration (openimago-addv). */
+export interface HydrateClip {
+  id: string
+  url: string
+  name: string
+  inPointSeconds: number
+  outPointSeconds: number
+}
+
 export interface OmniclipForkApi {
   importFromUrl: ImportFromUrl
+  /** Replace the timeline with these ordered clips + transitions (hydration). */
+  hydrateFromCut: (clips: HydrateClip[], transitions: OmniTransition[]) => Promise<void>
   registerClipMenuItems: RegisterClipMenuItems
   setTransition: SetTransition
   clearTransition: ClearTransition

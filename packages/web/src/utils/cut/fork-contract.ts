@@ -38,8 +38,24 @@ export interface OmniTransition {
   durationMs: number
 }
 
+/**
+ * One clip to lay onto the timeline during hydration: its source media url + a
+ * stable id (the CutClip id) + trim points in seconds. Orphan clips (no
+ * resolvable media) are NOT passed here — the host renders them via the
+ * data-no-file path instead.
+ */
+export interface HydrateClip {
+  id: string
+  url: string
+  name: string
+  inPointSeconds: number
+  outPointSeconds: number
+}
+
 export interface OmniclipForkApi {
   importFromUrl: (url: string, options?: ImportFromUrlOptions) => Promise<ImportedMedia>
+  /** Replace the timeline with these ordered clips + transitions (hydration). */
+  hydrateFromCut: (clips: HydrateClip[], transitions: OmniTransition[]) => Promise<void>
   registerClipMenuItems: (items: ClipMenuItem[]) => () => void
   setTransition: (transition: OmniTransition) => void
   clearTransition: (afterEffectId: string) => void
