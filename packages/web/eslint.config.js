@@ -15,7 +15,11 @@ export default defineConfigWithVueTs(
      *
      * ESLint requires "ignores" key to be the only one in this object
      */
-    // ignores: []
+    // Vendored omniclip fork (openimago-uyd0): raw forked source that only
+    // builds/runs in a browser env (WebCodecs/SharedArrayBuffer/IndexedDB) with
+    // omniclip + @benev/* installed. Excluded from lint/typecheck in this repo;
+    // validated by the user locally. See src/vendor/omniclip-fork/README.md.
+    ignores: ['src/vendor/omniclip-fork/**'],
   },
 
   pluginQuasar.configs.recommended(),
