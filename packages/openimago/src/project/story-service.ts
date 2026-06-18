@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm"
-import { readFile, access, writeFile, rename } from "fs/promises"
+import { readFile, access, writeFile, rename, mkdir } from "fs/promises"
 import path from "path"
 import { db } from "../db/client"
 import { projects } from "../db/schema"
@@ -15,11 +15,16 @@ const CANONICAL_SERIES = "story/series.json"
 const STORY_EPISODES_DIR = "story/episodes"
 const STORY_WORKFLOW_DIR = "story/workflow"
 const STORY_RUNS_DIR = "story/runs"
+const STORY_CUTS_DIR = "story/cuts"
 
 // ── Safe file name patterns for episodes ──────────────────────────────────────
 
 const SAFE_EPISODE_PATTERN = /^ep_[a-z0-9_]+\.json$/
-const SAFE_EP_RELATED_PATTERN = /^ep_[a-z0-9_]+\.(workflow|runs)\.json$/
+const SAFE_EP_RELATED_PATTERN = /^ep_[a-z0-9_]+\.(workflow|runs|cut)\.json$/
+
+// ── Cut transition kinds (ADR 0006 edit layer) ────────────────────────────────
+
+const CUT_TRANSITION_KINDS = ["cut", "dissolve", "fade"] as const
 
 // ── Mock generation helpers (ADR 0005 mock command) ───────────────────────────
 
@@ -134,6 +139,42 @@ export interface StoryRuns {
   schemaVersion: number
   episodeId: string
   runs: Record<string, unknown>[]
+}
+
+// ── Episode Cut (ADR 0006 — edit layer, separate cut.json file) ───────────────
+
+/** A trimmed slice of a source Shot's media on the video track. */
+export interface CutClip {
+  id: string
+  sourceShotId: string
+  inPoint: number
+  outPoint: number
+  order: number
+}
+
+/** A transition that plays after a given clip. */
+export interface CutTransition {
+  afterClipId: string
+  kind: (typeof CUT_TRANSITION_KINDS)[number]
+  durationSeconds: number
+}
+
+/** A single BGM audio bed reference for the Cut. */
+export interface CutAudioRef {
+  artifactId: string
+  gainDb?: number
+  inPoint?: number
+  outPoint?: number
+}
+
+/** Edit-layer state for an episode — its own optimistic-concurrency clock. */
+export interface EpisodeCut {
+  schemaVersion: 1
+  episodeId: string
+  clips: CutClip[]
+  transitions: CutTransition[]
+  bgm?: CutAudioRef
+  updatedAt: string
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -681,6 +722,412 @@ export class StoryService {
     const dir = await this.resolveProjectDir(projectId, userId)
     if (typeof dir !== "string") return dir
     return this.readJsonFile<StoryRuns>(dir, `${STORY_RUNS_DIR}/${safeFile}`, projectId)
+  }
+
+  // ── Episode Cut (ADR 0006) ──────────────────────────────────────────────────
+
+  /** Validate the episode id and return the cut file's relative path. */
+  private cutRelativePath(episodeId: string): string | null {
+    const safeFile = `${episodeId}.cut.json`
+    if (!SAFE_EP_RELATED_PATTERN.test(safeFile)) return null
+    return `${STORY_CUTS_DIR}/${safeFile}`
+  }
+
+  /** An empty Cut, returned lazily when no cut file exists yet (ADR 0006). */
+  private emptyCut(episodeId: string): EpisodeCut {
+    return { schemaVersion: 1, episodeId, clips: [], transitions: [], updatedAt: "" }
+  }
+
+  /**
+   * Read an episode's Cut (ADR 0006). When the cut file does not exist the Cut
+   * is lazily synthesized as empty — never a 404 — so the timeline opens cleanly
+   * for episodes that have never been cut. Orphan clips (sourceShotId no longer
+   * present in the script) are returned as-is; the reader never drops them.
+   */
+  async getEpisodeCut(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+  ): Promise<
+    | { data: EpisodeCut; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const relativePath = this.cutRelativePath(episodeId)
+    if (relativePath === null) {
+      logger.warn({ projectId, episodeId }, "story: invalid episode ID for cut")
+      return { error: { code: "VALIDATION_ERROR", message: "Invalid episode ID" }, status: 400 }
+    }
+
+    const dir = await this.resolveProjectDir(projectId, userId)
+    if (typeof dir !== "string") return dir
+
+    const read = await this.readJsonFile<EpisodeCut>(dir, relativePath, projectId)
+    if ("error" in read) {
+      // Missing file → lazily empty Cut. Any other error is forwarded.
+      if (read.status === 404) return { data: this.emptyCut(episodeId), status: 200 }
+      return read
+    }
+    return { data: read.data, status: 200 }
+  }
+
+  /**
+   * Shared prelude for Cut write ops (ADR 0006, mirrors loadEpisodeForWrite).
+   * Validates the episode id, resolves+authorizes the project dir, reads the
+   * cut (synthesizing an empty one when absent), and applies the
+   * optimistic-concurrency guard against the cut's own updatedAt.
+   */
+  private async loadCutForWrite(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    expectedUpdatedAt: string | undefined,
+    op: string,
+  ): Promise<
+    | { dir: string; relativePath: string; cut: EpisodeCut }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const relativePath = this.cutRelativePath(episodeId)
+    if (relativePath === null) {
+      logger.warn({ projectId, episodeId, op }, "story: invalid episode ID for cut write")
+      return { error: { code: "VALIDATION_ERROR", message: "Invalid episode ID" }, status: 400 }
+    }
+
+    const dir = await this.resolveProjectDir(projectId, userId)
+    if (typeof dir !== "string") return dir
+
+    const read = await this.readJsonFile<EpisodeCut>(dir, relativePath, projectId)
+    let cut: EpisodeCut
+    if ("error" in read) {
+      if (read.status !== 404) return read
+      cut = this.emptyCut(episodeId)
+    } else {
+      cut = read.data
+    }
+
+    if (expectedUpdatedAt !== undefined && expectedUpdatedAt !== cut.updatedAt) {
+      logger.info(
+        { projectId, episodeId, op, expectedUpdatedAt, actual: cut.updatedAt },
+        "story: cut write conflict — stale updatedAt",
+      )
+      return { error: { code: "CONFLICT", message: "Cut was modified since last read" }, status: 409 }
+    }
+
+    return { dir, relativePath, cut }
+  }
+
+  /**
+   * Persist an updated Cut: lazily create story/cuts/, bump updatedAt, and write
+   * atomically. Returns the new updatedAt or an error envelope.
+   */
+  private async writeCut(
+    dir: string,
+    relativePath: string,
+    cut: Omit<EpisodeCut, "updatedAt">,
+    projectId: string,
+  ): Promise<{ updatedAt: string } | { error: { code: string; message: string }; status: number }> {
+    try {
+      await mkdir(path.join(dir, STORY_CUTS_DIR), { recursive: true })
+    } catch (err) {
+      logger.error({ projectId, err }, "story: failed to create cuts directory")
+      return { error: { code: "INTERNAL_ERROR", message: "Failed to create cuts directory" }, status: 500 }
+    }
+
+    const now = new Date().toISOString()
+    const doc: EpisodeCut = { ...cut, schemaVersion: 1, updatedAt: now }
+    const write = await this.writeJsonFileAtomic(dir, relativePath, doc, projectId)
+    if ("error" in write) return write
+    return { updatedAt: now }
+  }
+
+  /**
+   * Reorder the Cut's clips to match `orderedClipIds`, rewriting order = 0..N-1.
+   * The id set must exactly match the current clips (same count, members).
+   */
+  async reorderClips(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    orderedClipIds: string[],
+    expectedUpdatedAt?: string,
+  ): Promise<
+    | { data: { updatedAt: string }; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const loaded = await this.loadCutForWrite(projectId, userId, episodeId, expectedUpdatedAt, "reorderClips")
+    if ("error" in loaded) return loaded
+    const { dir, relativePath, cut } = loaded
+
+    const currentIds = cut.clips.map((c) => c.id)
+    const orderedSet = new Set(orderedClipIds)
+    const currentSet = new Set(currentIds)
+    const sameSet =
+      orderedClipIds.length === currentIds.length &&
+      orderedSet.size === orderedClipIds.length &&
+      orderedClipIds.every((id) => currentSet.has(id))
+    if (!sameSet) {
+      return {
+        error: { code: "VALIDATION_ERROR", message: "orderedClipIds must match the current clip set" },
+        status: 400,
+      }
+    }
+
+    const byId = new Map(cut.clips.map((c) => [c.id, c]))
+    const clips = orderedClipIds.map((id, i) => ({ ...byId.get(id)!, order: i }))
+
+    const result = await this.writeCut(dir, relativePath, { ...cut, clips }, projectId)
+    if ("error" in result) return result
+    return { data: { updatedAt: result.updatedAt }, status: 200 }
+  }
+
+  /**
+   * Trim one clip's in/out points. Both bounds must be finite numbers with
+   * inPoint < outPoint and inPoint >= 0.
+   */
+  async trimClip(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    clipId: string,
+    inPoint: number,
+    outPoint: number,
+    expectedUpdatedAt?: string,
+  ): Promise<
+    | { data: { updatedAt: string }; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    if (
+      !Number.isFinite(inPoint) ||
+      !Number.isFinite(outPoint) ||
+      inPoint < 0 ||
+      inPoint >= outPoint
+    ) {
+      return {
+        error: { code: "VALIDATION_ERROR", message: "Require finite inPoint >= 0 and inPoint < outPoint" },
+        status: 400,
+      }
+    }
+
+    const loaded = await this.loadCutForWrite(projectId, userId, episodeId, expectedUpdatedAt, "trimClip")
+    if ("error" in loaded) return loaded
+    const { dir, relativePath, cut } = loaded
+
+    const idx = cut.clips.findIndex((c) => c.id === clipId)
+    if (idx < 0) return { error: { code: "NOT_FOUND", message: `Clip not found: ${clipId}` }, status: 404 }
+
+    const clips = cut.clips.map((c, i) => (i === idx ? { ...c, inPoint, outPoint } : c))
+    const result = await this.writeCut(dir, relativePath, { ...cut, clips }, projectId)
+    if ("error" in result) return result
+    return { data: { updatedAt: result.updatedAt }, status: 200 }
+  }
+
+  /**
+   * Split one clip at `atSeconds` (an absolute source time, inPoint < t < outPoint)
+   * into two consecutive clips sharing the source. The first keeps the original
+   * id and [inPoint, t); the second is a new clip with [t, outPoint). All clip
+   * orders are re-indexed 0..N-1.
+   */
+  async splitClip(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    clipId: string,
+    atSeconds: number,
+    expectedUpdatedAt?: string,
+  ): Promise<
+    | { data: { updatedAt: string; newClipId: string }; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const loaded = await this.loadCutForWrite(projectId, userId, episodeId, expectedUpdatedAt, "splitClip")
+    if ("error" in loaded) return loaded
+    const { dir, relativePath, cut } = loaded
+
+    const idx = cut.clips.findIndex((c) => c.id === clipId)
+    if (idx < 0) return { error: { code: "NOT_FOUND", message: `Clip not found: ${clipId}` }, status: 404 }
+
+    const target = cut.clips[idx]!
+    if (!Number.isFinite(atSeconds) || atSeconds <= target.inPoint || atSeconds >= target.outPoint) {
+      return {
+        error: { code: "VALIDATION_ERROR", message: "atSeconds must be strictly within the clip's in/out range" },
+        status: 400,
+      }
+    }
+
+    const existingIds = new Set(cut.clips.map((c) => c.id))
+    let newId = `${target.id}-b`
+    let suffix = 2
+    while (existingIds.has(newId)) {
+      newId = `${target.id}-b${suffix}`
+      suffix += 1
+    }
+
+    const firstHalf: CutClip = { ...target, outPoint: atSeconds }
+    const secondHalf: CutClip = {
+      id: newId,
+      sourceShotId: target.sourceShotId,
+      inPoint: atSeconds,
+      outPoint: target.outPoint,
+      order: 0,
+    }
+
+    const spliced = [...cut.clips.slice(0, idx), firstHalf, secondHalf, ...cut.clips.slice(idx + 1)]
+    const clips = spliced.map((c, i) => ({ ...c, order: i }))
+
+    const result = await this.writeCut(dir, relativePath, { ...cut, clips }, projectId)
+    if ("error" in result) return result
+    return { data: { updatedAt: result.updatedAt, newClipId: newId }, status: 200 }
+  }
+
+  /**
+   * Delete a clip, re-index remaining clips 0..N-1, and drop any transition that
+   * referenced the deleted clip (its trailing transition no longer applies).
+   */
+  async deleteClip(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    clipId: string,
+    expectedUpdatedAt?: string,
+  ): Promise<
+    | { data: { updatedAt: string }; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const loaded = await this.loadCutForWrite(projectId, userId, episodeId, expectedUpdatedAt, "deleteClip")
+    if ("error" in loaded) return loaded
+    const { dir, relativePath, cut } = loaded
+
+    const idx = cut.clips.findIndex((c) => c.id === clipId)
+    if (idx < 0) return { error: { code: "NOT_FOUND", message: `Clip not found: ${clipId}` }, status: 404 }
+
+    const clips = cut.clips.filter((_, i) => i !== idx).map((c, i) => ({ ...c, order: i }))
+    const transitions = cut.transitions.filter((t) => t.afterClipId !== clipId)
+
+    const result = await this.writeCut(dir, relativePath, { ...cut, clips, transitions }, projectId)
+    if ("error" in result) return result
+    return { data: { updatedAt: result.updatedAt }, status: 200 }
+  }
+
+  /**
+   * Set (insert or replace) the transition after `afterClipId`. The kind must be
+   * one of the known CUT_TRANSITION_KINDS and afterClipId must be an existing clip.
+   */
+  async setTransition(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    afterClipId: string,
+    kind: string,
+    durationSeconds: number,
+    expectedUpdatedAt?: string,
+  ): Promise<
+    | { data: { updatedAt: string }; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    if (!(CUT_TRANSITION_KINDS as readonly string[]).includes(kind)) {
+      return {
+        error: { code: "VALIDATION_ERROR", message: `Unknown transition kind: ${kind}` },
+        status: 400,
+      }
+    }
+    if (!Number.isFinite(durationSeconds) || durationSeconds < 0) {
+      return {
+        error: { code: "VALIDATION_ERROR", message: "durationSeconds must be a finite, non-negative number" },
+        status: 400,
+      }
+    }
+
+    const loaded = await this.loadCutForWrite(projectId, userId, episodeId, expectedUpdatedAt, "setTransition")
+    if ("error" in loaded) return loaded
+    const { dir, relativePath, cut } = loaded
+
+    if (!cut.clips.some((c) => c.id === afterClipId)) {
+      return { error: { code: "VALIDATION_ERROR", message: `afterClipId is not a clip: ${afterClipId}` }, status: 400 }
+    }
+
+    const transition: CutTransition = {
+      afterClipId,
+      kind: kind as CutTransition["kind"],
+      durationSeconds,
+    }
+    const others = cut.transitions.filter((t) => t.afterClipId !== afterClipId)
+    const transitions = [...others, transition]
+
+    const result = await this.writeCut(dir, relativePath, { ...cut, transitions }, projectId)
+    if ("error" in result) return result
+    return { data: { updatedAt: result.updatedAt }, status: 200 }
+  }
+
+  /** Remove the transition after `afterClipId` (no-op if none). */
+  async clearTransition(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    afterClipId: string,
+    expectedUpdatedAt?: string,
+  ): Promise<
+    | { data: { updatedAt: string }; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const loaded = await this.loadCutForWrite(projectId, userId, episodeId, expectedUpdatedAt, "clearTransition")
+    if ("error" in loaded) return loaded
+    const { dir, relativePath, cut } = loaded
+
+    const transitions = cut.transitions.filter((t) => t.afterClipId !== afterClipId)
+    const result = await this.writeCut(dir, relativePath, { ...cut, transitions }, projectId)
+    if ("error" in result) return result
+    return { data: { updatedAt: result.updatedAt }, status: 200 }
+  }
+
+  /** Set the Cut's single BGM audio bed reference. */
+  async setBgm(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    bgm: CutAudioRef,
+    expectedUpdatedAt?: string,
+  ): Promise<
+    | { data: { updatedAt: string }; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    if (typeof bgm?.artifactId !== "string" || bgm.artifactId.length === 0) {
+      return { error: { code: "VALIDATION_ERROR", message: "bgm.artifactId is required" }, status: 400 }
+    }
+    const ref: CutAudioRef = { artifactId: bgm.artifactId }
+    if (typeof bgm.gainDb === "number" && Number.isFinite(bgm.gainDb)) ref.gainDb = bgm.gainDb
+    if (typeof bgm.inPoint === "number" && Number.isFinite(bgm.inPoint)) ref.inPoint = bgm.inPoint
+    if (typeof bgm.outPoint === "number" && Number.isFinite(bgm.outPoint)) ref.outPoint = bgm.outPoint
+
+    const loaded = await this.loadCutForWrite(projectId, userId, episodeId, expectedUpdatedAt, "setBgm")
+    if ("error" in loaded) return loaded
+    const { dir, relativePath, cut } = loaded
+
+    const result = await this.writeCut(dir, relativePath, { ...cut, bgm: ref }, projectId)
+    if ("error" in result) return result
+    return { data: { updatedAt: result.updatedAt }, status: 200 }
+  }
+
+  /** Remove the Cut's BGM reference (no-op if none). */
+  async clearBgm(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    expectedUpdatedAt?: string,
+  ): Promise<
+    | { data: { updatedAt: string }; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const loaded = await this.loadCutForWrite(projectId, userId, episodeId, expectedUpdatedAt, "clearBgm")
+    if ("error" in loaded) return loaded
+    const { dir, relativePath, cut } = loaded
+
+    const next: Omit<EpisodeCut, "updatedAt"> = {
+      schemaVersion: 1,
+      episodeId: cut.episodeId,
+      clips: cut.clips,
+      transitions: cut.transitions,
+    }
+    const result = await this.writeCut(dir, relativePath, next, projectId)
+    if ("error" in result) return result
+    return { data: { updatedAt: result.updatedAt }, status: 200 }
   }
 }
 

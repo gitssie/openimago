@@ -256,6 +256,38 @@ export interface OpenimagoStoryRuns {
   runs: Record<string, unknown>[]
 }
 
+// ── Episode Cut (ADR 0006 — edit layer, story/cuts/ep_NNN.cut.json) ────────────
+
+export interface OpenimagoCutClip {
+  id: string
+  sourceShotId: string
+  inPoint: number
+  outPoint: number
+  order: number
+}
+
+export interface OpenimagoCutTransition {
+  afterClipId: string
+  kind: string
+  durationSeconds: number
+}
+
+export interface OpenimagoCutAudioRef {
+  artifactId: string
+  gainDb?: number
+  inPoint?: number
+  outPoint?: number
+}
+
+export interface OpenimagoEpisodeCut {
+  schemaVersion: number
+  episodeId: string
+  clips: OpenimagoCutClip[]
+  transitions: OpenimagoCutTransition[]
+  bgm?: OpenimagoCutAudioRef
+  updatedAt: string
+}
+
 // ── Billing ──────────────────────────────────────────────────────────────────
 
 export interface BillingAccount {
@@ -582,6 +614,114 @@ export const api = {
     request(`/api/platform/projects/${projectId}/story/agents`)
       .then(() => null)
       .catch(() => null),
+
+  // ── Episode Cut (ADR 0006 — edit layer) ──────────────────────────────────────
+  //
+  // Reads/writes story/cuts/ep_NNN.cut.json. The reader lazily returns an empty
+  // Cut when no file exists. Every write carries an optional expectedUpdatedAt
+  // (optimistic concurrency, ADR 0005) and returns 409 on a stale write.
+
+  // Read the episode's Cut (empty Cut when never cut).
+  projectStoryCut: (projectId: string, episodeId: string) =>
+    request<{ cut: OpenimagoEpisodeCut }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/cut`,
+    )
+      .then((r) => r.cut)
+      .catch(() => null),
+
+  // Reorder clips, rewriting order 0..N-1.
+  reorderCutClips: (projectId: string, episodeId: string, orderedClipIds: string[], expectedUpdatedAt?: string) =>
+    request<{ updatedAt: string }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/cut/clips/reorder`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ orderedClipIds, ...(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}) }),
+      },
+    ),
+
+  // Trim a clip's in/out points.
+  trimCutClip: (
+    projectId: string,
+    episodeId: string,
+    clipId: string,
+    inPoint: number,
+    outPoint: number,
+    expectedUpdatedAt?: string,
+  ) =>
+    request<{ updatedAt: string }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/cut/clips/${clipId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ inPoint, outPoint, ...(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}) }),
+      },
+    ),
+
+  // Split a clip at an absolute source time, returning the new second-half clip id.
+  splitCutClip: (projectId: string, episodeId: string, clipId: string, atSeconds: number, expectedUpdatedAt?: string) =>
+    request<{ updatedAt: string; newClipId: string }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/cut/clips/${clipId}/split`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ atSeconds, ...(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}) }),
+      },
+    ),
+
+  // Delete a clip (reindexes order, drops its trailing transition).
+  deleteCutClip: (projectId: string, episodeId: string, clipId: string, expectedUpdatedAt?: string) =>
+    request<{ updatedAt: string }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/cut/clips/${clipId}`,
+      {
+        method: 'DELETE',
+        body: JSON.stringify(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}),
+      },
+    ),
+
+  // Set (insert or replace) the transition after a clip.
+  setCutTransition: (
+    projectId: string,
+    episodeId: string,
+    afterClipId: string,
+    kind: string,
+    durationSeconds: number,
+    expectedUpdatedAt?: string,
+  ) =>
+    request<{ updatedAt: string }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/cut/transitions/${afterClipId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ kind, durationSeconds, ...(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}) }),
+      },
+    ),
+
+  // Remove the transition after a clip.
+  clearCutTransition: (projectId: string, episodeId: string, afterClipId: string, expectedUpdatedAt?: string) =>
+    request<{ updatedAt: string }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/cut/transitions/${afterClipId}`,
+      {
+        method: 'DELETE',
+        body: JSON.stringify(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}),
+      },
+    ),
+
+  // Set the Cut's single BGM audio bed reference.
+  setCutBgm: (projectId: string, episodeId: string, bgm: OpenimagoCutAudioRef, expectedUpdatedAt?: string) =>
+    request<{ updatedAt: string }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/cut/bgm`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ ...bgm, ...(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}) }),
+      },
+    ),
+
+  // Remove the Cut's BGM reference.
+  clearCutBgm: (projectId: string, episodeId: string, expectedUpdatedAt?: string) =>
+    request<{ updatedAt: string }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/cut/bgm`,
+      {
+        method: 'DELETE',
+        body: JSON.stringify(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}),
+      },
+    ),
 
   // ── Rerun (stub, openimago-xkn / ADR 0003) ────────────────────────────
   //
