@@ -162,8 +162,10 @@ async function mountAndHydrate(): Promise<void> {
   try {
     // Dynamic import via a runtime-computed path so the repo typecheck never
     // follows into the browser-only vendored fork (excluded from tsconfig).
-    // Vite resolves it at build; `@vite-ignore` allows the variable specifier.
-    const forkModulePath = ['src/vendor', 'omniclip-fork', 'load'].join('/')
+    // Must be an ABSOLUTE app path (leading slash + extension): with
+    // `@vite-ignore` the specifier reaches the browser verbatim, and a bare
+    // 'src/vendor/...' would fail as a bare module specifier. (openimago-y90v)
+    const forkModulePath = ['', 'src', 'vendor', 'omniclip-fork', 'load.ts'].join('/')
     const mod = (await import(/* @vite-ignore */ forkModulePath)) as unknown as {
       loadOmniclipFork: LoadOmniclipFork
     }

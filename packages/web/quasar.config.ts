@@ -97,7 +97,30 @@ export default defineConfig((ctx) => {
             'omniclip',
             '@benev/slate',
             '@benev/construct',
+            // ffprobe-wasm ships .mjs + .wasm + worker as siblings; keep it out
+            // of the optimizer so the aliased browser.mjs is served as-is and
+            // its wasm/worker resolve relative to it. (openimago-y90v)
+            'ffprobe-wasm',
           ],
+        }
+        // omniclip imports `ffprobe-wasm/browser.mjs`, but that package's
+        // `exports` map is conditions-only (node/types/default) with NO path
+        // keys, so Vite 8's strict exports refuses the "./browser.mjs" sub-path
+        // (serves an HTML error overlay → the dynamic import fails). Alias the
+        // bare sub-path to the physical file to bypass the exports map.
+        // (openimago-y90v)
+        viteConf.resolve = viteConf.resolve || {}
+        const existingAlias = viteConf.resolve.alias
+        const ffprobeBrowser = fileURLToPath(
+          new URL('./node_modules/ffprobe-wasm/browser.mjs', import.meta.url),
+        )
+        if (Array.isArray(existingAlias)) {
+          existingAlias.push({ find: 'ffprobe-wasm/browser.mjs', replacement: ffprobeBrowser })
+        } else {
+          viteConf.resolve.alias = {
+            ...(existingAlias as Record<string, string> | undefined),
+            'ffprobe-wasm/browser.mjs': ffprobeBrowser,
+          }
         }
       },
 

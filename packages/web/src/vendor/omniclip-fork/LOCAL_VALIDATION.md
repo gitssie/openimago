@@ -24,6 +24,12 @@ omniclip@1.0.7's `dependencies`.
 > `GET /deps/omniclip.js`), which hangs the editor at "正在加载剪辑器…". The
 > exclude is already in the repo — just confirm it's present after install.
 
+> **ffprobe-wasm sub-path (openimago-y90v):** omniclip imports
+> `ffprobe-wasm/browser.mjs`, but that package's `exports` map is conditions-only
+> (no path keys), so Vite 8 strict-exports rejects the sub-path. `quasar.config.ts`
+> aliases `ffprobe-wasm/browser.mjs` → the physical file and excludes
+> `ffprobe-wasm` from the optimizer. Already in the repo; confirm after install.
+
 ## 2. Confirm cross-origin isolation is live (from openimago-c80q)
 
 ```bash
