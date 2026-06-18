@@ -12,6 +12,7 @@
 
 import { omnislate } from 'omniclip/x/context/context.js'
 import { importFromUrl } from './import-from-url'
+import { setTransition, resetTransitions } from './transitions'
 import type { HydrateClip, OmniTransition } from 'src/_spike/omniclip/fork-contract'
 
 const MS_PER_S = 1000
@@ -67,9 +68,11 @@ export async function hydrateFromCut(
     cursorMs += durationMs
   }
 
-  // Apply transitions after all clips exist (each is keyed by the clip it
-  // follows; the patched state actions validate/clamp).
+  // Apply transitions after all clips exist (each keyed by the clip it follows).
+  // setTransition owns the fork's transition store + clamps; reset first so a
+  // re-hydration on episode switch doesn't accumulate stale transitions.
+  resetTransitions()
   for (const transition of transitions) {
-    ctx.actions.add_transition(transition)
+    setTransition(transition)
   }
 }

@@ -196,6 +196,12 @@ async function mountAndHydrate(): Promise<void> {
       }),
     )
 
+    // Resolve a clicked effect id → its sourceShotId for the context menu's
+    // orphan-gating (effect id === CutClip.id). (openimago-1mcb)
+    fork.setClipContextResolver(
+      (effectId) => props.cut?.clips.find((c) => c.id === effectId)?.sourceShotId,
+    )
+
     // Render <construct-editor> now that the fork is loaded.
     editorReady.value = true
 

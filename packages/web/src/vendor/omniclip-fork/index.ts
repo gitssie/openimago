@@ -18,14 +18,24 @@ import type {
 import { OMNI_THEME_VARS, IMAGO_TO_OMNI_THEME } from 'src/_spike/omniclip/fork-contract'
 import { importFromUrl } from './capabilities/import-from-url'
 import { hydrateFromCut } from './capabilities/hydrate-from-cut'
-import { registerClipMenuItems } from './capabilities/clip-menu'
+import {
+  registerClipMenuItems,
+  installClipContextMenu,
+  setClipContextResolver,
+} from './capabilities/clip-menu'
 import { setTransition, clearTransition, readTransitions } from './capabilities/transitions'
+
+// Install the document-level clip context-menu listener once at boot
+// (openimago-1mcb) — the Effect view is sealed, so the menu is driven from a
+// composedPath() contextmenu handler rather than a patched lit render.
+installClipContextMenu()
 
 /** The fork API the host depends on. */
 export const omniclipFork: OmniclipForkApi = {
   importFromUrl,
   hydrateFromCut,
   registerClipMenuItems,
+  setClipContextResolver,
   setTransition,
   clearTransition,
   readTransitions,

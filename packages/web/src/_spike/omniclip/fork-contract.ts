@@ -158,6 +158,8 @@ export interface OmniclipForkApi {
   /** Replace the timeline with these ordered clips + transitions (hydration). */
   hydrateFromCut: (clips: HydrateClip[], transitions: OmniTransition[]) => Promise<void>
   registerClipMenuItems: RegisterClipMenuItems
+  /** Map a clicked effect id → its sourceShotId for the menu (orphan-gating). */
+  setClipContextResolver: (fn: (effectId: string) => string | undefined) => void
   setTransition: SetTransition
   clearTransition: ClearTransition
   readTransitions: ReadTransitions

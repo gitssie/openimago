@@ -89,16 +89,32 @@ Open `http://localhost:7000/#/_spike/omniclip`.
 cd packages/web && bun run build   # quasar build must succeed with the fork imported
 ```
 
-## Notes / known risks to verify
-- `importFromUrl` feeds omniclip via a **synthetic `<input>`/DataTransfer**; if a
-  browser rejects programmatic `input.files`, switch to the forked
-  `import_file_from_file(file)` method (patches/README path) instead.
-- The transition primitive needs `patches/state.patch.ts` actually spliced into
-  omniclip's `state.ts`/`types.ts`/`actions.ts` (this repo vendors them as
-  override modules; a real git fork applies them as source edits). `setTransition`
-  calls `actions.add_transition`, which only exists after that splice.
-- The patched clip view (`patches/effect.patch.ts`) must replace the original
-  `Effect` view for the right-click menu + `::part` to take effect.
+## Runtime integration (openimago-1mcb — how the capabilities reach omniclip)
+- **importFromUrl** is DETERMINISTIC: it computes `quick_hash(file)` + ffprobe
+  frames itself, writes the record to omniclip's `"database"` IndexedDB store
+  (same shape `import_file` writes), `media.set(hash, file)`s the controller Map,
+  publishes `on_media_change("added")` so omniclip's own video-effect/compositor
+  listeners compose the clip, then resolves with the computed facts. It does NOT
+  await `on_media_change` (which never fires for a programmatic add — the old
+  synthetic-`<input>` approach timed out at 60s).
+- **Transitions** are NOT omniclip actions (its AppCore actions are sealed at
+  construction — injecting `add_transition` threw). The fork owns the live
+  transition view-state in a per-context WeakMap store via the unit-tested
+  `upsert/removeTransition` reducers; `cut.json` stays canonical (the panel
+  persists every transition through the cut endpoints).
+- **Clip context menu** is a document-level `contextmenu` listener (capture)
+  installed at boot; it finds `.effect` via `composedPath()` (pierces the shadow
+  DOM), resolves the clicked effect id from `state.selected_effect`, maps it to a
+  sourceShotId via the host resolver (`setClipContextResolver`), and renders the
+  registry's `visibleItems(ctx)` as a light-DOM overlay. The sealed Effect
+  `shadow_view` is NOT patched.
+- The `patches/*.ts` files remain as documentation of the source-vendor
+  alternative; the runtime integration above is what actually ships.
+
+### Verify in-browser (the §4 items above, after this fix)
+- `importFromUrl` resolves within a few seconds (no 60s hang) and the clip lands.
+- Right-click a clip → the 4-item menu appears; `setTransition`/`clearTransition`/
+  `readTransitions` work without "is not a function".
 
 ---
 
