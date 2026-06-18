@@ -212,6 +212,20 @@ storyRoutes.get("/:id/story/episodes/:epId/cut", async (c) => {
   return c.json({ cut: result.data })
 })
 
+// POST /api/platform/projects/:id/story/episodes/:epId/cut/assemble
+// Agent-authored rough cut (ADR 0006): build one clip per shot with completed
+// video/image media, ordered by shotNumber. Optional expectedUpdatedAt (409).
+storyRoutes.post("/:id/story/episodes/:epId/cut/assemble", async (c) => {
+  const userId = c.get("userId") as string
+  const projectId = c.req.param("id")
+  const episodeId = c.req.param("epId")
+  const expectedUpdatedAt = await readExpectedUpdatedAt(c)
+
+  const result = await storyService.assembleEpisodeCut(projectId, userId, episodeId, expectedUpdatedAt)
+  if ("error" in result) return c.json({ error: result.error }, result.status as any)
+  return c.json({ updatedAt: result.data.updatedAt, cut: { clips: result.data.clips } })
+})
+
 // PATCH /api/platform/projects/:id/story/episodes/:epId/cut/clips/reorder
 // Registered BEFORE /clips/:clipId so "reorder" is not parsed as a clip id.
 storyRoutes.patch("/:id/story/episodes/:epId/cut/clips/reorder", async (c) => {

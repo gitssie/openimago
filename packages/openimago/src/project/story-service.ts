@@ -26,6 +26,17 @@ const SAFE_EP_RELATED_PATTERN = /^ep_[a-z0-9_]+\.(workflow|runs|cut)\.json$/
 
 const CUT_TRANSITION_KINDS = ["cut", "dissolve", "fade"] as const
 
+/**
+ * Fallback clip length (seconds) used when assembling the first Cut for a shot
+ * that carries no duration anywhere — neither its completed run's
+ * result.duration nor the shot's durationEstimate. A clip's outPoint must be
+ * > inPoint, so a positive default is required; the user re-trims on the timeline.
+ */
+const DEFAULT_ASSEMBLED_CLIP_SECONDS = 5
+
+/** Run result media kinds that count as a clip's visual source (ADR 0006). */
+const VISUAL_RUN_KINDS = new Set(["image", "video"])
+
 // ── Mock generation helpers (ADR 0005 mock command) ───────────────────────────
 
 /** Stable, positive 32-bit FNV-1a hash (mirrors opencode mockImageProvider). */
@@ -1128,6 +1139,117 @@ export class StoryService {
     const result = await this.writeCut(dir, relativePath, next, projectId)
     if ("error" in result) return result
     return { data: { updatedAt: result.updatedAt }, status: 200 }
+  }
+
+  /**
+   * Assemble the first Cut from an episode's shots (ADR 0006 — "粗剪版本已生成",
+   * the agent-authored rough cut). Builds one CutClip per Shot that has at least
+   * one completed video/image generation Run, ordered by shotNumber, with
+   * inPoint = 0 and outPoint = a duration estimate (run result.duration, else the
+   * shot's durationEstimate, else DEFAULT_ASSEMBLED_CLIP_SECONDS). Transitions
+   * default to empty (implicit 'cut'); BGM is left untouched.
+   *
+   * Clip ids are stable per source shot, so re-assembling preserves a shot's
+   * clip id while replacing the full clip list. Writes via the Cut write path
+   * (lazy story/cuts/, atomic, bumped updatedAt); honours expectedUpdatedAt (409).
+   *
+   * This is the seam the agent calls once media is generated; the user then
+   * edits the resulting Cut on the timeline (trim/split/reorder/transition/bgm).
+   */
+  async assembleEpisodeCut(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    expectedUpdatedAt?: string,
+  ): Promise<
+    | { data: { updatedAt: string; clips: CutClip[] }; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    // Authorize + read the episode (the script is the source of truth for which
+    // shots exist and their order). A missing episode is a 404.
+    const safeEpisodeFile = `${episodeId}.json`
+    if (!SAFE_EPISODE_PATTERN.test(safeEpisodeFile)) {
+      logger.warn({ projectId, episodeId }, "story: invalid episode ID (assembleEpisodeCut)")
+      return { error: { code: "VALIDATION_ERROR", message: "Invalid episode ID" }, status: 400 }
+    }
+
+    const dir = await this.resolveProjectDir(projectId, userId)
+    if (typeof dir !== "string") return dir
+
+    const epRead = await this.readJsonFile<StoryEpisode>(dir, `${STORY_EPISODES_DIR}/${safeEpisodeFile}`, projectId)
+    if ("error" in epRead) return epRead
+    const episode = epRead.data
+
+    // Read the cut for its own optimistic-concurrency clock (lazily empty when
+    // absent). 409 if expectedUpdatedAt is stale.
+    const loaded = await this.loadCutForWrite(projectId, userId, episodeId, expectedUpdatedAt, "assembleEpisodeCut")
+    if ("error" in loaded) return loaded
+    const { relativePath, cut } = loaded
+
+    // Read the runs to know which shots have completed visual media. Missing
+    // runs file → no media yet → empty clip list.
+    const runsFile = `${episodeId}.runs.json`
+    const runsRead = await this.readJsonFile<StoryRuns>(dir, `${STORY_RUNS_DIR}/${runsFile}`, projectId)
+    const runs: Record<string, unknown>[] =
+      "error" in runsRead ? [] : Array.isArray(runsRead.data.runs) ? runsRead.data.runs : []
+
+    // Latest completed visual run per shot (later runs in the append-only log win).
+    const runByShot = new Map<string, { durationSeconds?: number }>()
+    for (const run of runs) {
+      if (String(run["status"] ?? "") !== "completed") continue
+      const result = (run["result"] ?? {}) as Record<string, unknown>
+      if (!VISUAL_RUN_KINDS.has(String(result["kind"] ?? ""))) continue
+      const shotId = String(run["shotId"] ?? "")
+      if (!shotId) continue
+      const duration = typeof result["duration"] === "number" ? result["duration"] : undefined
+      runByShot.set(shotId, { durationSeconds: duration })
+    }
+
+    // One clip per shot with completed media, in shotNumber order.
+    const shots = Array.isArray(episode.shots) ? episode.shots : []
+    const ordered = [...shots].sort((a, b) => {
+      const an = typeof a["shotNumber"] === "number" ? a["shotNumber"] : 0
+      const bn = typeof b["shotNumber"] === "number" ? b["shotNumber"] : 0
+      return an - bn
+    })
+
+    const clips: CutClip[] = []
+    for (const shot of ordered) {
+      const shotId = String(shot["id"] ?? "")
+      if (!shotId) continue
+      const media = runByShot.get(shotId)
+      if (!media) continue
+
+      const shotEstimate =
+        typeof shot["durationEstimate"] === "number" && shot["durationEstimate"] > 0
+          ? (shot["durationEstimate"] as number)
+          : undefined
+      const outPoint =
+        media.durationSeconds && media.durationSeconds > 0
+          ? media.durationSeconds
+          : shotEstimate ?? DEFAULT_ASSEMBLED_CLIP_SECONDS
+
+      clips.push({
+        id: `clip-${shotId}`,
+        sourceShotId: shotId,
+        inPoint: 0,
+        outPoint,
+        order: clips.length,
+      })
+    }
+
+    // Replace the clip list; preserve any existing bgm. Transitions reset to
+    // empty (the assembler emits implicit 'cut' transitions only).
+    const next: Omit<EpisodeCut, "updatedAt"> = {
+      schemaVersion: 1,
+      episodeId,
+      clips,
+      transitions: [],
+      ...(cut.bgm !== undefined ? { bgm: cut.bgm } : {}),
+    }
+    const result = await this.writeCut(dir, relativePath, next, projectId)
+    if ("error" in result) return result
+    return { data: { updatedAt: result.updatedAt, clips }, status: 200 }
   }
 }
 

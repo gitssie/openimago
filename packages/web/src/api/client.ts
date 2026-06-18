@@ -629,6 +629,17 @@ export const api = {
       .then((r) => r.cut)
       .catch(() => null),
 
+  // Assemble the first Cut from the episode's shots (ADR 0006 rough cut) — one
+  // clip per shot with completed video/image media, ordered by shotNumber.
+  assembleEpisodeCut: (projectId: string, episodeId: string, expectedUpdatedAt?: string) =>
+    request<{ updatedAt: string; cut: { clips: OpenimagoCutClip[] } }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/cut/assemble`,
+      {
+        method: 'POST',
+        body: JSON.stringify(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}),
+      },
+    ),
+
   // Reorder clips, rewriting order 0..N-1.
   reorderCutClips: (projectId: string, episodeId: string, orderedClipIds: string[], expectedUpdatedAt?: string) =>
     request<{ updatedAt: string }>(
