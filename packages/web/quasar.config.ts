@@ -68,6 +68,16 @@ export default defineConfig((ctx) => {
         viteConf.server.fs = {
           allow: ['..', '../..'],
         }
+        // Cross-origin isolation for the omniclip Cut editor (ADR 0007):
+        // SharedArrayBuffer + WebCodecs + ffmpeg.wasm require the document to
+        // be cross-origin-isolated. The dev server must send these so the
+        // editor route works under `quasar dev`. Mirrors the prod nginx serve
+        // and the Hono backend middleware. (openimago-c80q)
+        viteConf.server.headers = {
+          ...(viteConf.server.headers || {}),
+          'Cross-Origin-Opener-Policy': 'same-origin',
+          'Cross-Origin-Embedder-Policy': 'require-corp',
+        }
       },
 
       vitePlugins: [

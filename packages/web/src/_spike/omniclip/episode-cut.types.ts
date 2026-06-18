@@ -1,8 +1,8 @@
-// THROWAWAY SPIKE — openimago-2re7. Delete with the `_spike/omniclip/` dir.
-//
-// EpisodeCut shape transcribed verbatim from ADR 0006. Lives here ONLY for the
-// spike; the production types will be owned by the StoryService / Issue 2
-// endpoints, not by this file.
+// SPIKE-origin types — openimago-2re7. Promoted out of `_spike/` during
+// integration (openimago-4eiw). Field names match the SHIPPED backend
+// (packages/openimago/src/project/story-service.ts EpisodeCut/CutClip/
+// CutTransition/CutAudioRef) and the api.client `Openimago*` mirrors — verified
+// no drift (openimago-c80q).
 
 export interface EpisodeCut {
   schemaVersion: 1
@@ -21,9 +21,18 @@ export interface CutClip {
   order: number // 0-based position on the video track
 }
 
+/**
+ * Allowed transition kinds — mirrors the shipped backend `CUT_TRANSITION_KINDS`
+ * (packages/openimago/src/project/story-service.ts). Keep in sync. The omniclip
+ * fork (openimago-uyd0) adds a transition primitive that round-trips exactly
+ * these kinds. (openimago-c80q)
+ */
+export const CUT_TRANSITION_KINDS = ['cut', 'dissolve', 'fade'] as const
+export type CutTransitionKind = (typeof CUT_TRANSITION_KINDS)[number]
+
 export interface CutTransition {
   afterClipId: string
-  kind: string
+  kind: CutTransitionKind
   durationSeconds: number
 }
 
