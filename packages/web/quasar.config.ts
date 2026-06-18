@@ -3,6 +3,59 @@
 
 import { defineConfig } from '#q-app/wrappers';
 import { fileURLToPath } from 'node:url';
+import { existsSync, realpathSync } from 'node:fs';
+
+// ── omniclip vendor dependency set (ADR 0007, openimago-ulkx/y90v/g015) ──────
+// The vendored omniclip fork pulls these. They ship pre-built bundles + sibling
+// wasm/worker assets and have `exports` maps that omit sub-path keys, which
+// Vite 8 strict-exports rejects. They are (a) excluded from the dep optimizer
+// and (b) handled by the scoped sub-path resolver below.
+const OMNICLIP_VENDOR_PKGS = [
+  'omniclip',
+  '@benev/slate',
+  '@benev/construct',
+  'ffprobe-wasm',
+  'fabric',
+  '@ffmpeg/ffmpeg',
+  '@ffmpeg/util',
+] as const;
+
+/**
+ * Vite plugin: for the omniclip vendor set ONLY, resolve a bare
+ * `<pkg>/<subpath>` specifier to its physical node_modules file. Bypasses the
+ * packages' incomplete `exports` maps without per-path aliases or whack-a-mole.
+ * Returns undefined for anything outside the allowlist (and for bare-package
+ * imports with no sub-path), leaving normal resolution untouched.
+ *
+ * CRITICAL (openimago-9lpk): return the REAL path (realpathSync), not the
+ * symlink path under `packages/web/node_modules`. These packages are bun-store
+ * symlinks; the symlink path is INSIDE the Vite root, so Vite serves it as a
+ * `/node_modules/<pkg>` dev URL — and browser `import()` rejects that URL for
+ * large single-line modules (e.g. ffprobe-wasm's 4.29MB base64 `browser.mjs`)
+ * with an instant SyntaxError. The real store path is OUTSIDE the root, so Vite
+ * serves it via `/@fs/<abs>`, which loads correctly (matching the old
+ * resolve.alias behaviour). This also fixes ffprobe's RUNTIME import, not just
+ * module load. Returning a bare path (not {external:true}) keeps Vite serving.
+ */
+function omniclipSubpathResolver() {
+  return {
+    name: 'omniclip-subpath-resolver',
+    enforce: 'pre' as const,
+    resolveId(source: string) {
+      const pkg = OMNICLIP_VENDOR_PKGS.find(
+        (p) => source.startsWith(`${p}/`) && source.length > p.length + 1,
+      );
+      if (!pkg) return undefined;
+      const physical = fileURLToPath(
+        new URL(`./node_modules/${source}`, import.meta.url),
+      );
+      if (!existsSync(physical)) return undefined;
+      // Resolve symlinks → real store path (outside the Vite root) so Vite
+      // serves it via /@fs/ instead of a /node_modules/ URL.
+      return realpathSync(physical);
+    },
+  };
+}
 
 export default defineConfig((ctx) => {
   return {
@@ -61,13 +114,58 @@ export default defineConfig((ctx) => {
       // distDir
 
       // extendViteConf (viteConf) {},
-      // viteVuePluginOptions: {},
+      viteVuePluginOptions: {
+        template: {
+          compilerOptions: {
+            isCustomElement: (t: string) =>
+              t.startsWith('omni-') || t.startsWith('construct-'),
+          },
+        },
+      },
 
       extendViteConf(viteConf) {
         viteConf.server = viteConf.server || {}
         viteConf.server.fs = {
           allow: ['..', '../..'],
         }
+        // Cross-origin isolation for the omniclip Cut editor (ADR 0007):
+        // SharedArrayBuffer + WebCodecs + ffmpeg.wasm require the document to
+        // be cross-origin-isolated. The dev server must send these so the
+        // editor route works under `quasar dev`. Mirrors the prod nginx serve
+        // and the Hono backend middleware. (openimago-c80q)
+        viteConf.server.headers = {
+          ...(viteConf.server.headers || {}),
+          'Cross-Origin-Opener-Policy': 'same-origin',
+          'Cross-Origin-Embedder-Policy': 'require-corp',
+        }
+        // Keep the omniclip fork out of Vite's dep pre-optimizer (openimago-ulkx).
+        // omniclip ships a pre-built bundle and transitively pulls @benev/slate,
+        // @benev/construct and deep component trees; letting esbuild pre-bundle
+        // it times out the optimizer (504 on GET /deps/omniclip.js) so
+        // <construct-editor> never mounts. Exclude → Vite serves it as-is.
+        // Keep the omniclip dep set out of Vite's dep pre-optimizer
+        // (openimago-ulkx/y90v/g015). These ship pre-built bundles + sibling
+        // .wasm/worker assets; letting esbuild pre-bundle them either times out
+        // (504 on omniclip) or relocates assets away from their .mjs. Excluded
+        // → Vite serves them as-is and the resolve plugin below fixes sub-paths.
+        viteConf.optimizeDeps = {
+          ...(viteConf.optimizeDeps || {}),
+          exclude: [
+            ...((viteConf.optimizeDeps && viteConf.optimizeDeps.exclude) || []),
+            ...OMNICLIP_VENDOR_PKGS,
+          ],
+        }
+        // DURABLE fix for the recurring sub-path bug (openimago-y90v → g015):
+        // packages in the omniclip dep set ship physical sub-path files (e.g.
+        // `ffprobe-wasm/browser.mjs`, `fabric/dist/fabric.mjs`) but their
+        // `exports` maps lack those path keys, so Vite 8 strict-exports rejects
+        // the import (HTML/500 instead of JS → the dynamic import fails). Rather
+        // than alias each sub-path one-by-one, a single scoped resolve plugin
+        // rewrites ANY `<allowlistedPkg>/<subpath>` → its physical node_modules
+        // file. Scoped to the omniclip vendor set so normal resolution of every
+        // other package is untouched.
+        viteConf.plugins = viteConf.plugins || []
+        viteConf.plugins.push(omniclipSubpathResolver())
       },
 
       vitePlugins: [

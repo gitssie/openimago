@@ -14,6 +14,7 @@ import { tempUploadRoutes } from "../temp-uploads/routes"
 import { galleryRoutes, galleryFilesRoutes } from "../gallery/routes"
 import { workspaceFilesRoutes, sessionWorkspaceFilesRoutes, projectWorkspaceFilesRoutes } from "../workspace-files/routes"
 import { authMiddleware, adminMiddleware } from "./middleware"
+import { crossOriginIsolation } from "./cross-origin-isolation"
 import { createProxyRoutes, type SubscribeFn } from "../proxy/routes"
 import { billingRoutes } from "../billing/routes"
 import { billingAdminRoutes } from "../billing/admin-routes"
@@ -53,6 +54,10 @@ const subscribe: SubscribeFn = async (userId: string) => {
 export function createApp() {
   const app = new Hono()
   app.use("*", cors())
+  // Cross-origin isolation for the omniclip Cut editor (ADR 0007): COOP/COEP on
+  // every response + a permissive CORP so the isolated SPA can still load
+  // backend-served media. (openimago-c80q)
+  app.use("*", crossOriginIsolation())
   app.route("/auth", authRoutes)
 
   const adminApp = new Hono()
