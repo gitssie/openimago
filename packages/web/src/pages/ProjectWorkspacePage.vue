@@ -178,16 +178,18 @@
             @episode-select="onEpisodeSelect"
           />
 
-          <!-- 时间线 tab → workflow DAG + run history for the current episode -->
-          <StoryTimelinePanel
-            v-else-if="activeWorkspaceTab === 'timeline'"
+          <!-- 时间线 tab → NLE Cut editor (omniclip) for the current episode -->
+          <StoryCutPanel
+            v-else-if="activeWorkspaceTab === 'timeline' && currentStoryEpisodeId"
             class="project-workspace-page__story-view"
-            :nodes="currentStoryWorkflowNodes"
+            :project-id="projectId"
+            :episode-id="currentStoryEpisodeId"
+            :cut="storyCut"
+            :shots="currentStoryShots"
             :runs="currentStoryRuns"
-            :selected-node-id="selectedTimelineNodeId"
-            :selected-run-id="selectedTimelineRunId"
-            @node-select="(id) => { selectedTimelineNodeId = id }"
-            @run-select="(id) => { selectedTimelineRunId = id }"
+            @request-assemble="onRequestAssemble"
+            @cut-changed="onCutChanged"
+            @cut-conflict="onCutConflict"
           />
         </UILayoutPage>
       </UILayoutPageContainer>
@@ -286,7 +288,6 @@ import type {
   StorySelection,
   StoryEditIntent,
   StoryShotSummary,
-  StoryWorkflowNodeSummary,
   StoryRunSummary,
   ShotOutputItem,
   StoryElement,
@@ -300,13 +301,14 @@ import {
   rawBibleToSummary,
   rawSeriesToEpisodeSummaries,
   rawEpisodeToShotSummaries,
-  rawWorkflowToNodeSummaries,
   rawRunsToRunSummaries,
 } from 'src/utils/story-summary-mapper'
 import { workspaceFileToAIOutputItem } from 'src/utils/session-output-mapper'
 import { formatRelativeTime } from 'src/utils/format-time'
 import StoryOverviewPanel from 'src/components/session-workspace/StoryOverviewPanel.vue'
-import StoryTimelinePanel from 'src/components/session-workspace/StoryTimelinePanel.vue'
+import StoryCutPanel from 'src/components/session-workspace/StoryCutPanel.vue'
+import type { EpisodeCut } from 'src/utils/cut/cut-types'
+import { rawCutToEpisodeCut } from 'src/utils/cut/cut-api-mapper'
 
 // ── Local types ─────────────────────────────────────────────────────────────
 
@@ -347,8 +349,6 @@ const gridRef = ref<{ setActiveWorkspaceTab: (tab: WorkspaceTabId) => void; getA
 const leftPanelOpen = ref(true)
 const rightPanelOpen = ref(true)
 const activeWorkspaceTab = ref<string>('storyboard')
-const selectedTimelineNodeId = ref<string | null>(null)
-const selectedTimelineRunId = ref<string | null>(null)
 const addingShot = ref(false)
 const generatingShotIds = ref<string[]>([])
 const mutatingShotIds = ref<string[]>([])
@@ -382,6 +382,9 @@ const storySelectedCharacterId = ref<string | null>(null)
 const storySelectedStyleSeedId = ref<string | null>(null)
 const storyWorkflow = ref<OpenimagoStoryWorkflow | null>(null)
 const storyRuns = ref<OpenimagoStoryRuns | null>(null)
+// Episode Cut (ADR 0006/0007) — the 时间线 tab's NLE editor state, canonical
+// in cut.json. Loaded alongside the episode's runs (openimago-4eiw).
+const storyCut = ref<EpisodeCut | null>(null)
 const storyPanelLoading = ref(false)
 const storyPanelError = ref<string | null>(null)
 const showArtifactsPanel = ref(false)
@@ -584,11 +587,6 @@ const currentStoryShots = computed<StoryShotSummary[]>(() => {
   return rawEpisodeToShotSummaries(episode)
 })
 
-const currentStoryWorkflowNodes = computed<StoryWorkflowNodeSummary[]>(() => {
-  if (!storyWorkflow.value) return []
-  return rawWorkflowToNodeSummaries(storyWorkflow.value)
-})
-
 const currentStoryRuns = computed<StoryRunSummary[]>(() => {
   if (!storyRuns.value) return []
   return rawRunsToRunSummaries(storyRuns.value)
@@ -780,20 +778,47 @@ function onEpisodeSelect(episodeId: string) {
 async function fetchEpisodeWorkflowRuns(episodeId: string): Promise<void> {
   const pid = projectId.value
   try {
-    const [wf, runs] = await Promise.all([
+    const [wf, runs, cut] = await Promise.all([
       api.projectStoryWorkflow(pid, episodeId),
       api.projectStoryRuns(pid, episodeId),
+      api.projectStoryCut(pid, episodeId),
     ])
     // Guard against an out-of-order resolve after another episode was selected.
     if (currentStoryEpisodeId.value !== episodeId) return
     storyWorkflow.value = wf
     storyRuns.value = runs
+    storyCut.value = rawCutToEpisodeCut(cut)
   } catch {
     if (currentStoryEpisodeId.value === episodeId) {
       storyWorkflow.value = null
       storyRuns.value = null
+      storyCut.value = null
     }
   }
+}
+
+/** Refetch just the episode's Cut (after an edit or assemble, openimago-4eiw). */
+async function refreshStoryCut(): Promise<void> {
+  const episodeId = currentStoryEpisodeId.value
+  if (!episodeId) return
+  const cut = await api.projectStoryCut(projectId.value, episodeId)
+  if (episodeId === currentStoryEpisodeId.value) {
+    storyCut.value = rawCutToEpisodeCut(cut)
+  }
+}
+
+function onCutChanged(): void {
+  void refreshStoryCut()
+}
+
+function onCutConflict(): void {
+  $q.notify({ color: 'warning', message: '该粗剪已被更新，请重试', icon: 'sync_problem', timeout: 2000 })
+  void refreshStoryCut()
+}
+
+function onRequestAssemble(): void {
+  void refreshStoryCut()
+  $q.notify({ color: 'positive', message: '已拼接粗剪', icon: 'check', timeout: 1200 })
 }
 
 function onGridOutputSelect(id: string) {
@@ -1271,11 +1296,10 @@ watch(isLoading, (loading, wasLoading) => {
 // timeline tab and the left storyboard shots track the chosen episode. Reset
 // per-episode timeline selection to avoid highlighting a stale node/run.
 watch(currentStoryEpisodeId, (episodeId) => {
-  selectedTimelineNodeId.value = null
-  selectedTimelineRunId.value = null
   if (!episodeId) {
     storyWorkflow.value = null
     storyRuns.value = null
+    storyCut.value = null
     return
   }
   void fetchEpisodeWorkflowRuns(episodeId)

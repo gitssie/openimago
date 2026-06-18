@@ -82,3 +82,34 @@ cd packages/web && bun run build   # quasar build must succeed with the fork imp
   calls `actions.add_transition`, which only exists after that splice.
 - The patched clip view (`patches/effect.patch.ts`) must replace the original
   `Effect` view for the right-click menu + `::part` to take effect.
+
+---
+
+## 6. Panel-level validation (openimago-4eiw — StoryCutPanel in the 时间线 tab)
+
+The Cut editor now lives in the project workspace **时间线** tab, replacing the
+old workflow-DAG panel. The panel (`StoryCutPanel.vue`) hydrates from `cut.json`,
+mounts the fork's `<construct-editor>`, and persists edits via the cut endpoints
+with the cut's own optimistic-concurrency clock. Wiring logic (mapper, media
+resolver, edit dispatcher, 409 retry) is unit-tested in `src/utils/cut/`; the
+mounted editor + the editor→`persistEdit` event bridge are browser-validated.
+
+Run on a project that has an episode with at least one **completed** shot run
+(so there is media to cut), in a Chromium browser with `crossOriginIsolated`.
+
+| # | Check | Action | Expected |
+|---|---|---|---|
+| 1 | **Empty → assemble** | Open 时间线 for an episode with no cut yet | "尚未生成粗剪" empty state with **自动拼接粗剪**; clicking it calls `assembleEpisodeCut`, the cut appears, editor mounts |
+| 2 | **Hydrate from cut.json** | Open 时间线 for an episode that already has a cut | Clips from `cut.json` appear on the timeline in `order`, each trimmed to its in/out, sourced from the shot's latest completed run preview |
+| 3 | **Edit persists** | Reorder / trim / split / delete a clip (wire the editor event to `panel.persistEdit({kind,...})`) | The matching cut endpoint is called with `expectedUpdatedAt`; on success the page refetches and the change sticks |
+| 4 | **Survives reload** | After an edit, switch episodes and back (or reload) | The edit is still there (it was persisted to `cut.json`, not just editor-local) |
+| 5 | **409 conflict** | Force a stale write (edit, then edit again from another tab) | First write 409s → panel refetches the cut + retries once; a persistent conflict shows "该粗剪已被更新，请重试" and refetches |
+| 6 | **Orphan clip** | Delete a Shot that a clip references, then open 时间线 | An orange banner reports N missing-source clips; the orphan renders greyed with the `--imago-neon-pink` dotted border (data-no-file path) — it is NOT dropped |
+| 7 | **Transition round-trip** | Set a dissolve between two clips, reload | `setCutTransition` persisted it; on reload the transition is still present |
+| 8 | **Theming** | With the editor mounted | Editor background/clips/accent use the dark-neon `--imago-*` tokens (cyan accent, not omniclip default) |
+
+Note: the editor→`persistEdit` event bridge (mapping omniclip's drag/trim/split
+DOM events to `CutEdit` objects) is finalised during local validation — the panel
+exposes `persistEdit(edit: CutEdit)` via `defineExpose` and the tested dispatcher
+routes each `CutEdit` to its endpoint. Connect omniclip's effect-change events to
+it once the editor is running.
