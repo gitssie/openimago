@@ -113,3 +113,26 @@ DOM events to `CutEdit` objects) is finalised during local validation — the pa
 exposes `persistEdit(edit: CutEdit)` via `defineExpose` and the tested dispatcher
 routes each `CutEdit` to its endpoint. Connect omniclip's effect-change events to
 it once the editor is running.
+
+---
+
+## 7. Clip context menu + 添加到对话 (openimago-e0n3 — closes the Cut line)
+
+The panel registers a per-clip context menu via the fork's
+`registerClipMenuItems` hook at mount. Items + orphan-gating + action routing are
+unit-tested (`src/utils/cut/clip-menu-items.ts`, `clip-reference.ts`); the menu
+rendering + tab switch are browser-validated. The 添加到对话 path is a NON-upload
+reference: it builds an already-`'uploaded'` PendingAttachment from the clip's
+source-shot media artifact (url+mime+assetId) and pushes it straight into
+`pendingAttachments` via the new `addReferenceAttachment` (no `api.uploadAsset`).
+
+| # | Check | Action | Expected |
+|---|---|---|---|
+| 1 | **Menu appears** | Right-click a clip | A context menu with exactly 4 items: 添加到对话 / 重新生成 / 手动编辑 / 删除 |
+| 2 | **重新生成** | Click 重新生成 | `api.generateShot(sourceShotId)` runs; the shot regenerates and the clip's media refreshes |
+| 3 | **手动编辑** | Click 手动编辑, edit the prompt | `api.updateShot` persists the new shot description |
+| 4 | **删除 removes CLIP only** | Click 删除 on a clip | The clip disappears from the timeline (deleteCutClip), but the SOURCE SHOT still exists in 故事板 (NOT deleted) |
+| 5 | **添加到对话** | Click 添加到对话 | The view switches to the 对话 tab; the clip's media shows as a reference chip in the composer (the '拖拽素材到此处作为参考' area) with NO upload progress (already uploaded); composer is seeded with the shot description if empty |
+| 6 | **No re-upload** | Watch the network tab during 添加到对话 | NO `POST` to the asset-upload endpoint — the existing artifact url/assetId is reused |
+| 7 | **Dedupe** | 添加到对话 twice on the same clip | Only one reference chip (de-duped by assetId/url) |
+| 8 | **Orphan clip menu** | Right-click an orphan clip (source shot deleted) | 重新生成 / 手动编辑 / 添加到对话 are hidden; only 删除 remains, and it removes the orphan clip |

@@ -433,6 +433,35 @@ export function useAgentSession(
     pendingFiles.delete(attachmentId);
   }
 
+  /**
+   * Attach an ALREADY-uploaded artifact as a chat reference, WITHOUT uploading
+   * (openimago-e0n3 "添加到对话"). The media already exists as an asset (e.g. a
+   * Cut clip's source-shot Run), so we push a ready 'uploaded' PendingAttachment
+   * directly — no File, no pendingFiles entry, no api.uploadAsset. De-duplicates
+   * by assetId (or url) so re-adding the same clip is a no-op.
+   */
+  function addReferenceAttachment(reference: {
+    name: string
+    mime: string
+    url: string
+    assetId?: string
+  }) {
+    const already = pendingAttachments.value.some((a) =>
+      reference.assetId ? a.assetId === reference.assetId : a.url === reference.url,
+    )
+    if (already) return
+    const attachment: PendingAttachment = {
+      id: generateMessageId(),
+      name: reference.name,
+      mime: reference.mime,
+      url: reference.url,
+      status: 'uploaded',
+      progress: 100,
+      ...(reference.assetId !== undefined ? { assetId: reference.assetId } : {}),
+    }
+    pendingAttachments.value.push(attachment)
+  }
+
   function retryAttachment(attachmentId: string) {
     const idx = pendingAttachments.value.findIndex(a => a.id === attachmentId)
     if (idx === -1) return
@@ -1598,6 +1627,7 @@ Usage: search(search_query="<your query>", search_type="GRAPH_COMPLETION", datas
     deleteSession,
     toggleDataset,
     addAttachment,
+    addReferenceAttachment,
     removeAttachment,
     retryAttachment,
     sendMessage,

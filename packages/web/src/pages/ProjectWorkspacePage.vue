@@ -190,6 +190,10 @@
             @request-assemble="onRequestAssemble"
             @cut-changed="onCutChanged"
             @cut-conflict="onCutConflict"
+            @clip-regenerate="onClipRegenerate"
+            @clip-manual-edit="onClipManualEdit"
+            @clip-delete="onClipDelete"
+            @clip-add-to-chat="onClipAddToChat"
           />
         </UILayoutPage>
       </UILayoutPageContainer>
@@ -309,6 +313,9 @@ import StoryOverviewPanel from 'src/components/session-workspace/StoryOverviewPa
 import StoryCutPanel from 'src/components/session-workspace/StoryCutPanel.vue'
 import type { EpisodeCut } from 'src/utils/cut/cut-types'
 import { rawCutToEpisodeCut } from 'src/utils/cut/cut-api-mapper'
+import { dispatchCutEdit } from 'src/utils/cut/cut-edit-dispatcher'
+import { resolveShotMediaSource } from 'src/utils/cut/shot-media-resolver'
+import { buildReferenceAttachment } from 'src/utils/cut/clip-reference'
 
 // ── Local types ─────────────────────────────────────────────────────────────
 
@@ -325,7 +332,7 @@ type OutputItem = {
   genRun?: GenerationRunMetadata
 }
 
-type WorkspaceTabId = 'overview' | 'storyboard' | 'timeline' | 'edit' | 'audio' | 'exports'
+type WorkspaceTabId = 'overview' | 'storyboard' | 'timeline' | 'edit' | 'audio' | 'exports' | 'conversation'
 
 // ── Workspace tabs (shared 4-tab pill switcher) ─────────────────────────────
 
@@ -420,6 +427,7 @@ const {
   switchSession,
   createNewSession,
   addAttachment,
+  addReferenceAttachment,
   removeAttachment,
   sendMessage,
   abortSession,
@@ -819,6 +827,80 @@ function onCutConflict(): void {
 function onRequestAssemble(): void {
   void refreshStoryCut()
   $q.notify({ color: 'positive', message: '已拼接粗剪', icon: 'check', timeout: 1200 })
+}
+
+// ── Cut clip context-menu actions (openimago-e0n3) ──────────────────────────
+
+/** 重新生成 — regenerate the source shot's media (reuses ADR 0005 path). */
+function onClipRegenerate(sourceShotId: string): void {
+  void onShotGenerate(sourceShotId)
+}
+
+/** 手动编辑 — edit the source shot's description (reuses ADR 0005 path). */
+function onClipManualEdit(sourceShotId: string): void {
+  const shot = currentStoryShots.value.find((s) => s.id === sourceShotId)
+  const next = window.prompt('编辑镜头描述', shot?.description ?? '')
+  if (next === null) return
+  onShotUpdate(sourceShotId, { description: next })
+}
+
+/** 删除 — delete the CLIP (cut edit-layer), NOT the source shot. */
+function onClipDelete(clipId: string): void {
+  const episodeId = currentStoryEpisodeId.value
+  if (!episodeId) return
+  void (async () => {
+    const outcome = await dispatchCutEdit(
+      {
+        api,
+        projectId: projectId.value,
+        episodeId,
+        currentUpdatedAt: () => storyCut.value?.updatedAt,
+        refetch: async () => {
+          const fresh = await api.projectStoryCut(projectId.value, episodeId)
+          return fresh?.updatedAt
+        },
+      },
+      { kind: 'delete', clipId },
+    )
+    if (outcome === 'conflict') onCutConflict()
+    else onCutChanged()
+  })()
+}
+
+/**
+ * 添加到对话 — attach the clip's current media as a chat reference (NON-upload),
+ * switch to the 对话 tab, and seed the composer with the shot description.
+ */
+function onClipAddToChat(sourceShotId: string): void {
+  const source = resolveShotMediaSource(sourceShotId, currentStoryShots.value, currentStoryRuns.value)
+  const run = currentStoryRuns.value
+    .filter((r) => r.shotId === sourceShotId && r.status === 'completed' && r.previewUrl)
+    .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))[0]
+  const reference = buildReferenceAttachment(sourceShotId, run ?? null, generateReferenceId)
+  if (!reference || !source) {
+    $q.notify({ color: 'warning', message: '该镜头暂无可引用的媒体', icon: 'info', timeout: 1800 })
+    return
+  }
+  addReferenceAttachment({
+    name: reference.name,
+    mime: reference.mime,
+    url: reference.url,
+    ...(reference.assetId !== undefined ? { assetId: reference.assetId } : {}),
+  })
+  // Seed the composer with the shot description (only if empty, don't clobber).
+  const shot = currentStoryShots.value.find((s) => s.id === sourceShotId)
+  if (shot?.description && !draftInputMessage.value.trim()) {
+    draftInputMessage.value = shot.description
+  }
+  // Switch to the 对话 tab so the reference is visible in the composer.
+  activeWorkspaceTab.value = 'conversation'
+  gridRef.value?.setActiveWorkspaceTab?.('conversation')
+  $q.notify({ color: 'positive', message: '已添加到对话作为参考', icon: 'check', timeout: 1400 })
+}
+
+/** Stable-ish id for a reference attachment. */
+function generateReferenceId(): string {
+  return `ref-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
 function onGridOutputSelect(id: string) {

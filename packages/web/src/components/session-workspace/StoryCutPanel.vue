@@ -60,6 +60,7 @@ import type { EpisodeCut } from 'src/utils/cut/cut-types'
 import { cutToOmniclipState } from 'src/utils/cut/cut-omniclip-mapper'
 import { makeShotMediaResolver } from 'src/utils/cut/shot-media-resolver'
 import { dispatchCutEdit, type CutEdit } from 'src/utils/cut/cut-edit-dispatcher'
+import { buildClipMenuItems } from 'src/utils/cut/clip-menu-items'
 import type { LoadOmniclipFork, OmniclipForkApi } from 'src/utils/cut/fork-contract'
 import { api, ApiError } from 'src/api/client'
 
@@ -79,6 +80,14 @@ const emit = defineEmits<{
   (e: 'cut-changed'): void
   /** surface a conflict that lost after one retry. */
   (e: 'cut-conflict'): void
+  /** clip menu (openimago-e0n3): regenerate the source shot's media. */
+  (e: 'clip-regenerate', sourceShotId: string): void
+  /** clip menu: edit the source shot's description. */
+  (e: 'clip-manual-edit', sourceShotId: string): void
+  /** clip menu: delete the CLIP (not the shot). */
+  (e: 'clip-delete', clipId: string): void
+  /** clip menu: attach the clip's media to the chat as a reference. */
+  (e: 'clip-add-to-chat', sourceShotId: string): void
 }>()
 
 const editorHost = ref<HTMLElement | null>(null)
@@ -87,6 +96,7 @@ const editorError = ref<string | null>(null)
 const assembling = ref(false)
 
 let fork: OmniclipForkApi | null = null
+let unregisterClipMenu: (() => void) | null = null
 
 const isEmptyCut = computed(() => !props.cut || props.cut.clips.length === 0)
 
@@ -156,6 +166,19 @@ async function mountAndHydrate(): Promise<void> {
     fork = loaded
     applyImagoTheme(editorHost.value)
 
+    // Register the per-clip context menu (openimago-e0n3). The menu items +
+    // orphan-gating are the unit-tested buildClipMenuItems; each item emits to
+    // the page, which runs the real action. isEnabled hides shot-bound items on
+    // orphan clips (sourceShotId gone) but keeps 删除.
+    unregisterClipMenu = fork.registerClipMenuItems(
+      buildClipMenuItems({
+        onRegenerate: (sourceShotId) => emit('clip-regenerate', sourceShotId),
+        onManualEdit: (sourceShotId) => emit('clip-manual-edit', sourceShotId),
+        onDeleteClip: (clipId) => emit('clip-delete', clipId),
+        onAddToChat: (sourceShotId) => emit('clip-add-to-chat', sourceShotId),
+      }),
+    )
+
     // Compute the target omniclip state from the canonical cut (pure, tested).
     // The actual per-clip media import + state application is done by the fork
     // at runtime; cutToOmniclipState gives the intended shape and surfaces
@@ -177,12 +200,16 @@ watch(
   () => {
     editorReady.value = false
     editorError.value = null
+    unregisterClipMenu?.()
+    unregisterClipMenu = null
     void mountAndHydrate()
   },
   { immediate: true },
 )
 
 onBeforeUnmount(() => {
+  unregisterClipMenu?.()
+  unregisterClipMenu = null
   fork = null
 })
 
