@@ -11,7 +11,8 @@
 //
 // BROWSER-ONLY: mutates omniclip's live state tree.
 
-import { omnislate } from 'omniclip'
+// omnislate is exported from context/context.js, NOT the package root. (openimago-x0p4)
+import { omnislate } from 'omniclip/x/context/context.js'
 import type {
   ClearTransition,
   OmniTransition,

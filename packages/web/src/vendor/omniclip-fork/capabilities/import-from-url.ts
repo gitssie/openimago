@@ -15,7 +15,9 @@
 //
 // BROWSER-ONLY: needs fetch + DataTransfer + IndexedDB + ffprobe-wasm.
 
-import { omnislate } from 'omniclip'
+// omnislate is exported from context/context.js, NOT the package root
+// (omniclip/x/index.js only re-exports OmniContext + components). (openimago-x0p4)
+import { omnislate } from 'omniclip/x/context/context.js'
 import type {
   ImportFromUrl,
   ImportedMedia,
