@@ -3,6 +3,46 @@
 
 import { defineConfig } from '#q-app/wrappers';
 import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
+
+// ── omniclip vendor dependency set (ADR 0007, openimago-ulkx/y90v/g015) ──────
+// The vendored omniclip fork pulls these. They ship pre-built bundles + sibling
+// wasm/worker assets and have `exports` maps that omit sub-path keys, which
+// Vite 8 strict-exports rejects. They are (a) excluded from the dep optimizer
+// and (b) handled by the scoped sub-path resolver below.
+const OMNICLIP_VENDOR_PKGS = [
+  'omniclip',
+  '@benev/slate',
+  '@benev/construct',
+  'ffprobe-wasm',
+  'fabric',
+  '@ffmpeg/ffmpeg',
+  '@ffmpeg/util',
+] as const;
+
+/**
+ * Vite plugin: for the omniclip vendor set ONLY, resolve a bare
+ * `<pkg>/<subpath>` specifier to its physical node_modules file. Bypasses the
+ * packages' incomplete `exports` maps without per-path aliases or whack-a-mole.
+ * Returns undefined for anything outside the allowlist (and for bare-package
+ * imports with no sub-path), leaving normal resolution untouched.
+ */
+function omniclipSubpathResolver() {
+  return {
+    name: 'omniclip-subpath-resolver',
+    enforce: 'pre' as const,
+    resolveId(source: string) {
+      const pkg = OMNICLIP_VENDOR_PKGS.find(
+        (p) => source.startsWith(`${p}/`) && source.length > p.length + 1,
+      );
+      if (!pkg) return undefined;
+      const physical = fileURLToPath(
+        new URL(`./node_modules/${source}`, import.meta.url),
+      );
+      return existsSync(physical) ? physical : undefined;
+    },
+  };
+}
 
 export default defineConfig((ctx) => {
   return {
@@ -90,38 +130,29 @@ export default defineConfig((ctx) => {
         // @benev/construct and deep component trees; letting esbuild pre-bundle
         // it times out the optimizer (504 on GET /deps/omniclip.js) so
         // <construct-editor> never mounts. Exclude → Vite serves it as-is.
+        // Keep the omniclip dep set out of Vite's dep pre-optimizer
+        // (openimago-ulkx/y90v/g015). These ship pre-built bundles + sibling
+        // .wasm/worker assets; letting esbuild pre-bundle them either times out
+        // (504 on omniclip) or relocates assets away from their .mjs. Excluded
+        // → Vite serves them as-is and the resolve plugin below fixes sub-paths.
         viteConf.optimizeDeps = {
           ...(viteConf.optimizeDeps || {}),
           exclude: [
             ...((viteConf.optimizeDeps && viteConf.optimizeDeps.exclude) || []),
-            'omniclip',
-            '@benev/slate',
-            '@benev/construct',
-            // ffprobe-wasm ships .mjs + .wasm + worker as siblings; keep it out
-            // of the optimizer so the aliased browser.mjs is served as-is and
-            // its wasm/worker resolve relative to it. (openimago-y90v)
-            'ffprobe-wasm',
+            ...OMNICLIP_VENDOR_PKGS,
           ],
         }
-        // omniclip imports `ffprobe-wasm/browser.mjs`, but that package's
-        // `exports` map is conditions-only (node/types/default) with NO path
-        // keys, so Vite 8's strict exports refuses the "./browser.mjs" sub-path
-        // (serves an HTML error overlay → the dynamic import fails). Alias the
-        // bare sub-path to the physical file to bypass the exports map.
-        // (openimago-y90v)
-        viteConf.resolve = viteConf.resolve || {}
-        const existingAlias = viteConf.resolve.alias
-        const ffprobeBrowser = fileURLToPath(
-          new URL('./node_modules/ffprobe-wasm/browser.mjs', import.meta.url),
-        )
-        if (Array.isArray(existingAlias)) {
-          existingAlias.push({ find: 'ffprobe-wasm/browser.mjs', replacement: ffprobeBrowser })
-        } else {
-          viteConf.resolve.alias = {
-            ...(existingAlias as Record<string, string> | undefined),
-            'ffprobe-wasm/browser.mjs': ffprobeBrowser,
-          }
-        }
+        // DURABLE fix for the recurring sub-path bug (openimago-y90v → g015):
+        // packages in the omniclip dep set ship physical sub-path files (e.g.
+        // `ffprobe-wasm/browser.mjs`, `fabric/dist/fabric.mjs`) but their
+        // `exports` maps lack those path keys, so Vite 8 strict-exports rejects
+        // the import (HTML/500 instead of JS → the dynamic import fails). Rather
+        // than alias each sub-path one-by-one, a single scoped resolve plugin
+        // rewrites ANY `<allowlistedPkg>/<subpath>` → its physical node_modules
+        // file. Scoped to the omniclip vendor set so normal resolution of every
+        // other package is untouched.
+        viteConf.plugins = viteConf.plugins || []
+        viteConf.plugins.push(omniclipSubpathResolver())
       },
 
       vitePlugins: [

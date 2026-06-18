@@ -17,18 +17,18 @@ If omniclip's deep imports (`@benev/slate/x/...`, `@benev/construct/x/...`) don'
 resolve, also add them explicitly or check the installed versions match
 omniclip@1.0.7's `dependencies`.
 
-> **Dep pre-optimizer (openimago-ulkx):** omniclip + `@benev/slate` +
-> `@benev/construct` are excluded from Vite's optimizer in `quasar.config.ts`
-> (`optimizeDeps.exclude`). omniclip ships a pre-built bundle; letting esbuild
-> pre-bundle it transitively pulls deep component trees and times out (504 on
-> `GET /deps/omniclip.js`), which hangs the editor at "正在加载剪辑器…". The
-> exclude is already in the repo — just confirm it's present after install.
-
-> **ffprobe-wasm sub-path (openimago-y90v):** omniclip imports
-> `ffprobe-wasm/browser.mjs`, but that package's `exports` map is conditions-only
-> (no path keys), so Vite 8 strict-exports rejects the sub-path. `quasar.config.ts`
-> aliases `ffprobe-wasm/browser.mjs` → the physical file and excludes
-> `ffprobe-wasm` from the optimizer. Already in the repo; confirm after install.
+> **omniclip dep resolution (openimago-ulkx/y90v/g015):** `quasar.config.ts`
+> handles the whole omniclip vendor set (`omniclip`, `@benev/slate`,
+> `@benev/construct`, `ffprobe-wasm`, `fabric`, `@ffmpeg/ffmpeg`, `@ffmpeg/util`)
+> in two ways. (1) They're in `optimizeDeps.exclude` — they ship pre-built
+> bundles + sibling wasm/worker assets; pre-bundling them times out (504 on
+> omniclip) or relocates assets. (2) A scoped `omniclip-subpath-resolver` Vite
+> plugin rewrites any `<vendorPkg>/<subpath>` (e.g. `fabric/dist/fabric.mjs`,
+> `ffprobe-wasm/browser.mjs`) → its physical `node_modules` file, because these
+> packages' `exports` maps lack sub-path keys and Vite 8 strict-exports rejects
+> them (HTML/500 instead of JS → the dynamic import fails). The plugin is scoped
+> to the allowlist, so all other package resolution is untouched. Already in the
+> repo; confirm present after install.
 
 ## 2. Confirm cross-origin isolation is live (from openimago-c80q)
 
