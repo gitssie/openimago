@@ -3,7 +3,7 @@
 
 import { defineConfig } from '#q-app/wrappers';
 import { fileURLToPath } from 'node:url';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 
 // ── omniclip vendor dependency set (ADR 0007, openimago-ulkx/y90v/g015) ──────
 // The vendored omniclip fork pulls these. They ship pre-built bundles + sibling
@@ -26,6 +26,16 @@ const OMNICLIP_VENDOR_PKGS = [
  * packages' incomplete `exports` maps without per-path aliases or whack-a-mole.
  * Returns undefined for anything outside the allowlist (and for bare-package
  * imports with no sub-path), leaving normal resolution untouched.
+ *
+ * CRITICAL (openimago-9lpk): return the REAL path (realpathSync), not the
+ * symlink path under `packages/web/node_modules`. These packages are bun-store
+ * symlinks; the symlink path is INSIDE the Vite root, so Vite serves it as a
+ * `/node_modules/<pkg>` dev URL — and browser `import()` rejects that URL for
+ * large single-line modules (e.g. ffprobe-wasm's 4.29MB base64 `browser.mjs`)
+ * with an instant SyntaxError. The real store path is OUTSIDE the root, so Vite
+ * serves it via `/@fs/<abs>`, which loads correctly (matching the old
+ * resolve.alias behaviour). This also fixes ffprobe's RUNTIME import, not just
+ * module load. Returning a bare path (not {external:true}) keeps Vite serving.
  */
 function omniclipSubpathResolver() {
   return {
@@ -39,7 +49,10 @@ function omniclipSubpathResolver() {
       const physical = fileURLToPath(
         new URL(`./node_modules/${source}`, import.meta.url),
       );
-      return existsSync(physical) ? physical : undefined;
+      if (!existsSync(physical)) return undefined;
+      // Resolve symlinks → real store path (outside the Vite root) so Vite
+      // serves it via /@fs/ instead of a /node_modules/ URL.
+      return realpathSync(physical);
     },
   };
 }

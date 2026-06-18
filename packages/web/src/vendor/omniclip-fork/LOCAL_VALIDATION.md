@@ -27,7 +27,11 @@ omniclip@1.0.7's `dependencies`.
 > `ffprobe-wasm/browser.mjs`) → its physical `node_modules` file, because these
 > packages' `exports` maps lack sub-path keys and Vite 8 strict-exports rejects
 > them (HTML/500 instead of JS → the dynamic import fails). The plugin is scoped
-> to the allowlist, so all other package resolution is untouched. Already in the
+> to the allowlist, so all other package resolution is untouched. It returns the
+> REAL store path (`realpathSync`), not the `packages/web/node_modules` symlink,
+> so Vite serves these via `/@fs/<abs>` rather than a `/node_modules/<pkg>` URL —
+> the latter makes browser `import()` reject large single-line modules (e.g.
+> ffprobe-wasm's 4.29MB `browser.mjs`) instantly. (openimago-9lpk) Already in the
 > repo; confirm present after install.
 
 ## 2. Confirm cross-origin isolation is live (from openimago-c80q)
