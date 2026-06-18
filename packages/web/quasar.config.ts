@@ -61,7 +61,14 @@ export default defineConfig((ctx) => {
       // distDir
 
       // extendViteConf (viteConf) {},
-      // viteVuePluginOptions: {},
+      viteVuePluginOptions: {
+        template: {
+          compilerOptions: {
+            isCustomElement: (t: string) =>
+              t.startsWith('omni-') || t.startsWith('construct-'),
+          },
+        },
+      },
 
       extendViteConf(viteConf) {
         viteConf.server = viteConf.server || {}
@@ -77,6 +84,20 @@ export default defineConfig((ctx) => {
           ...(viteConf.server.headers || {}),
           'Cross-Origin-Opener-Policy': 'same-origin',
           'Cross-Origin-Embedder-Policy': 'require-corp',
+        }
+        // Keep the omniclip fork out of Vite's dep pre-optimizer (openimago-ulkx).
+        // omniclip ships a pre-built bundle and transitively pulls @benev/slate,
+        // @benev/construct and deep component trees; letting esbuild pre-bundle
+        // it times out the optimizer (504 on GET /deps/omniclip.js) so
+        // <construct-editor> never mounts. Exclude → Vite serves it as-is.
+        viteConf.optimizeDeps = {
+          ...(viteConf.optimizeDeps || {}),
+          exclude: [
+            ...((viteConf.optimizeDeps && viteConf.optimizeDeps.exclude) || []),
+            'omniclip',
+            '@benev/slate',
+            '@benev/construct',
+          ],
         }
       },
 

@@ -154,6 +154,11 @@ async function persistEdit(edit: CutEdit): Promise<void> {
 
 async function mountAndHydrate(): Promise<void> {
   if (isEmptyCut.value || !editorHost.value || editorReady.value) return
+
+  // Phase 1 — load the fork module. A failure here is a bundling / module-load
+  // problem (e.g. Vite dep-optimizer timeout), NOT a browser-capability issue.
+  let loaded: OmniclipForkApi
+  let applyImagoTheme: (wrapper: HTMLElement) => HTMLElement
   try {
     // Dynamic import via a runtime-computed path so the repo typecheck never
     // follows into the browser-only vendored fork (excluded from tsconfig).
@@ -162,7 +167,16 @@ async function mountAndHydrate(): Promise<void> {
     const mod = (await import(/* @vite-ignore */ forkModulePath)) as unknown as {
       loadOmniclipFork: LoadOmniclipFork
     }
-    const { fork: loaded, applyImagoTheme } = await mod.loadOmniclipFork()
+    ;({ fork: loaded, applyImagoTheme } = await mod.loadOmniclipFork())
+  } catch (err) {
+    editorError.value = '剪辑器模块加载失败（请检查 omniclip 依赖与构建配置）'
+    console.error('StoryCutPanel: failed to load omniclip fork module', err)
+    return
+  }
+
+  // Phase 2 — mount + wire. A failure here is a runtime / browser-API issue
+  // (WebCodecs / SharedArrayBuffer / IndexedDB unavailable, or not isolated).
+  try {
     fork = loaded
     applyImagoTheme(editorHost.value)
 
@@ -190,8 +204,8 @@ async function mountAndHydrate(): Promise<void> {
     }
     editorReady.value = true
   } catch (err) {
-    editorError.value = '剪辑器加载失败（需要浏览器环境）'
-    console.error('StoryCutPanel: failed to mount omniclip fork', err)
+    editorError.value = '剪辑器初始化失败（需要支持 WebCodecs 的浏览器环境）'
+    console.error('StoryCutPanel: failed to initialise omniclip editor', err)
   }
 }
 

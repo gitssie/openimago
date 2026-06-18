@@ -17,6 +17,13 @@ If omniclip's deep imports (`@benev/slate/x/...`, `@benev/construct/x/...`) don'
 resolve, also add them explicitly or check the installed versions match
 omniclip@1.0.7's `dependencies`.
 
+> **Dep pre-optimizer (openimago-ulkx):** omniclip + `@benev/slate` +
+> `@benev/construct` are excluded from Vite's optimizer in `quasar.config.ts`
+> (`optimizeDeps.exclude`). omniclip ships a pre-built bundle; letting esbuild
+> pre-bundle it transitively pulls deep component trees and times out (504 on
+> `GET /deps/omniclip.js`), which hangs the editor at "正在加载剪辑器…". The
+> exclude is already in the repo — just confirm it's present after install.
+
 ## 2. Confirm cross-origin isolation is live (from openimago-c80q)
 
 ```bash
