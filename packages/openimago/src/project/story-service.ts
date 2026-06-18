@@ -54,6 +54,23 @@ function mockImageUrl(seed: string): string {
   return `https://picsum.photos/seed/${stableHash(seed).toString(36)}/1024/1024`
 }
 
+/**
+ * Default TTS voice used when a dialog line's character has no `voiceId`
+ * (architect default, ADR 0004 — revisit when a real provider lands). A named
+ * domain constant, not a hidden config value (global §9.3).
+ */
+const DEFAULT_VOICE_ID = "voice_default"
+
+/**
+ * Mock TTS provider (mirrors mockImageUrl for images, ADR 0005). Returns a
+ * browser-loadable placeholder audio URL seeded from a stable hash of `seed`,
+ * so re-synthesizing the same line yields a stable artifact. Replace with a
+ * real provider as a follow-up.
+ */
+function mockAudioUrl(seed: string): string {
+  return `https://cdn.openimago.local/mock-tts/${stableHash(seed).toString(36)}.mp3`
+}
+
 /** Short random slug for run / artifact ids. */
 function randomSlug(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`
@@ -127,7 +144,16 @@ export interface GenerationRun {
   nodeId: string
   shotId: string
   status: string
-  params: { prompt: string; model: string }
+  params: {
+    prompt: string
+    model: string
+    // Voiceover runs (ADR 0004 ResolvedRunParams) carry the speaking line's
+    // character, resolved voice, text, and an optional TTS style from emotion.
+    characterId?: string
+    voiceId?: string
+    text?: string
+    style?: string
+  }
   result: {
     artifactId: string
     kind: string
@@ -709,6 +735,131 @@ export class StoryService {
     if ("error" in epWrite) return epWrite
 
     return { data: { run }, status: 200 }
+  }
+
+  /**
+   * Generate voiceover (VO) for an episode or a single shot (ADR 0004 — audio
+   * Runs). For each ShotDialog line with non-empty text, synthesize a TTS audio
+   * artifact and append a completed GenerationRun with kind:"audio" and shotId
+   * set — mirroring generateShot's run-append. The voice is resolved from the
+   * speaking character's BibleCharacter.voiceId, falling back to DEFAULT_VOICE_ID;
+   * a dialog `emotion` maps to the run's `style` param when present.
+   *
+   * THIS IS A MOCK PROVIDER (like generateShot mocks images): it appends runs
+   * with a placeholder audio URL and does not call a real TTS service.
+   *
+   * VO is DERIVED state: runs.json is append-only (no updatedAt, no 409) and the
+   * timeline projects these audio Runs under their clips. This never writes to
+   * cut.json and never mutates episode.json (consistent with the assembler
+   * skipping audio runs).
+   */
+  async generateVoiceover(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    shotId?: string,
+  ): Promise<
+    | { data: { runs: GenerationRun[] }; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const safeEpisodeFile = `${episodeId}.json`
+    if (!SAFE_EPISODE_PATTERN.test(safeEpisodeFile)) {
+      logger.warn({ projectId, episodeId }, "story: invalid episode ID (generateVoiceover)")
+      return { error: { code: "VALIDATION_ERROR", message: "Invalid episode ID" }, status: 400 }
+    }
+
+    const dir = await this.resolveProjectDir(projectId, userId)
+    if (typeof dir !== "string") return dir
+
+    const epRead = await this.readJsonFile<StoryEpisode>(dir, `${STORY_EPISODES_DIR}/${safeEpisodeFile}`, projectId)
+    if ("error" in epRead) return epRead
+    const episode = epRead.data
+
+    const shots = Array.isArray(episode.shots) ? episode.shots : []
+
+    // Target shots: one named shot, or all shots for an episode-wide pass.
+    let targetShots = shots
+    if (shotId !== undefined) {
+      const shot = shots.find((s) => String(s["id"] ?? "") === shotId)
+      if (!shot) return { error: { code: "NOT_FOUND", message: `Shot not found: ${shotId}` }, status: 404 }
+      targetShots = [shot]
+    }
+
+    // Voice map from the bible (best-effort — missing bible → all default voice).
+    const voiceByCharacter = new Map<string, string>()
+    const bibleRead = await this.readJsonFile<StoryBible>(dir, CANONICAL_BIBLE, projectId)
+    if (!("error" in bibleRead)) {
+      const characters = Array.isArray(bibleRead.data.characters) ? bibleRead.data.characters : []
+      for (const ch of characters) {
+        const id = String(ch["id"] ?? "")
+        const voiceId = ch["voiceId"]
+        if (id && typeof voiceId === "string" && voiceId.length > 0) voiceByCharacter.set(id, voiceId)
+      }
+    }
+
+    // Synthesize one audio run per non-empty dialog line.
+    const newRuns: GenerationRun[] = []
+    const now = new Date().toISOString()
+    for (const shot of targetShots) {
+      const sId = String(shot["id"] ?? "")
+      const dialog = Array.isArray(shot["dialog"]) ? (shot["dialog"] as Record<string, unknown>[]) : []
+      for (const line of dialog) {
+        const text = typeof line["text"] === "string" ? line["text"] : ""
+        if (text.trim().length === 0) continue
+
+        const characterId = typeof line["characterId"] === "string" ? line["characterId"] : ""
+        const voiceId = voiceByCharacter.get(characterId) ?? DEFAULT_VOICE_ID
+        const emotion = typeof line["emotion"] === "string" && line["emotion"].length > 0 ? line["emotion"] : undefined
+
+        const artifactId = `mockvo_${randomSlug()}`
+        const audioUrl = mockAudioUrl(`${sId}${characterId}${text}${voiceId}`)
+        const params: GenerationRun["params"] = {
+          prompt: text,
+          model: "mock-tts-model",
+          characterId,
+          voiceId,
+          text,
+          ...(emotion !== undefined ? { style: emotion } : {}),
+        }
+        newRuns.push({
+          id: `run_${randomSlug()}`,
+          nodeId: "",
+          shotId: sId,
+          status: "completed",
+          params,
+          result: {
+            artifactId,
+            kind: "audio",
+            mime: "audio/mpeg",
+            filename: `${sId}-${artifactId}.mp3`,
+            access: { preview: audioUrl, thumbnail: audioUrl },
+          },
+          startedAt: now,
+          completedAt: now,
+        })
+      }
+    }
+
+    // Append to runs.json (append-only; initialize when missing) — same path as
+    // generateShot. No writes to episode.json or cut.json (VO is derived).
+    const runsFile = `${episodeId}.runs.json`
+    if (!SAFE_EP_RELATED_PATTERN.test(runsFile)) {
+      return { error: { code: "VALIDATION_ERROR", message: "Invalid episode ID" }, status: 400 }
+    }
+    const runsPath = `${STORY_RUNS_DIR}/${runsFile}`
+    const runsRead = await this.readJsonFile<StoryRuns>(dir, runsPath, projectId)
+    const runsDoc: StoryRuns = "error" in runsRead ? { schemaVersion: 1, episodeId, runs: [] } : runsRead.data
+    const existingRuns = Array.isArray(runsDoc.runs) ? runsDoc.runs : []
+    const updatedRuns: StoryRuns = {
+      ...runsDoc,
+      schemaVersion: runsDoc.schemaVersion ?? 1,
+      episodeId: runsDoc.episodeId ?? episodeId,
+      runs: [...existingRuns, ...(newRuns as unknown as Record<string, unknown>[])],
+    }
+    const runsWrite = await this.writeJsonFileAtomic(dir, runsPath, updatedRuns, projectId)
+    if ("error" in runsWrite) return runsWrite
+
+    return { data: { runs: newRuns }, status: 200 }
   }
 
   async getEpisodeWorkflow(projectId: string, userId: string, episodeId: string) {

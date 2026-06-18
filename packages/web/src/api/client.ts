@@ -577,6 +577,19 @@ export const api = {
       `/api/platform/projects/${projectId}/story/episodes/${episodeId}/shots/${shotId}/generate`,
       { method: 'POST', body: '{}' },
     ),
+  // Voiceover (ADR 0004) — mock TTS: append one audio run per dialog line of a
+  // shot. Derived state — the timeline VO track projects these audio runs.
+  generateShotVoiceover: (projectId: string, episodeId: string, shotId: string) =>
+    request<{ runs: OpenimagoGenerationRun[] }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/shots/${shotId}/voiceover`,
+      { method: 'POST', body: '{}' },
+    ),
+  // Voiceover (ADR 0004) — episode-wide: append audio runs for every shot's dialog.
+  generateEpisodeVoiceover: (projectId: string, episodeId: string) =>
+    request<{ runs: OpenimagoGenerationRun[] }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/voiceover`,
+      { method: 'POST', body: '{}' },
+    ),
   // Story writes (ADR 0005) — delete a shot (renumbers the rest).
   deleteShot: (projectId: string, episodeId: string, shotId: string, expectedUpdatedAt?: string) =>
     request<{ updatedAt: string }>(

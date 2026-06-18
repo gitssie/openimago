@@ -104,6 +104,36 @@ storyRoutes.post("/:id/story/episodes/:epId/shots/:shotId/generate", async (c) =
   return c.json({ run: result.data.run }, 201)
 })
 
+// POST /api/platform/projects/:id/story/episodes/:epId/shots/:shotId/voiceover
+// Mock TTS (ADR 0004): append one completed audio Run per dialog line of the
+// shot. Derived state — never writes cut.json or episode.json.
+storyRoutes.post("/:id/story/episodes/:epId/shots/:shotId/voiceover", async (c) => {
+  const userId = c.get("userId") as string
+  const projectId = c.req.param("id")
+  const episodeId = c.req.param("epId")
+  const shotId = c.req.param("shotId")
+
+  const result = await storyService.generateVoiceover(projectId, userId, episodeId, shotId)
+  if ("error" in result) {
+    return c.json({ error: result.error }, result.status as any)
+  }
+  return c.json({ runs: result.data.runs }, 201)
+})
+
+// POST /api/platform/projects/:id/story/episodes/:epId/voiceover
+// Episode-wide voiceover: append audio Runs for every shot's dialog.
+storyRoutes.post("/:id/story/episodes/:epId/voiceover", async (c) => {
+  const userId = c.get("userId") as string
+  const projectId = c.req.param("id")
+  const episodeId = c.req.param("epId")
+
+  const result = await storyService.generateVoiceover(projectId, userId, episodeId)
+  if ("error" in result) {
+    return c.json({ error: result.error }, result.status as any)
+  }
+  return c.json({ runs: result.data.runs }, 201)
+})
+
 // PATCH /api/platform/projects/:id/story/episodes/:epId/shots/reorder
 // Reorder shots (ADR 0005). Registered BEFORE the :shotId PATCH so the static
 // "reorder" segment is not parsed as a shot id.
