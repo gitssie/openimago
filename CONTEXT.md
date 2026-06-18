@@ -94,6 +94,24 @@ One execution of a generation tool, recorded in `story/runs/ep_NNN.runs.json` (`
 ### Artifact / Output
 Agent-generated media (image/video/audio) produced by a Run, scanned from the project `outputs/` directory and exposed via the `projectOutputs` API. The right-hand "AI 产出" panel lists these. Distinct from an **Asset** (user-uploaded reference, see above).
 
+### Cut (剪辑 / 粗剪)
+The assembled, playable arrangement of an Episode's media on a time axis — the "粗剪" (rough cut). One Episode has at most one Cut. The **时间线** tab is the Cut editor — the project's **edit layer** (see below). A Cut owns an ordered list of **Clips** on its video track, an audio track (voiceover + BGM), and a transition track. A Cut is distinct from a **Shot** (a single storyboard frame) and from a **Run** (one generation execution) — it is the *edit* that stitches generated media into a watchable sequence. The Cut carries its own persisted state (clip list with trim points, BGM, transitions) in `story/cuts/ep_NNN.cut.json` — a separate file from `episode.json` so edit-layer writes never collide with generation-layer (agent) script writes (ADR 0006). It is **not** a pure projection of the Episode.
+_Avoid_: Sequence, Edit, Timeline (the tab is named 时间线, but the aggregate is a Cut), 粗剪 as a separate concept.
+
+### Clip (片段)
+One segment on a Cut's video track, and an **independent edit-layer entity**: `{ id, sourceShotId, inPoint, outPoint, order }`. A Clip references the Shot whose media it shows (`sourceShotId`) but carries its own trim (`inPoint`/`outPoint`) and ordering. A Shot maps to **0..N Clips** — it may appear zero times (cut out), once (default), or be **split** into several Clips. Split produces multiple Clips that share one `sourceShotId` with contiguous, non-overlapping `inPoint`/`outPoint` windows; each split fragment is **independently reorderable** and may interleave with other Shots' Clips on the video track. Clip frames are sampled from the source Shot's completed Run media within the trim window. Editing a Clip (trim / split / drag-reorder / delete) is a non-AI **edit-layer** operation on the Cut; "重新生成 / 手动编辑 / 添加到对话" on a Clip are *bridges back to the generation layer*, not edit-layer operations.
+_Avoid_: Segment, Track item.
+
+### Track (轨道)
+A horizontal lane in a Cut. MVP has three kinds: **video track** (the Cut's ordered **Clips**), **audio track**, and **transition track** (the transition applied between consecutive Clips — Cut state). The audio track has two parts: **voiceover (配音)** — derived, one audio Run per Shot's `dialog`, following the clip — and **BGM (背景音乐)** — a single Cut-level audio bed that runs the length of the Episode (persisted Cut state). Voiceover is a projection; the clip list, BGM, and transitions are the Cut's own persisted state.
+_Avoid_: Lane, Row.
+
+### Generation layer vs Edit layer
+Two distinct planes of work on a Project, deliberately decoupled:
+- **Generation layer (AI):** producing/regenerating media for Shots — the 故事板 (storyboard) and 对话 (chat). Owns Shots, Runs, Artifacts. AI-driven.
+- **Edit layer (non-AI):** refining a Cut into the final edit — the 时间线 (timeline). Owns Clip trims, splits, reordering, transitions, BGM. Pure video editing, no AI.
+The **first** version of a Cut is *assembled by the agent* (a generation-layer action that writes `cut.json` — it stitches the Episode's Shots into a rough cut with voiceover + BGM, the "粗剪版本已生成" flow). Thereafter the user *edits* that Cut in the non-AI edit layer. Both the agent and the user write `cut.json`; ADR 0005 optimistic concurrency arbitrates the rare race. A Clip's "重新生成" menu item is the one bridge from the edit layer back to the generation layer; otherwise the two planes do not mix.
+
 ---
 
 ## Visual Direction
