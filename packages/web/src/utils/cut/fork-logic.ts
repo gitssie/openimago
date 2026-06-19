@@ -5,8 +5,8 @@
 // browser. The vendored fork (src/vendor/omniclip-fork/) imports these so the
 // browser code and the tested logic cannot drift.
 
-import type { CutTransitionKind } from './episode-cut.types'
-import { CUT_TRANSITION_KINDS } from './episode-cut.types'
+import type { CutTransitionKind } from './cut-types'
+import { CUT_TRANSITION_KINDS } from './cut-types'
 
 /** Shape stored in the patched omniclip historical state (one per boundary). */
 export interface ForkTransition {

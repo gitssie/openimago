@@ -7,7 +7,7 @@ import {
   upsertTransition,
   removeTransition,
   type ForkTransition,
-} from './fork-logic'
+} from '../fork-logic'
 
 describe('fileNameFromUrl', () => {
   it('uses the URL basename', () => {

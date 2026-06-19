@@ -13,7 +13,7 @@
 import { omnislate } from 'omniclip/x/context/context.js'
 import { importFromUrl } from './import-from-url'
 import { setTransition, resetTransitions } from './transitions'
-import type { HydrateClip, OmniTransition } from 'src/_spike/omniclip/fork-contract'
+import type { HydrateClip, OmniTransition } from 'src/utils/cut/fork-contract'
 
 const MS_PER_S = 1000
 

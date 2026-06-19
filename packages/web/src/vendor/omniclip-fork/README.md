@@ -1,7 +1,7 @@
 # Vendored omniclip fork (openimago-uyd0)
 
 Fork of **omniclip@1.0.7** hardened for openimago per ADR 0007. Implements the
-host-facing contract in `src/_spike/omniclip/fork-contract.ts`:
+host-facing contract in `src/utils/cut/fork-contract.ts`:
 
 | Capability | Contract symbol | File here |
 |---|---|---|
@@ -19,7 +19,7 @@ omniclip needs **WebCodecs + SharedArrayBuffer + IndexedDB** and a full
 sandbox cannot build or run it, so this dir is excluded from `vue-tsc` and
 eslint (see `tsconfig.json` exclude + `eslint.config.js` ignores). The pure,
 runtime-free logic these files depend on lives in
-`src/_spike/omniclip/fork-logic.ts` and IS unit-tested headless.
+`src/utils/cut/fork-logic.ts` and IS unit-tested headless.
 
 **Validation is done by the user locally** — see `LOCAL_VALIDATION.md`.
 

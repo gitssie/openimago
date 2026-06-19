@@ -12,7 +12,7 @@
 
 import { html } from '@benev/slate'
 import { clipMenuRegistry } from '../capabilities/clip-menu'
-import type { ClipMenuContext } from 'src/_spike/omniclip/fork-contract'
+import type { ClipMenuContext } from 'src/utils/cut/fork-contract'
 
 // `use` is the omniclip shadow_view context; `effect` is the resolved AnyEffect.
 // Signature mirrors the original view's locals (see README source map).

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { ClipMenuRegistry } from './clip-menu-registry'
-import type { ClipMenuItem } from './fork-contract'
+import { ClipMenuRegistry } from '../clip-menu-registry'
+import type { ClipMenuItem } from '../fork-contract'
 
 function item(id: string, over: Partial<ClipMenuItem> = {}): ClipMenuItem {
   return { id, label: id, onSelect: () => {}, ...over }

@@ -18,8 +18,8 @@
 import { omnislate } from 'omniclip/x/context/context.js'
 import { quick_hash } from '@benev/construct'
 import { FFprobeWorker } from 'ffprobe-wasm/browser.mjs'
-import type { ImportFromUrl, ImportedMedia } from 'src/_spike/omniclip/fork-contract'
-import { fileNameFromUrl, omniMediaKindFromType } from 'src/_spike/omniclip/fork-logic'
+import type { ImportFromUrl, ImportedMedia } from 'src/utils/cut/fork-contract'
+import { fileNameFromUrl, omniMediaKindFromType } from 'src/utils/cut/fork-logic'
 
 const ffprobe = new FFprobeWorker()
 

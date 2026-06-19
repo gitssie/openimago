@@ -115,13 +115,6 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
 
-  // ── THROWAWAY SPIKE route (openimago-2re7 / ADR 0007). Delete with _spike/. ──
-  {
-    path: '/_spike/omniclip',
-    name: 'spike-omniclip',
-    component: () => import('src/_spike/omniclip/OmniclipSpikePage.vue'),
-  },
-
   // Always leave this as last one
   {
     path: '/:catchAll(.*)*',

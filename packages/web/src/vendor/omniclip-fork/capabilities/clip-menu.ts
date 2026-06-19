@@ -14,9 +14,9 @@
 //
 // BROWSER-ONLY.
 
-import { ClipMenuRegistry } from 'src/_spike/omniclip/clip-menu-registry'
+import { ClipMenuRegistry } from 'src/utils/cut/clip-menu-registry'
 import { omnislate } from 'omniclip/x/context/context.js'
-import type { ClipMenuContext } from 'src/_spike/omniclip/fork-contract'
+import type { ClipMenuContext } from 'src/utils/cut/fork-contract'
 
 export const clipMenuRegistry = new ClipMenuRegistry()
 export const registerClipMenuItems = clipMenuRegistry.register

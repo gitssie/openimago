@@ -16,7 +16,7 @@
 // BROWSER-ONLY (imports @benev/slate `css`).
 
 import { css } from '@benev/slate'
-import { OMNI_THEME_VARS, ORPHAN_CLIP_ATTRIBUTE } from 'src/_spike/omniclip/fork-contract'
+import { OMNI_THEME_VARS, ORPHAN_CLIP_ATTRIBUTE } from 'src/utils/cut/fork-contract'
 
 // Patched replacement for omni-timeline/styles.ts `styles`.
 export const timeline_styles = css`

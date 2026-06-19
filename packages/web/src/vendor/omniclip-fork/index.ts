@@ -3,19 +3,19 @@
 // Boots omniclip (which registers <construct-editor>/<omni-timeline>/... and the
 // global omnislate.context as an import side-effect) and returns an object that
 // satisfies the host-facing contract OmniclipForkApi
-// (src/_spike/omniclip/fork-contract.ts). The Cut panel (openimago-4eiw) calls
+// (src/utils/cut/fork-contract.ts). The Cut panel (openimago-4eiw) calls
 // ONLY this surface; it never reaches into omniclip internals.
 //
 // BROWSER-ONLY: this whole directory is excluded from repo typecheck/lint and is
 // validated by the user locally (see LOCAL_VALIDATION.md). The pure logic it
-// composes is unit-tested in src/_spike/omniclip/.
+// composes is unit-tested in src/utils/cut/.
 
 import 'omniclip' // side-effect: register_to_dom + setupContext() (global)
 import type {
   OmniclipForkApi,
   OmniThemeVar,
-} from 'src/_spike/omniclip/fork-contract'
-import { OMNI_THEME_VARS, IMAGO_TO_OMNI_THEME } from 'src/_spike/omniclip/fork-contract'
+} from 'src/utils/cut/fork-contract'
+import { OMNI_THEME_VARS, IMAGO_TO_OMNI_THEME } from 'src/utils/cut/fork-contract'
 import { importFromUrl } from './capabilities/import-from-url'
 import { hydrateFromCut } from './capabilities/hydrate-from-cut'
 import {

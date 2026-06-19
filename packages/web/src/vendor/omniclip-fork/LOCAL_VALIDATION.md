@@ -51,27 +51,21 @@ If `false`, the COOP/COEP headers (quasar.config.ts / nginx.conf / Hono
 ffmpeg.wasm will not work. Also confirm your CDN/backend media responses carry
 `Cross-Origin-Resource-Policy` (the Hono middleware sets `cross-origin`).
 
-## 3. Mount the fork on the spike route
+## 3. Mount the fork in the production Cut panel
 
-The spike page at **`/_spike/omniclip`** has the commented mount point. After
-install, uncomment the `<construct-editor>` element and add to the page script:
+The throwaway `/_spike/omniclip` page was removed in openimago-lile; the fork now
+mounts in production via **`StoryCutPanel.vue`** (`mountAndHydrate` dynamic-imports
+`src/vendor/omniclip-fork/load.ts`, applies the theme, and subscribes
+`fork.onEdit`). To validate, open an episode's 时间线 tab with a non-empty Cut so
+the panel mounts `<construct-editor>`.
 
-```ts
-import { omniclipFork, applyImagoTheme } from 'src/vendor/omniclip-fork'
-// after mount:
-applyImagoTheme(document.querySelector('.spike') as HTMLElement)
-```
-
-You'll also need to tell Vue these are custom elements — add to
-`quasar.config.ts` build:
+Vue is already told these are custom elements — `quasar.config.ts` build sets:
 
 ```ts
 viteVuePluginOptions: {
   template: { compilerOptions: { isCustomElement: (t) => t.startsWith('omni-') || t.startsWith('construct-') } },
 },
 ```
-
-Open `http://localhost:7000/#/_spike/omniclip`.
 
 ## 4. Validate each capability (click / observe)
 

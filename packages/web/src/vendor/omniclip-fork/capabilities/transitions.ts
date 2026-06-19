@@ -23,13 +23,13 @@ import type {
   OmniTransition,
   ReadTransitions,
   SetTransition,
-} from 'src/_spike/omniclip/fork-contract'
+} from 'src/utils/cut/fork-contract'
 import {
   clampTransitionDurationMs,
   upsertTransition,
   removeTransition,
   type ForkTransition,
-} from 'src/_spike/omniclip/fork-logic'
+} from 'src/utils/cut/fork-logic'
 
 // Per-context transition store (survives re-renders; cleared with the context).
 const STORE = new WeakMap<object, ForkTransition[]>()

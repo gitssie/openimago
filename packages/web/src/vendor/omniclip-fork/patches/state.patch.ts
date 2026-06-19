@@ -13,8 +13,8 @@
 // BROWSER-ONLY (imports omniclip internal paths).
 
 import { generate_id } from '@benev/slate/x/tools/generate_id.js'
-import type { OmniTransition } from 'src/_spike/omniclip/fork-contract'
-import { upsertTransition, removeTransition } from 'src/_spike/omniclip/fork-logic'
+import type { OmniTransition } from 'src/utils/cut/fork-contract'
+import { upsertTransition, removeTransition } from 'src/utils/cut/fork-logic'
 
 // ── types.ts: add to HistoricalState ──────────────────────────────────────────
 //
@@ -39,7 +39,7 @@ export const transition_actions = {
   add_transition:
     (state: { transitions: OmniTransition[] }) =>
     (transition: OmniTransition) => {
-      // delegate to the unit-tested reducer (src/_spike/omniclip/fork-logic.ts)
+      // delegate to the unit-tested reducer (src/utils/cut/fork-logic.ts)
       state.transitions = upsertTransition(state.transitions, transition)
     },
   remove_transition:
