@@ -288,16 +288,18 @@ storyRoutes.post("/:id/story/episodes/:epId/cut/clips/:clipId/split", async (c) 
   const clipId = c.req.param("clipId")
 
   let atSeconds = Number.NaN
+  let newClipId = ""
   let expectedUpdatedAt: string | undefined
   try {
-    const body = (await c.req.json()) as { atSeconds?: unknown; expectedUpdatedAt?: unknown }
+    const body = (await c.req.json()) as { atSeconds?: unknown; newClipId?: unknown; expectedUpdatedAt?: unknown }
     if (typeof body?.atSeconds === "number") atSeconds = body.atSeconds
+    if (typeof body?.newClipId === "string") newClipId = body.newClipId
     if (typeof body?.expectedUpdatedAt === "string") expectedUpdatedAt = body.expectedUpdatedAt
   } catch {
-    // Empty/invalid body — atSeconds stays NaN → splitClip returns 400.
+    // Empty/invalid body — atSeconds stays NaN / newClipId empty → splitClip returns 400.
   }
 
-  const result = await storyService.splitClip(projectId, userId, episodeId, clipId, atSeconds, expectedUpdatedAt)
+  const result = await storyService.splitClip(projectId, userId, episodeId, clipId, atSeconds, newClipId, expectedUpdatedAt)
   if ("error" in result) return c.json({ error: result.error }, result.status as any)
   return c.json({ updatedAt: result.data.updatedAt, newClipId: result.data.newClipId })
 })

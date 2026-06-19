@@ -127,7 +127,10 @@ test("first clip write lazily creates story/cuts/ep_001.cut.json", async () => {
 test("addClip-less flow: split a clip the cut has no clips → 404", async () => {
   const token = await registerUser("cut4", "cut4@example.com")
   const project = await createProject(token, "CutTest4")
-  const res = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/missing/split"), { atSeconds: 2 })
+  const res = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/missing/split"), {
+    atSeconds: 2,
+    newClipId: "missing-split",
+  })
   expect(res.status).toBe(404)
 })
 
@@ -263,8 +266,14 @@ test("splitClip splits one clip into two at the given time, reindexing order", a
     { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 10, order: 0 },
     { id: "c2", sourceShotId: "s2", inPoint: 0, outPoint: 4, order: 1 },
   ])
-  const res = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/c1/split"), { atSeconds: 4 })
+  const res = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/c1/split"), {
+    atSeconds: 4,
+    newClipId: "c1-split",
+  })
   expect(res.status).toBe(200)
+  // response echoes the accepted client-minted id (ADR 0008 #2)
+  const body = (await res.json()) as Record<string, any>
+  expect(body.newClipId).toBe("c1-split")
 
   const cut = await getCut(token, project.id)
   expect(cut.clips.length).toBe(3)
@@ -272,15 +281,59 @@ test("splitClip splits one clip into two at the given time, reindexing order", a
   expect(cut.clips[0].id).toBe("c1")
   expect(cut.clips[0].inPoint).toBe(0)
   expect(cut.clips[0].outPoint).toBe(4)
-  // second half is a new clip with the remaining range, same source
+  // second half uses the client-supplied id verbatim with the remaining range
+  expect(cut.clips[1].id).toBe("c1-split")
   expect(cut.clips[1].sourceShotId).toBe("s1")
   expect(cut.clips[1].inPoint).toBe(4)
   expect(cut.clips[1].outPoint).toBe(10)
-  expect(cut.clips[1].id).not.toBe("c1")
   // trailing clip preserved
   expect(cut.clips[2].id).toBe("c2")
   // order is a contiguous 0..N
   expect(cut.clips.map((c: any) => c.order)).toEqual([0, 1, 2])
+})
+
+test("splitClip rejects a newClipId already present in the cut", async () => {
+  const token = await registerUser("cut11b", "cut11b@example.com")
+  const project = await createProject(token, "CutTest11b")
+  await seedCut(project.directory, [
+    { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 10, order: 0 },
+    { id: "c2", sourceShotId: "s2", inPoint: 0, outPoint: 4, order: 1 },
+  ])
+  const res = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/c1/split"), {
+    atSeconds: 4,
+    newClipId: "c2",
+  })
+  expect(res.status).toBe(400)
+})
+
+test("splitClip rejects a missing or empty newClipId", async () => {
+  const token = await registerUser("cut11c", "cut11c@example.com")
+  const project = await createProject(token, "CutTest11c")
+  await seedCut(project.directory, [
+    { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 10, order: 0 },
+  ])
+  const missing = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/c1/split"), {
+    atSeconds: 4,
+  })
+  expect(missing.status).toBe(400)
+  const empty = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/c1/split"), {
+    atSeconds: 4,
+    newClipId: "",
+  })
+  expect(empty.status).toBe(400)
+})
+
+test("splitClip rejects a newClipId that is not a safe slug", async () => {
+  const token = await registerUser("cut11d", "cut11d@example.com")
+  const project = await createProject(token, "CutTest11d")
+  await seedCut(project.directory, [
+    { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 10, order: 0 },
+  ])
+  const res = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/c1/split"), {
+    atSeconds: 4,
+    newClipId: "../evil id",
+  })
+  expect(res.status).toBe(400)
 })
 
 test("splitClip rejects a split point outside the clip range", async () => {
@@ -289,7 +342,10 @@ test("splitClip rejects a split point outside the clip range", async () => {
   await seedCut(project.directory, [
     { id: "c1", sourceShotId: "s1", inPoint: 2, outPoint: 6, order: 0 },
   ])
-  const res = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/c1/split"), { atSeconds: 6 })
+  const res = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/c1/split"), {
+    atSeconds: 6,
+    newClipId: "c1-split",
+  })
   expect(res.status).toBe(400)
 })
 

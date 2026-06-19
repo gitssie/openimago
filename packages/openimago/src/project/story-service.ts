@@ -22,6 +22,11 @@ const STORY_CUTS_DIR = "story/cuts"
 const SAFE_EPISODE_PATTERN = /^ep_[a-z0-9_]+\.json$/
 const SAFE_EP_RELATED_PATTERN = /^ep_[a-z0-9_]+\.(workflow|runs|cut)\.json$/
 
+// Cut clip ids (ADR 0008 #2: client mints the split id). Mirrors the shape of
+// server-minted ids (`clip-<shotId>`, `<id>-b`): a leading alphanumeric
+// followed by lowercase alphanumerics, hyphens, or underscores.
+const SAFE_CLIP_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/
+
 // ── Cut transition kinds (ADR 0006 edit layer) ────────────────────────────────
 
 const CUT_TRANSITION_KINDS = ["cut", "dissolve", "fade"] as const
@@ -1085,8 +1090,10 @@ export class StoryService {
   /**
    * Split one clip at `atSeconds` (an absolute source time, inPoint < t < outPoint)
    * into two consecutive clips sharing the source. The first keeps the original
-   * id and [inPoint, t); the second is a new clip with [t, outPoint). All clip
-   * orders are re-indexed 0..N-1.
+   * id and [inPoint, t); the second is a new clip with [t, outPoint) and the
+   * client-supplied `newClipId` (ADR 0008 #2: the client owns clip-id minting so
+   * `omniclip effect id === CutClip.id` holds by construction). All clip orders
+   * are re-indexed 0..N-1.
    */
   async splitClip(
     projectId: string,
@@ -1094,11 +1101,19 @@ export class StoryService {
     episodeId: string,
     clipId: string,
     atSeconds: number,
+    newClipId: string,
     expectedUpdatedAt?: string,
   ): Promise<
     | { data: { updatedAt: string; newClipId: string }; status: 200 }
     | { error: { code: string; message: string }; status: number }
   > {
+    if (typeof newClipId !== "string" || !SAFE_CLIP_ID_PATTERN.test(newClipId)) {
+      return {
+        error: { code: "VALIDATION_ERROR", message: "newClipId must be a non-empty safe slug" },
+        status: 400,
+      }
+    }
+
     const loaded = await this.loadCutForWrite(projectId, userId, episodeId, expectedUpdatedAt, "splitClip")
     if ("error" in loaded) return loaded
     const { dir, relativePath, cut } = loaded
@@ -1114,17 +1129,13 @@ export class StoryService {
       }
     }
 
-    const existingIds = new Set(cut.clips.map((c) => c.id))
-    let newId = `${target.id}-b`
-    let suffix = 2
-    while (existingIds.has(newId)) {
-      newId = `${target.id}-b${suffix}`
-      suffix += 1
+    if (cut.clips.some((c) => c.id === newClipId)) {
+      return { error: { code: "VALIDATION_ERROR", message: "newClipId already in use" }, status: 400 }
     }
 
     const firstHalf: CutClip = { ...target, outPoint: atSeconds }
     const secondHalf: CutClip = {
-      id: newId,
+      id: newClipId,
       sourceShotId: target.sourceShotId,
       inPoint: atSeconds,
       outPoint: target.outPoint,
@@ -1136,7 +1147,7 @@ export class StoryService {
 
     const result = await this.writeCut(dir, relativePath, { ...cut, clips }, projectId)
     if ("error" in result) return result
-    return { data: { updatedAt: result.updatedAt, newClipId: newId }, status: 200 }
+    return { data: { updatedAt: result.updatedAt, newClipId }, status: 200 }
   }
 
   /**
