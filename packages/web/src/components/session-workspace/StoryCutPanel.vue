@@ -49,6 +49,113 @@
           {{ editorError ? editorError : '正在加载剪辑器…' }}
         </p>
       </div>
+
+      <!-- ── Host-driven transition & BGM controls (ADR 0008 #1b) ── -->
+      <div class="story-cut__controls" data-testid="cut-controls">
+        <!-- Transitions: one row per consecutive-clip boundary. -->
+        <div class="story-cut__control-group">
+          <p class="story-cut__control-title">
+            <OiIcon name="layers" :size="13" />
+            转场
+          </p>
+          <p v-if="boundaries.length === 0" class="story-cut__control-empty">
+            至少需要两个片段才能添加转场。
+          </p>
+          <ul v-else class="story-cut__boundaries">
+            <li
+              v-for="b in boundaries"
+              :key="b.afterClipId"
+              class="story-cut__boundary"
+              data-testid="transition-boundary"
+            >
+              <span class="story-cut__boundary-label">片段 {{ b.position }} → {{ b.position + 1 }}</span>
+              <div class="story-cut__kinds" role="group" aria-label="转场类型">
+                <button
+                  v-for="k in transitionKinds"
+                  :key="k"
+                  type="button"
+                  class="story-cut__kind"
+                  :class="{ 'story-cut__kind--active': b.transition?.kind === k }"
+                  :aria-pressed="b.transition?.kind === k"
+                  @click="onTransitionKind(b.afterClipId, k)"
+                >
+                  {{ TRANSITION_KIND_LABELS[k] }}
+                </button>
+              </div>
+              <label class="story-cut__duration">
+                <span class="story-cut__duration-text">时长</span>
+                <input
+                  class="story-cut__duration-input"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  :value="b.transition && b.transition.kind !== 'cut' ? b.transition.durationSeconds : 0"
+                  :disabled="!b.transition || b.transition.kind === 'cut'"
+                  aria-label="转场时长（秒）"
+                  @change="onTransitionDuration(b.afterClipId, Number(($event.target as HTMLInputElement).value))"
+                />
+                <span class="story-cut__duration-unit">秒</span>
+              </label>
+              <button
+                type="button"
+                class="story-cut__clear"
+                :disabled="!b.transition"
+                aria-label="清除转场"
+                @click="clearTransitionAt(b.afterClipId)"
+              >
+                <OiIcon name="canvas" :size="13" />
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        <!-- BGM: the Cut's single background-music bed. -->
+        <div class="story-cut__control-group">
+          <p class="story-cut__control-title">
+            <OiIcon name="enhance-wave" :size="13" />
+            背景音乐
+          </p>
+          <div class="story-cut__bgm">
+            <span class="story-cut__bgm-current">
+              {{ bgmLabel ?? '未设置' }}
+            </span>
+            <button
+              type="button"
+              class="story-cut__bgm-pick"
+              @click="toggleBgmPicker"
+            >
+              {{ bgmLabel ? '更换' : '选择背景音乐' }}
+            </button>
+            <button
+              v-if="bgmLabel"
+              type="button"
+              class="story-cut__clear"
+              aria-label="清除背景音乐"
+              @click="clearBgm"
+            >
+              <OiIcon name="canvas" :size="13" />
+            </button>
+          </div>
+          <div v-if="bgmPickerOpen" class="story-cut__bgm-picker" data-testid="bgm-picker">
+            <p v-if="loadingAssets" class="story-cut__control-empty">正在加载音频…</p>
+            <p v-else-if="audioAssets.length === 0" class="story-cut__control-empty">
+              没有可用的音频素材。
+            </p>
+            <ul v-else class="story-cut__bgm-list">
+              <li v-for="asset in audioAssets" :key="asset.id">
+                <button
+                  type="button"
+                  class="story-cut__bgm-option"
+                  :class="{ 'story-cut__bgm-option--active': props.cut?.bgm?.artifactId === asset.id }"
+                  @click="selectBgm(asset.id)"
+                >
+                  {{ asset.name || asset.filename || asset.id }}
+                </button>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
     </template>
   </section>
 </template>
@@ -57,13 +164,23 @@
 import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import OiIcon from 'src/components/ui/OiIcon.vue'
 import type { StoryRunSummary, StoryShotSummary } from 'src/components/session-workspace/types'
-import type { EpisodeCut } from 'src/utils/cut/cut-types'
+import { CUT_TRANSITION_KINDS, type CutTransitionKind, type EpisodeCut } from 'src/utils/cut/cut-types'
 import { makeShotMediaResolver } from 'src/utils/cut/shot-media-resolver'
 import { buildHydrationPayload } from 'src/utils/cut/cut-hydration'
 import { dispatchCutEdit, type CutEdit } from 'src/utils/cut/cut-edit-dispatcher'
 import { buildClipMenuItems } from 'src/utils/cut/clip-menu-items'
+import { transitionBoundaries, resolveBgmLabel } from 'src/utils/cut/cut-controls'
 import type { LoadOmniclipFork, OmniclipForkApi } from 'src/utils/cut/fork-contract'
-import { api, ApiError } from 'src/api/client'
+import { api, ApiError, type OpenimagoAsset } from 'src/api/client'
+
+/** Default transition length (s) when a kind is first chosen on a boundary. */
+const DEFAULT_TRANSITION_SECONDS = 0.5
+/** Localised transition-kind labels (kinds mirror backend CUT_TRANSITION_KINDS). */
+const TRANSITION_KIND_LABELS: Record<CutTransitionKind, string> = {
+  cut: '硬切',
+  dissolve: '溶解',
+  fade: '淡入淡出',
+}
 
 const props = defineProps<{
   projectId: string
@@ -163,14 +280,93 @@ async function persistEdit(edit: CutEdit): Promise<void> {
   else emit('cut-changed')
 }
 
-// TODO(ADR 0008 #1b — host transition/BGM controls, out of scope for ssro):
-// transitions + BGM are HOST-driven, not derived from the omniclip diff
-// (omniclip 1.0.7 has no transition UI; the fork keeps transitions in its own
-// per-context store). When host controls are built, they must call the fork
-// setter (fork.setTransition / fork.clearTransition) AND persistEdit with the
-// matching CutEdit — the set-transition / clear-transition / set-bgm / clear-bgm
-// path through persistEdit -> dispatchCutEdit is already wired and correct; only
-// the UI controls that originate these edits are missing.
+// ── HOST-DRIVEN transition + BGM controls (ADR 0008 #1b, openimago-ofdw) ──
+//
+// Transitions + BGM are NOT captured from omniclip's gesture diff (omniclip
+// 1.0.7 has no native UI for them). These host controls originate the edits:
+// each calls the fork setter for live editor preview where it makes sense, AND
+// persistEdit with the matching CutEdit (already wired through dispatchCutEdit).
+// The pure data-shaping (which boundaries exist, current BGM label) lives in the
+// unit-tested cut-controls helpers.
+
+const transitionKinds = CUT_TRANSITION_KINDS
+
+/** The clip boundaries (N-1) that can hold a transition, with their current one. */
+const boundaries = computed(() =>
+  transitionBoundaries(props.cut?.clips ?? [], props.cut?.transitions ?? []),
+)
+
+// Audio assets for the BGM picker (api.listAssets type-filtered to audio).
+const audioAssets = ref<OpenimagoAsset[]>([])
+const bgmPickerOpen = ref(false)
+const loadingAssets = ref(false)
+
+const bgmLabel = computed(() => resolveBgmLabel(props.cut?.bgm, audioAssets.value))
+
+/** Lazily load audio assets the first time the BGM picker is opened. */
+async function loadAudioAssets(): Promise<void> {
+  if (loadingAssets.value) return
+  loadingAssets.value = true
+  try {
+    audioAssets.value = await api.listAssets({ type: 'audio' })
+  } catch (err) {
+    console.error('StoryCutPanel: failed to load audio assets', err)
+  } finally {
+    loadingAssets.value = false
+  }
+}
+
+async function toggleBgmPicker(): Promise<void> {
+  bgmPickerOpen.value = !bgmPickerOpen.value
+  if (bgmPickerOpen.value && audioAssets.value.length === 0) {
+    await loadAudioAssets()
+  }
+}
+
+/** Set/replace a boundary's transition: live preview via the fork + persist. */
+async function applyTransition(
+  afterClipId: string,
+  kind: CutTransitionKind,
+  durationSeconds: number,
+): Promise<void> {
+  fork?.setTransition({ afterEffectId: afterClipId, kind, durationMs: durationSeconds * 1000 })
+  await persistEdit({ kind: 'set-transition', afterClipId, transitionKind: kind, durationSeconds })
+}
+
+/** Change a boundary's transition kind, keeping (or seeding) its duration. */
+function onTransitionKind(afterClipId: string, kind: CutTransitionKind): void {
+  const current = boundaries.value.find((b) => b.afterClipId === afterClipId)?.transition
+  // 'cut' is an instantaneous boundary — duration is always 0 (backend clamps it
+  // too, but keep the UI honest so the number field disables sensibly).
+  const duration =
+    kind === 'cut' ? 0 : (current && current.kind !== 'cut' ? current.durationSeconds : DEFAULT_TRANSITION_SECONDS)
+  void applyTransition(afterClipId, kind, duration)
+}
+
+/** Change a boundary's transition duration (kind unchanged). */
+function onTransitionDuration(afterClipId: string, durationSeconds: number): void {
+  const current = boundaries.value.find((b) => b.afterClipId === afterClipId)?.transition
+  if (!current || current.kind === 'cut') return
+  if (!Number.isFinite(durationSeconds) || durationSeconds < 0) return
+  void applyTransition(afterClipId, current.kind, durationSeconds)
+}
+
+/** Remove a boundary's transition: clear the preview + persist. */
+async function clearTransitionAt(afterClipId: string): Promise<void> {
+  fork?.clearTransition(afterClipId)
+  await persistEdit({ kind: 'clear-transition', afterClipId })
+}
+
+/** Choose the Cut's single BGM bed. */
+async function selectBgm(artifactId: string): Promise<void> {
+  bgmPickerOpen.value = false
+  await persistEdit({ kind: 'set-bgm', artifactId })
+}
+
+/** Remove the Cut's BGM bed. */
+async function clearBgm(): Promise<void> {
+  await persistEdit({ kind: 'clear-bgm' })
+}
 
 // ── BROWSER-ONLY: load the fork, mount the editor, hydrate from cut.json ──
 //
@@ -399,6 +595,221 @@ defineExpose({ persistEdit })
   &:disabled {
     opacity: 0.6;
     cursor: default;
+  }
+}
+
+// ── Host-driven transition & BGM controls (openimago-ofdw) ──
+.story-cut__controls {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 14px 14px;
+  max-height: 38%;
+  overflow-y: auto;
+  border-top: 1px solid var(--imago-border-soft);
+  background: var(--imago-bg-deep);
+}
+
+.story-cut__control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.story-cut__control-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--imago-text-primary);
+}
+
+.story-cut__control-empty {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--imago-text-faint);
+}
+
+.story-cut__boundaries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.story-cut__boundary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 7px 10px;
+  border-radius: var(--imago-radius-md);
+  border: 1px solid var(--imago-border-soft);
+  background: var(--imago-bg-surface);
+}
+
+.story-cut__boundary-label {
+  font-size: 11.5px;
+  color: var(--imago-text-faint);
+  min-width: 78px;
+}
+
+.story-cut__kinds {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.story-cut__kind {
+  padding: 4px 10px;
+  border-radius: var(--imago-radius-pill);
+  border: 1px solid var(--imago-border-soft);
+  background: transparent;
+  color: var(--imago-text-faint);
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+
+  &:hover {
+    color: var(--imago-text-primary);
+    border-color: var(--imago-border-cyan-active);
+  }
+
+  &--active {
+    color: var(--imago-neon-cyan);
+    border-color: var(--imago-border-cyan-active);
+    background: var(--imago-cyan-08);
+  }
+}
+
+.story-cut__duration {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--imago-text-faint);
+}
+
+.story-cut__duration-input {
+  width: 56px;
+  padding: 3px 6px;
+  border-radius: var(--imago-radius-sm);
+  border: 1px solid var(--imago-border-soft);
+  background: var(--imago-bg-void);
+  color: var(--imago-text-primary);
+  font-size: 11px;
+
+  &:focus {
+    outline: none;
+    border-color: var(--imago-border-cyan-active);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+}
+
+.story-cut__clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: var(--imago-radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--imago-text-faint);
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+
+  &:hover:not(:disabled) {
+    color: var(--imago-neon-pink);
+    background: rgba(255, 45, 149, 0.08);
+  }
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+}
+
+.story-cut__bgm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.story-cut__bgm-current {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--imago-text-primary);
+}
+
+.story-cut__bgm-pick {
+  padding: 5px 14px;
+  border-radius: var(--imago-radius-pill);
+  border: 1px solid var(--imago-border-cyan-active);
+  background: var(--imago-cyan-08);
+  color: var(--imago-neon-cyan);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease;
+
+  &:hover {
+    background: var(--imago-cyan-04);
+  }
+}
+
+.story-cut__bgm-picker {
+  margin-top: 4px;
+  border-radius: var(--imago-radius-md);
+  border: 1px solid var(--imago-border-soft);
+  background: var(--imago-bg-surface);
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.story-cut__bgm-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.story-cut__bgm-option {
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: var(--imago-radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--imago-text-primary);
+  font-size: 11.5px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background 120ms ease, border-color 120ms ease;
+
+  &:hover {
+    background: var(--imago-cyan-08);
+  }
+
+  &--active {
+    border-color: var(--imago-border-cyan-active);
+    color: var(--imago-neon-cyan);
   }
 }
 </style>
