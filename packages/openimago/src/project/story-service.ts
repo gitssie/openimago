@@ -60,19 +60,26 @@ function mockImageUrl(seed: string): string {
 }
 
 /**
- * Public, browser-loadable sample MP4 for the mock video provider (mirrors
- * opencode's mockVideoProvider.MOCK_VIDEO_SAMPLE_URL). omniclip is a video
- * editor: hydrateFromCut → importFromUrl needs a real video to build a video
- * effect, so a generated shot must yield an MP4, not a PNG (openimago-1s27).
+ * Same-origin sample MP4 for the mock video provider. omniclip is a video
+ * editor: hydrateFromCut → importFromUrl needs a REAL, decodable video to build
+ * a video effect, so a generated shot must yield an MP4, not a PNG
+ * (openimago-1s27).
+ *
+ * This is a relative path served by the web app from `packages/web/public/`
+ * (Quasar serves `public/<name>` at `/<name>`). Same-origin matters twice
+ * (openimago-lwuu): (1) the previous external CDN clip returned HTTP 403 in this
+ * environment, breaking importFromUrl; (2) WebCodecs/importFromUrl impose CORS
+ * on cross-origin video, which a relative same-origin URL sidesteps. The browser
+ * resolves this against the web app's own origin.
  */
-const MOCK_VIDEO_SAMPLE_URL =
-  "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+const MOCK_VIDEO_SAMPLE_URL = "/mock-clip.mp4"
 
 /**
  * Browser-loadable mock video URL. Deterministic: the same shot always maps to
  * the same clip (the `#seed` fragment keeps the value stable per seed without
- * changing what the browser fetches). Replace with a real provider as a
- * follow-up, like mockImageUrl/mockAudioUrl.
+ * changing what the browser fetches — the fragment is dropped before the HTTP
+ * request). Replace with a real provider as a follow-up, like
+ * mockImageUrl/mockAudioUrl.
  */
 function mockVideoUrl(seed: string): string {
   return `${MOCK_VIDEO_SAMPLE_URL}#${stableHash(seed).toString(36)}`

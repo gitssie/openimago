@@ -102,8 +102,13 @@ test("generateShot appends a completed run with result and marks shot generated"
   expect(body.run.result.mime).toBe("video/mp4")
   expect(body.run.result.filename).toBe(`${shotId}.mp4`)
   expect(body.run.result.artifactId).toMatch(/^mock_/)
-  expect(body.run.result.access.preview).toMatch(/\.mp4([?#]|$)/)
-  expect(body.run.result.access.thumbnail).toMatch(/\.mp4([?#]|$)/)
+  // Same-origin clip served from packages/web/public (openimago-lwuu): a relative
+  // /mock-clip.mp4#<seed> path — NOT an external CDN URL (the old BigBuckBunny URL
+  // 403'd here and tripped WebCodecs' cross-origin CORS). The #seed fragment keeps
+  // it deterministic per shot. Tests assert the shape only; they never fetch it.
+  expect(body.run.result.access.preview).toMatch(/^\/mock-clip\.mp4#[0-9a-z]+$/)
+  expect(body.run.result.access.thumbnail).toMatch(/^\/mock-clip\.mp4#[0-9a-z]+$/)
+  expect(body.run.result.access.preview).not.toMatch(/^https?:\/\//)
   expect(body.run.id).toMatch(/^run_/)
 
   // runs.json now has the run

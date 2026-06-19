@@ -447,6 +447,12 @@ async function mountAndHydrate(): Promise<void> {
       await fork.hydrateFromCut(clips, transitions)
     }
   } catch (err) {
+    // Roll editorReady back so the error <p> shows instead of an empty
+    // <construct-editor> (openimago-ystd). editorReady is flipped true BEFORE
+    // hydrateFromCut so omniclip mounts; a hydration throw (e.g. importFromUrl
+    // failing on an unreachable/undecodable clip) must surface its message, not a
+    // silent empty timeline.
+    editorReady.value = false
     editorError.value = '剪辑器初始化失败（需要支持 WebCodecs 的浏览器环境）'
     console.error('StoryCutPanel: failed to initialise omniclip editor', err)
   }
