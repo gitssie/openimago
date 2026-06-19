@@ -95,12 +95,15 @@ test("generateShot appends a completed run with result and marks shot generated"
   // Returned run
   expect(body.run.status).toBe("completed")
   expect(body.run.shotId).toBe(shotId)
-  expect(body.run.params.model).toBe("mock-image-model")
-  expect(body.run.result.kind).toBe("image")
-  expect(body.run.result.mime).toBe("image/png")
+  // Mock provider now yields a playable VIDEO so omniclip can hydrate it as a
+  // video effect (openimago-1s27 — a PNG cannot become a video effect).
+  expect(body.run.params.model).toBe("mock-video-model")
+  expect(body.run.result.kind).toBe("video")
+  expect(body.run.result.mime).toBe("video/mp4")
+  expect(body.run.result.filename).toBe(`${shotId}.mp4`)
   expect(body.run.result.artifactId).toMatch(/^mock_/)
-  expect(body.run.result.access.thumbnail).toContain("picsum.photos")
-  expect(body.run.result.access.preview).toContain("picsum.photos")
+  expect(body.run.result.access.preview).toMatch(/\.mp4([?#]|$)/)
+  expect(body.run.result.access.thumbnail).toMatch(/\.mp4([?#]|$)/)
   expect(body.run.id).toMatch(/^run_/)
 
   // runs.json now has the run

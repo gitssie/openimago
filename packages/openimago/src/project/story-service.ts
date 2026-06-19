@@ -60,6 +60,25 @@ function mockImageUrl(seed: string): string {
 }
 
 /**
+ * Public, browser-loadable sample MP4 for the mock video provider (mirrors
+ * opencode's mockVideoProvider.MOCK_VIDEO_SAMPLE_URL). omniclip is a video
+ * editor: hydrateFromCut → importFromUrl needs a real video to build a video
+ * effect, so a generated shot must yield an MP4, not a PNG (openimago-1s27).
+ */
+const MOCK_VIDEO_SAMPLE_URL =
+  "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+
+/**
+ * Browser-loadable mock video URL. Deterministic: the same shot always maps to
+ * the same clip (the `#seed` fragment keeps the value stable per seed without
+ * changing what the browser fetches). Replace with a real provider as a
+ * follow-up, like mockImageUrl/mockAudioUrl.
+ */
+function mockVideoUrl(seed: string): string {
+  return `${MOCK_VIDEO_SAMPLE_URL}#${stableHash(seed).toString(36)}`
+}
+
+/**
  * Default TTS voice used when a dialog line's character has no `voiceId`
  * (architect default, ADR 0004 — revisit when a real provider lands). A named
  * domain constant, not a hidden config value (global §9.3).
@@ -646,8 +665,10 @@ export class StoryService {
    *
    * THIS IS A MOCK COMMAND: it does not call opencode/agent or a real provider.
    * It synchronously appends a `completed` GenerationRun to runs.json with a
-   * picsum.photos result (model = "mock-image-model", artifactId = mock_*) and
-   * flips the shot's status to "generated". A real provider is a follow-up.
+   * mock VIDEO result (model = "mock-video-model", kind = "video", a playable
+   * sample MP4, artifactId = mock_*) and flips the shot's status to "generated".
+   * Video (not a still image) so omniclip's Cut timeline can hydrate the clip as
+   * a video effect (openimago-1s27). A real provider is a follow-up.
    *
    * runs.json is append-only (no updatedAt, no 409). The episode write reuses
    * the optimistic episode write path (atomic + bumped updatedAt).
@@ -686,21 +707,21 @@ export class StoryService {
     const shotNumber = typeof shot["shotNumber"] === "number" ? shot["shotNumber"] : shotIdx + 1
     const prompt = description.trim() || `shot ${shotNumber}`
 
-    // ── Mock provider result (picsum, hash-seeded like opencode mockImage) ──
-    const imageUrl = mockImageUrl(`${shotId}${prompt}`)
+    // ── Mock provider result (playable MP4, like opencode mockVideoProvider) ──
+    const videoUrl = mockVideoUrl(`${shotId}${prompt}`)
     const now = new Date().toISOString()
     const run: GenerationRun = {
       id: `run_${randomSlug()}`,
       nodeId: "",
       shotId,
       status: "completed",
-      params: { prompt, model: "mock-image-model" },
+      params: { prompt, model: "mock-video-model" },
       result: {
         artifactId: `mock_${randomSlug()}`,
-        kind: "image",
-        mime: "image/png",
-        filename: `${shotId}.png`,
-        access: { preview: imageUrl, thumbnail: imageUrl },
+        kind: "video",
+        mime: "video/mp4",
+        filename: `${shotId}.mp4`,
+        access: { preview: videoUrl, thumbnail: videoUrl },
       },
       startedAt: now,
       completedAt: now,
