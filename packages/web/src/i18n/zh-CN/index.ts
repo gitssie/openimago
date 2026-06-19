@@ -1,6 +1,10 @@
 export default {
   failed: '操作失败',
   success: '操作成功',
+  // Navigation landmark labels (aria-label on <nav> regions).
+  nav: {
+    workbench: '工作台导航',
+  },
   common: {
     cancel: '取消',
     create: '创建',

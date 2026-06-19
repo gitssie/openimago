@@ -1,6 +1,10 @@
 export default {
   failed: 'Action failed',
   success: 'Action was successful',
+  // Navigation landmark labels (aria-label on <nav> regions).
+  nav: {
+    workbench: 'Workbench navigation',
+  },
   common: {
     cancel: 'Cancel',
     create: 'Create',
