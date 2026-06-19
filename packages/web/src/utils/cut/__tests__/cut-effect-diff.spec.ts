@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifyEffectDiff } from '../cut-effect-diff'
+import { classifyEffectDiff, effectsSnapshotEqual } from '../cut-effect-diff'
 import type { OmniVideoEffect } from '../omniclip-state.types'
 
 // Build a minimal video effect; ms units (start/end = trim within source,
@@ -182,5 +182,58 @@ describe('classifyEffectDiff — non-split additions', () => {
       vfx({ id: 'b', file_hash: 'fh', start: 0, end: 3000, start_at_position: 3000 }),
     ]
     expect(classifyEffectDiff(a, b)).toBeNull()
+  })
+})
+
+describe('effectsSnapshotEqual — poll-loop change detection (openimago-rcuw)', () => {
+  it('equal for identical snapshots (no edit pending)', () => {
+    const a = [vfx({ id: 'a', start_at_position: 0 }), vfx({ id: 'b', start_at_position: 1000 })]
+    const b = [vfx({ id: 'a', start_at_position: 0 }), vfx({ id: 'b', start_at_position: 1000 })]
+    expect(effectsSnapshotEqual(a, b)).toBe(true)
+  })
+
+  it('equal for two empty snapshots', () => {
+    expect(effectsSnapshotEqual([], [])).toBe(true)
+  })
+
+  it('unequal when length differs (add/delete)', () => {
+    const a = [vfx({ id: 'a' })]
+    const b = [vfx({ id: 'a' }), vfx({ id: 'b', start_at_position: 1000 })]
+    expect(effectsSnapshotEqual(a, b)).toBe(false)
+  })
+
+  it('unequal when a trim changes start/end', () => {
+    const a = [vfx({ id: 'a', start: 0, end: 4000 })]
+    const b = [vfx({ id: 'a', start: 0, end: 3000 })]
+    expect(effectsSnapshotEqual(a, b)).toBe(false)
+  })
+
+  it('unequal when a reorder changes start_at_position', () => {
+    const a = [vfx({ id: 'a', start_at_position: 0 }), vfx({ id: 'b', start_at_position: 1000 })]
+    const b = [vfx({ id: 'a', start_at_position: 1000 }), vfx({ id: 'b', start_at_position: 0 })]
+    expect(effectsSnapshotEqual(a, b)).toBe(false)
+  })
+
+  it('unequal when an id changes (split mints a new effect)', () => {
+    const a = [vfx({ id: 'a', file_hash: 'fh', start: 0, end: 6000 })]
+    const b = [
+      vfx({ id: 'a', file_hash: 'fh', start: 0, end: 4000 }),
+      vfx({ id: 'a-new', file_hash: 'fh', start: 4000, end: 6000, start_at_position: 4000 }),
+    ]
+    expect(effectsSnapshotEqual(a, b)).toBe(false)
+  })
+
+  it('compares positionally — equal snapshots in the same order are equal', () => {
+    // The poll always reads context.state.effects in the engine's array order,
+    // so a positional compare is sufficient (and cheaper than sorting).
+    const a = [vfx({ id: 'a', start_at_position: 0 }), vfx({ id: 'b', start_at_position: 1000 })]
+    const b = [vfx({ id: 'a', start_at_position: 0 }), vfx({ id: 'b', start_at_position: 1000 })]
+    expect(effectsSnapshotEqual(a, b)).toBe(true)
+  })
+
+  it('unequal when file_hash changes (media replaced)', () => {
+    const a = [vfx({ id: 'a', file_hash: 'fh1' })]
+    const b = [vfx({ id: 'a', file_hash: 'fh2' })]
+    expect(effectsSnapshotEqual(a, b)).toBe(false)
   })
 })

@@ -37,47 +37,11 @@ const OMNICLIP_VENDOR_PKGS = [
  * resolve.alias behaviour). This also fixes ffprobe's RUNTIME import, not just
  * module load. Returning a bare path (not {external:true}) keeps Vite serving.
  */
-/**
- * Sentinel specifier that MUST resolve to the SAME `@benev/slate` `WatchTower`
- * singleton omniclip's AppCore dispatches on (openimago-4j3h).
- *
- * The web package depends on `@benev/slate@^0.3.10`, but omniclip@1.0.7 bundles
- * `@benev/slate@0.1.2` (a different version with its OWN `watch` singleton). A
- * bare `@benev/slate` import from project/vendor TS resolves to 0.3.10 → a
- * DIFFERENT WatchTower instance with an independent listener Set, so a
- * `watch.track()` registered there never fires for AppCore's dispatches (native
- * gestures silently never persist). Routing this sentinel to omniclip's OWN
- * nested 0.1.2 `nexus/state.js` (resolved from omniclip's real store dir, so it
- * is the exact same `/@fs/` URL omniclip itself imports) puts the subscription on
- * the right instance. Hash-independent: derived via realpathSync, not a pinned
- * `.bun/...@<hash>` path.
- */
-const OMNICLIP_SLATE_STATE_SENTINEL = '@omniclip-runtime/slate-state';
-
-/** Real path to omniclip's bundled @benev/slate nexus/state.js (the watch singleton). */
-function omniclipSlateStatePath(): string | undefined {
-  const omniclipPkg = fileURLToPath(
-    new URL('./node_modules/omniclip', import.meta.url),
-  );
-  if (!existsSync(omniclipPkg)) return undefined;
-  // omniclip's @benev/slate is a SIBLING in its store node_modules
-  // (.bun/omniclip@<h>/node_modules/{omniclip,@benev/slate}); reach it relative
-  // to omniclip's REAL dir so we land on the 0.1.2 copy, not the web 0.3.10.
-  const slateState = `${realpathSync(omniclipPkg)}/../@benev/slate/x/nexus/state.js`;
-  return existsSync(slateState) ? realpathSync(slateState) : undefined;
-}
-
 function omniclipSubpathResolver() {
   return {
     name: 'omniclip-subpath-resolver',
     enforce: 'pre' as const,
     resolveId(source: string) {
-      // Same-instance slate watch (openimago-4j3h) — resolve to omniclip's own
-      // bundled @benev/slate nexus/state.js so watch.track lands on AppCore's
-      // WatchTower, not the web package's separate 0.3.10 copy.
-      if (source === OMNICLIP_SLATE_STATE_SENTINEL) {
-        return omniclipSlateStatePath();
-      }
       const pkg = OMNICLIP_VENDOR_PKGS.find(
         (p) => source.startsWith(`${p}/`) && source.length > p.length + 1,
       );
