@@ -5,6 +5,7 @@
 // code out of the repo typecheck path.
 
 import type { CutTransitionKind } from './cut-types'
+import type { CutEdit } from './cut-edit-dispatcher'
 
 export interface ImportedMedia {
   fileHash: string
@@ -62,6 +63,14 @@ export interface OmniclipForkApi {
   setTransition: (transition: OmniTransition) => void
   clearTransition: (afterEffectId: string) => void
   readTransitions: () => OmniTransition[]
+  /**
+   * Subscribe to committed editor gestures (ADR 0008 #1/#1a). The fork diffs
+   * omniclip's `effects` snapshot on each settled gesture and emits ONE semantic
+   * CutEdit (reorder / trim / split / delete) — never per intermediate frame.
+   * Returns an unsubscribe fn. Transition/BGM edits are host-driven (decision
+   * 1b) and do NOT arrive through this channel.
+   */
+  onEdit: (cb: (edit: CutEdit) => void) => () => void
   themeVars: Record<string, string>
 }
 

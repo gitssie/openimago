@@ -24,6 +24,7 @@ import {
   setClipContextResolver,
 } from './capabilities/clip-menu'
 import { setTransition, clearTransition, readTransitions } from './capabilities/transitions'
+import { onEdit } from './capabilities/on-edit'
 
 // Install the document-level clip context-menu listener once at boot
 // (openimago-1mcb) — the Effect view is sealed, so the menu is driven from a
@@ -39,6 +40,7 @@ export const omniclipFork: OmniclipForkApi = {
   setTransition,
   clearTransition,
   readTransitions,
+  onEdit,
   themeVars: OMNI_THEME_VARS,
 }
 

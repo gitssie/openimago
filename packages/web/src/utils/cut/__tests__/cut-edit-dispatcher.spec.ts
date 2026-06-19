@@ -39,10 +39,10 @@ describe('dispatchCutEdit routes each edit to the right endpoint', () => {
     expect(api.trimCutClip).toHaveBeenCalledWith('p1', 'ep_001', 'a', 1, 3, 'v1')
   })
 
-  it('split', async () => {
+  it('split threads the client-minted newClipId (ADR 0008 #2)', async () => {
     const api = fakeApi()
-    await dispatchCutEdit(deps(api), { kind: 'split', clipId: 'a', atSeconds: 2 })
-    expect(api.splitCutClip).toHaveBeenCalledWith('p1', 'ep_001', 'a', 2, 'v1')
+    await dispatchCutEdit(deps(api), { kind: 'split', clipId: 'a', atSeconds: 2, newClipId: 'a-b' })
+    expect(api.splitCutClip).toHaveBeenCalledWith('p1', 'ep_001', 'a', 2, 'a-b', 'v1')
   })
 
   it('delete', async () => {

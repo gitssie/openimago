@@ -59,6 +59,46 @@ describe('runCutMutation', () => {
     expect(mutate).toHaveBeenCalledTimes(2)
   })
 
+  it('reports the successful write updatedAt via onWritten (ADR 0008 #3)', async () => {
+    const mutate = vi.fn().mockResolvedValue({ updatedAt: 'v2' })
+    const onWritten = vi.fn()
+    const outcome = await runCutMutation({
+      currentUpdatedAt: () => 'v1',
+      refetch: vi.fn(),
+      mutate,
+      onWritten,
+    })
+    expect(outcome).toBe('ok')
+    expect(onWritten).toHaveBeenCalledExactlyOnceWith('v2')
+  })
+
+  it('reports updatedAt from the post-409 retry write', async () => {
+    const mutate = vi
+      .fn()
+      .mockRejectedValueOnce(new FakeApiError(409))
+      .mockResolvedValueOnce({ updatedAt: 'v3' })
+    const onWritten = vi.fn()
+    await runCutMutation({
+      currentUpdatedAt: () => 'v1',
+      refetch: vi.fn().mockResolvedValue('v2'),
+      mutate,
+      onWritten,
+    })
+    expect(onWritten).toHaveBeenCalledExactlyOnceWith('v3')
+  })
+
+  it('does not call onWritten on a sustained conflict', async () => {
+    const onWritten = vi.fn()
+    const outcome = await runCutMutation({
+      currentUpdatedAt: () => 'v1',
+      refetch: vi.fn().mockResolvedValue('v2'),
+      mutate: vi.fn().mockRejectedValue(new FakeApiError(409)),
+      onWritten,
+    })
+    expect(outcome).toBe('conflict')
+    expect(onWritten).not.toHaveBeenCalled()
+  })
+
   it('propagates non-409 errors without retrying', async () => {
     const mutate = vi.fn().mockRejectedValue(new FakeApiError(500))
     const refetch = vi.fn()

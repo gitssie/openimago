@@ -12,7 +12,7 @@ import type { CutTransitionKind } from './cut-types'
 export type CutEdit =
   | { kind: 'reorder'; orderedClipIds: string[] }
   | { kind: 'trim'; clipId: string; inPoint: number; outPoint: number }
-  | { kind: 'split'; clipId: string; atSeconds: number }
+  | { kind: 'split'; clipId: string; atSeconds: number; newClipId: string }
   | { kind: 'delete'; clipId: string }
   | { kind: 'set-transition'; afterClipId: string; transitionKind: CutTransitionKind; durationSeconds: number }
   | { kind: 'clear-transition'; afterClipId: string }
@@ -23,7 +23,7 @@ export type CutEdit =
 export interface CutWriteApi {
   reorderCutClips: (projectId: string, episodeId: string, orderedClipIds: string[], expectedUpdatedAt?: string) => Promise<{ updatedAt: string }>
   trimCutClip: (projectId: string, episodeId: string, clipId: string, inPoint: number, outPoint: number, expectedUpdatedAt?: string) => Promise<{ updatedAt: string }>
-  splitCutClip: (projectId: string, episodeId: string, clipId: string, atSeconds: number, expectedUpdatedAt?: string) => Promise<{ updatedAt: string; newClipId: string }>
+  splitCutClip: (projectId: string, episodeId: string, clipId: string, atSeconds: number, newClipId: string, expectedUpdatedAt?: string) => Promise<{ updatedAt: string; newClipId: string }>
   deleteCutClip: (projectId: string, episodeId: string, clipId: string, expectedUpdatedAt?: string) => Promise<{ updatedAt: string }>
   setCutTransition: (projectId: string, episodeId: string, afterClipId: string, kind: string, durationSeconds: number, expectedUpdatedAt?: string) => Promise<{ updatedAt: string }>
   clearCutTransition: (projectId: string, episodeId: string, afterClipId: string, expectedUpdatedAt?: string) => Promise<{ updatedAt: string }>
@@ -39,6 +39,8 @@ export interface DispatchCutEditDeps {
   currentUpdatedAt: () => string | undefined
   /** refetch the cut, returning the fresh updatedAt. */
   refetch: () => Promise<string | undefined>
+  /** notified with each successful write's returned updatedAt (ADR 0008 #3). */
+  onWritten?: (updatedAt: string) => void
 }
 
 /** Build the single-write function for an edit (bound to expectedUpdatedAt). */
@@ -50,7 +52,7 @@ function writeFor(deps: DispatchCutEditDeps, edit: CutEdit) {
     case 'trim':
       return (u?: string) => api.trimCutClip(p, e, edit.clipId, edit.inPoint, edit.outPoint, u)
     case 'split':
-      return (u?: string) => api.splitCutClip(p, e, edit.clipId, edit.atSeconds, u)
+      return (u?: string) => api.splitCutClip(p, e, edit.clipId, edit.atSeconds, edit.newClipId, u)
     case 'delete':
       return (u?: string) => api.deleteCutClip(p, e, edit.clipId, u)
     case 'set-transition':
@@ -82,5 +84,6 @@ export function dispatchCutEdit(deps: DispatchCutEditDeps, edit: CutEdit): Promi
     currentUpdatedAt: deps.currentUpdatedAt,
     refetch: deps.refetch,
     mutate,
+    ...(deps.onWritten ? { onWritten: deps.onWritten } : {}),
   })
 }

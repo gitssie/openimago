@@ -12,6 +12,11 @@
 
 import type { CutTransitionKind } from './episode-cut.types'
 import type { ResolvedShotMedia } from './episode-cut.types'
+// The fork→host edit channel (ADR 0008 #1) carries our canonical CutEdit. Import
+// it from the production dispatcher (not a _spike duplicate) so the emitted shape
+// is exactly what dispatchCutEdit consumes; openimago-lile collapses the rest of
+// this duplicate contract into src/utils/cut.
+import type { CutEdit } from 'src/utils/cut/cut-edit-dispatcher'
 
 // ─── 1. Load-from-URL import (spike point 2) ───────────────────────────────────
 
@@ -163,6 +168,14 @@ export interface OmniclipForkApi {
   setTransition: SetTransition
   clearTransition: ClearTransition
   readTransitions: ReadTransitions
+  /**
+   * Subscribe to committed editor gestures (ADR 0008 #1/#1a). The fork diffs
+   * omniclip's `effects` snapshot on each settled gesture and emits ONE semantic
+   * CutEdit (reorder / trim / split / delete) — never per intermediate frame.
+   * Returns an unsubscribe fn. Transition/BGM edits are host-driven (decision
+   * 1b) and do NOT arrive through this channel.
+   */
+  onEdit: (cb: (edit: CutEdit) => void) => () => void
   /** the theme vars the fork honours (for the host to set). */
   themeVars: typeof OMNI_THEME_VARS
 }

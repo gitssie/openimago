@@ -680,13 +680,21 @@ export const api = {
       },
     ),
 
-  // Split a clip at an absolute source time, returning the new second-half clip id.
-  splitCutClip: (projectId: string, episodeId: string, clipId: string, atSeconds: number, expectedUpdatedAt?: string) =>
+  // Split a clip at an absolute source time. The CLIENT mints the new
+  // second-half clip id (ADR 0008 #2); the server validates + echoes it.
+  splitCutClip: (
+    projectId: string,
+    episodeId: string,
+    clipId: string,
+    atSeconds: number,
+    newClipId: string,
+    expectedUpdatedAt?: string,
+  ) =>
     request<{ updatedAt: string; newClipId: string }>(
       `/api/platform/projects/${projectId}/story/episodes/${episodeId}/cut/clips/${clipId}/split`,
       {
         method: 'POST',
-        body: JSON.stringify({ atSeconds, ...(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}) }),
+        body: JSON.stringify({ atSeconds, newClipId, ...(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}) }),
       },
     ),
 

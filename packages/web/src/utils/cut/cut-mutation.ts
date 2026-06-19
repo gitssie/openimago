@@ -30,6 +30,21 @@ export interface RunCutMutationDeps {
   refetch: () => Promise<string | undefined>
   /** perform ONE write with the given expectedUpdatedAt. */
   mutate: (expectedUpdatedAt: string | undefined) => Promise<unknown>
+  /**
+   * Notified with the successful write's returned `updatedAt`, so the caller can
+   * advance its local optimistic-concurrency clock without an extra refetch
+   * (ADR 0008 #3). Not called on conflict.
+   */
+  onWritten?: (updatedAt: string) => void
+}
+
+/** Read an `updatedAt` off a write result, if present. */
+function updatedAtOf(result: unknown): string | undefined {
+  if (typeof result === 'object' && result !== null && 'updatedAt' in result) {
+    const value = result.updatedAt
+    if (typeof value === 'string') return value
+  }
+  return undefined
 }
 
 /**
@@ -40,14 +55,18 @@ export interface RunCutMutationDeps {
 export async function runCutMutation(deps: RunCutMutationDeps): Promise<CutMutationOutcome> {
   let expectedUpdatedAt = deps.currentUpdatedAt()
   try {
-    await deps.mutate(expectedUpdatedAt)
+    const result = await deps.mutate(expectedUpdatedAt)
+    const updatedAt = updatedAtOf(result)
+    if (updatedAt !== undefined) deps.onWritten?.(updatedAt)
     return 'ok'
   } catch (err) {
     if (!isConflict(err)) throw err
     // Stale read — refetch the cut, retry once with the latest updatedAt.
     expectedUpdatedAt = await deps.refetch()
     try {
-      await deps.mutate(expectedUpdatedAt)
+      const result = await deps.mutate(expectedUpdatedAt)
+      const updatedAt = updatedAtOf(result)
+      if (updatedAt !== undefined) deps.onWritten?.(updatedAt)
       return 'ok'
     } catch (retryErr) {
       if (isConflict(retryErr)) return 'conflict'

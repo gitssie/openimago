@@ -96,8 +96,16 @@ const editorReady = ref(false)
 const editorError = ref<string | null>(null)
 const assembling = ref(false)
 
+// Local optimistic-concurrency clock for cut writes (ADR 0008 #3). Seeded from
+// the canonical cut and advanced by each write's returned updatedAt, so the
+// panel does NOT re-hydrate on every edit (which would re-import media). The
+// rare cross-actor agent-assemble race is still caught by emit('cut-changed') →
+// page refetch + runCutMutation's 409 retry.
+const lastUpdatedAt = ref<string | undefined>(props.cut?.updatedAt)
+
 let fork: OmniclipForkApi | null = null
 let unregisterClipMenu: (() => void) | null = null
+let unsubscribeEdits: (() => void) | null = null
 
 const isEmptyCut = computed(() => !props.cut || props.cut.clips.length === 0)
 
@@ -135,10 +143,18 @@ async function persistEdit(edit: CutEdit): Promise<void> {
       api,
       projectId: props.projectId,
       episodeId: props.episodeId,
-      currentUpdatedAt: () => props.cut?.updatedAt,
+      // Read the LOCAL clock (decision 3): structural edits chain off each
+      // other's returned updatedAt without a refetch between them.
+      currentUpdatedAt: () => lastUpdatedAt.value,
       refetch: async () => {
         const fresh = await api.projectStoryCut(props.projectId, props.episodeId)
+        lastUpdatedAt.value = fresh?.updatedAt
         return fresh?.updatedAt
+      },
+      // Advance the local clock from each write so the next edit's expected
+      // updatedAt is current — no re-hydration, no per-edit refetch.
+      onWritten: (updatedAt) => {
+        lastUpdatedAt.value = updatedAt
       },
     },
     edit,
@@ -146,6 +162,15 @@ async function persistEdit(edit: CutEdit): Promise<void> {
   if (outcome === 'conflict') emit('cut-conflict')
   else emit('cut-changed')
 }
+
+// TODO(ADR 0008 #1b — host transition/BGM controls, out of scope for ssro):
+// transitions + BGM are HOST-driven, not derived from the omniclip diff
+// (omniclip 1.0.7 has no transition UI; the fork keeps transitions in its own
+// per-context store). When host controls are built, they must call the fork
+// setter (fork.setTransition / fork.clearTransition) AND persistEdit with the
+// matching CutEdit — the set-transition / clear-transition / set-bgm / clear-bgm
+// path through persistEdit -> dispatchCutEdit is already wired and correct; only
+// the UI controls that originate these edits are missing.
 
 // ── BROWSER-ONLY: load the fork, mount the editor, hydrate from cut.json ──
 //
@@ -202,6 +227,16 @@ async function mountAndHydrate(): Promise<void> {
       (effectId) => props.cut?.clips.find((c) => c.id === effectId)?.sourceShotId,
     )
 
+    // Subscribe to committed editor gestures (ADR 0008 #1/#1a). The fork diffs
+    // its effects snapshot per settled gesture and hands us ONE semantic CutEdit
+    // (reorder / trim / split / delete); persistEdit routes it through the cut
+    // endpoints. Transition/BGM are host-driven (decision 1b) and do NOT arrive
+    // here. JS's single thread + persistEdit's per-edit await serialise these
+    // user-paced gestures without an explicit queue (decision 3).
+    unsubscribeEdits = fork.onEdit((edit) => {
+      void persistEdit(edit)
+    })
+
     // Render <construct-editor> now that the fork is loaded.
     editorReady.value = true
 
@@ -225,6 +260,11 @@ async function mountAndHydrate(): Promise<void> {
 function remountEditor(): void {
   editorReady.value = false
   editorError.value = null
+  // Re-seed the local clock from the (possibly newly-loaded) cut before the
+  // fresh editor starts emitting edits.
+  lastUpdatedAt.value = props.cut?.updatedAt
+  unsubscribeEdits?.()
+  unsubscribeEdits = null
   unregisterClipMenu?.()
   unregisterClipMenu = null
   // nextTick so the editorHost div is bound before mountAndHydrate reads it.
@@ -240,6 +280,8 @@ onMounted(remountEditor)
 watch(() => [props.episodeId, isEmptyCut.value] as const, remountEditor)
 
 onBeforeUnmount(() => {
+  unsubscribeEdits?.()
+  unsubscribeEdits = null
   unregisterClipMenu?.()
   unregisterClipMenu = null
   fork = null
