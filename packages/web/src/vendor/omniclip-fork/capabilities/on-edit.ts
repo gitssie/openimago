@@ -15,8 +15,21 @@
 // Transition/BGM are host-driven (decision 1b) and never flow through here.
 //
 // BROWSER-ONLY: reads omniclip's live effects; excluded from repo typecheck.
+//
+// WATCH INSTANCE (openimago-4j3h): `watch` MUST be the SAME @benev/slate
+// WatchTower singleton omniclip's AppCore dispatches on. A bare `@benev/slate`
+// specifier resolves to the WEB package's 0.3.10 copy, but omniclip@1.0.7 bundles
+// 0.1.2 — two distinct WatchTower instances with separate listener Sets, so a
+// track() on the wrong one never fires and gestures silently never persist. The
+// `@omniclip-runtime/slate-state` sentinel is resolved by the omniclip subpath
+// resolver in quasar.config.ts to omniclip's OWN nested nexus/state.js (the exact
+// /@fs/ URL omniclip imports), guaranteeing the same instance. Do NOT change this
+// back to '@benev/slate'.
 
-import { watch } from '@benev/slate'
+// NOTE: '@omniclip-runtime/slate-state' is a build-time sentinel resolved by the
+// omniclip subpath resolver in quasar.config.ts (this dir is excluded from
+// vue-tsc, so the unresolved-by-tsc specifier is never type-checked).
+import { watch } from '@omniclip-runtime/slate-state'
 import { omnislate } from 'omniclip/x/context/context.js'
 import { classifyEffectDiff, type DiffEffect } from 'src/utils/cut/cut-effect-diff'
 import type { CutEdit } from 'src/utils/cut/cut-edit-dispatcher'
