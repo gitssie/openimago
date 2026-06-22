@@ -49,7 +49,7 @@ services:
       - TZ=Asia/Shanghai
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       - OPENCODE_DB_URL=${OPENCODE_DB_URL:-postgresql://postgres:my-secret-pw@db:5432/opencode_test}
-      - OPENIMAGO_BACKEND_URL=http://backend:5467
+      - OPENIMAGO_BACKEND_URL=${OPENIMAGO_BACKEND_URL:-http://backend:5467}
       - OPENIMAGO_BACKEND_API_KEY=${OPENIMAGO_INTERNAL_API_KEY}
     ports:
       - "4096:4096"
