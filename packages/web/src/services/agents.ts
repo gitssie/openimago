@@ -1,4 +1,5 @@
 import { createOpencodeClient } from '@opencode-ai/sdk/v2/client';
+import { api } from 'src/api/client';
 import type {
   Agent,
   AgentPartInput,
@@ -111,26 +112,44 @@ export const opencodeClient = createOpencodeClient({
 // ── Session operations ─────────────────────────────────────────────────────────
 
 export const AgentService = {
-  mapSession(session: { id: string; title?: string; parentID?: string; time?: { created?: number }; time_created?: number; revert?: Session['revert'] }): SessionItem {
+  mapSession(session: { id: string; title?: string; parentID?: string | null; parent_id?: string | null; time?: { created?: number }; time_created?: number; revert?: Session['revert'] }): SessionItem {
+    // Backend rows expose parent_id; opencode SDK exposes parentID. Accept both.
+    const parentID = session.parentID ?? session.parent_id ?? undefined;
     return {
       id: session.id,
       title: session.title ?? '',
       // Backend may return time_created (epoch ms) or time.created (opencode SDK format)
       time: new Date(session.time?.created ?? session.time_created ?? Date.now()),
-      ...(session.parentID ? { parentID: session.parentID } : {}),
+      ...(parentID ? { parentID } : {}),
       ...(session.revert ? { revert: session.revert } : {}),
     };
   },
 
   // ── Session CRUD ──────────────────────────────────────────────────────────
 
-  async createSession(): Promise<SessionItem> {
+  async createSession(opts: { projectId?: string } = {}): Promise<SessionItem> {
+    // When scoped to a project, route through the openimago api client: the
+    // proxy reads body.projectId to place the session in the project directory.
+    // The opencode SDK's typed create() does not model projectId, so the SDK
+    // path is used only for the standalone (project-less) case.
+    if (opts.projectId) {
+      const session = await api.createSession({ projectId: opts.projectId });
+      return this.mapSession(session);
+    }
     const res = await opencodeClient.session.create({});
     const session = (res.data ?? res) as { id: string; title?: string; time?: { created?: number } };
     return this.mapSession(session);
   },
 
-  async listSessions(): Promise<SessionItem[]> {
+  async listSessions(opts: { projectId?: string } = {}): Promise<SessionItem[]> {
+    // When scoped to a project, route through the api client which sends
+    // ?projectId= so the backend filters to that project only.
+    if (opts.projectId) {
+      const list = await api.listSessions({ projectId: opts.projectId });
+      return list
+        .map((s) => this.mapSession(s))
+        .sort((a, b) => b.time.getTime() - a.time.getTime());
+    }
     const res = await opencodeClient.session.list({ roots: true });
     const list = (res.data ?? []) as { id: string; title?: string; time?: { created?: number }; time_created?: number }[];
     return list

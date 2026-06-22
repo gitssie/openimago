@@ -122,6 +122,13 @@ export function useAgentSession(
   notifyInfo: (msg: string, opts?: { icon?: string; timeout?: number }) => void,
   notifySuccess: (msg: string) => void,
   focusInput: () => void,
+  /**
+   * Optional project scope. When provided, new sessions are created under this
+   * project (so they land in the project directory, not a standalone wrk_ dir)
+   * and the session list is filtered to this project. Omitted on the standalone
+   * SessionWorkspacePage, which keeps the global, project-less behavior.
+   */
+  getProjectId?: () => string | null | undefined,
 ) {
   // ── Pure state machine (testable, no Vue) ──────────────────────────────────
   const sessionState = new SessionState();
@@ -657,7 +664,8 @@ export function useAgentSession(
 
   async function ensureSession(): Promise<string> {
     if (sessionId.value) return sessionId.value;
-    const session = await AgentService.createSession();
+    const projectId = getProjectId?.() ?? null;
+    const session = await AgentService.createSession(projectId ? { projectId } : {});
     sessionId.value = session.id;
     upsertSession(session);
     return session.id;
@@ -775,7 +783,8 @@ export function useAgentSession(
 
   async function loadSessionList() {
     try {
-      const fetched = await AgentService.listSessions();
+      const projectId = getProjectId?.() ?? null;
+      const fetched = await AgentService.listSessions(projectId ? { projectId } : undefined);
       const fetchedIds = new Set(fetched.map(s => s.id));
       const localOnly = sessionList.value.filter((s) => !s.parentID && !fetchedIds.has(s.id));
       sessionList.value = [...localOnly, ...fetched].sort((a, b) => b.time.getTime() - a.time.getTime());

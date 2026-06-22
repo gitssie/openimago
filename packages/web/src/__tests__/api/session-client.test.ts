@@ -100,6 +100,42 @@ describe('session API client against backend', () => {
     expect(sessions[0]?.directory).toBe('/mnt/cos/a')
   })
 
+  it('scopes the session list to a single project when projectId is given', async () => {
+    const { user } = await authenticate()
+
+    // Two projects sharing the SAME workspace — the bug was that the list
+    // leaked across projects because it filtered only by workspace_id.
+    await db.insert(SessionTable).values({
+      id: 'ses_proj_a',
+      project_id: 'proj_a',
+      workspace_id: user.workspaceId,
+      slug: 'a',
+      directory: '/mnt/cos/proj_a',
+      title: 'Project A session',
+      version: '1.0',
+      time_created: 200,
+      time_updated: 200,
+    })
+    await db.insert(SessionTable).values({
+      id: 'ses_proj_b',
+      project_id: 'proj_b',
+      workspace_id: user.workspaceId,
+      slug: 'b',
+      directory: '/mnt/cos/proj_b',
+      title: 'Project B session',
+      version: '1.0',
+      time_created: 201,
+      time_updated: 201,
+    })
+
+    const scoped = await api.listSessions({ projectId: 'proj_a' })
+    expect(scoped.map((s) => s.id)).toEqual(['ses_proj_a'])
+
+    // No projectId → unfiltered (both projects in the shared workspace).
+    const all = await api.listSessions()
+    expect(all.map((s) => s.id).sort()).toEqual(['ses_proj_a', 'ses_proj_b'])
+  })
+
   it('routes localhost OpenCode UI-origin session requests to the real backend port', async () => {
     const { user } = await authenticate()
     await db.insert(SessionTable).values({

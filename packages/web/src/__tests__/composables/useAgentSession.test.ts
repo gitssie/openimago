@@ -11,6 +11,7 @@ vi.mock('src/services/agents', () => ({
     getSession: vi.fn(),
     listPendingQuestions: vi.fn(),
     listPendingPermissions: vi.fn(),
+    listSessions: vi.fn(),
   },
 }))
 
@@ -43,6 +44,46 @@ describe('useAgentSession pending questions', () => {
     await nextTick()
 
     expect(session.pendingQuestion.value).toStrictEqual(question)
+  })
+})
+
+describe('useAgentSession project scoping', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockAgentService.listSessions.mockResolvedValue([])
+  })
+
+  it('passes the injected projectId to listSessions', async () => {
+    const session = useAgentSession(
+      vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(),
+      () => 'proj_a',
+    )
+
+    await session.loadSessionList()
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(mockAgentService.listSessions).toHaveBeenCalledWith({ projectId: 'proj_a' })
+  })
+
+  it('lists sessions unscoped when no projectId source is provided (standalone)', async () => {
+    const session = useAgentSession(vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn())
+
+    await session.loadSessionList()
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(mockAgentService.listSessions).toHaveBeenCalledWith(undefined)
+  })
+
+  it('lists sessions unscoped when the projectId getter returns null', async () => {
+    const session = useAgentSession(
+      vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(),
+      () => null,
+    )
+
+    await session.loadSessionList()
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(mockAgentService.listSessions).toHaveBeenCalledWith(undefined)
   })
 })
 

@@ -161,6 +161,11 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
       eq(SessionTable.workspace_id, workspaceId),
     ]
 
+    // Scope to a single project when requested. All of a user's projects share
+    // one workspace, so without this the list leaks sessions across projects.
+    const requestedProject = filters.projectId ?? filters.project_id
+    if (requestedProject) conditions.push(eq(SessionTable.project_id, requestedProject))
+
     if (filters.directory) conditions.push(eq(SessionTable.directory, filters.directory))
     if (filters.path) conditions.push(or(eq(SessionTable.path, filters.path), like(SessionTable.path, `${filters.path}/%`))!)
     if (filters.roots) conditions.push(isNull(SessionTable.parent_id))

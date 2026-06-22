@@ -53,6 +53,9 @@ export interface SessionInfo {
   title?: string
   projectID?: string
   projectId?: string
+  // Backend rows expose the raw column parent_id; opencode SDK uses parentID.
+  parentID?: string | null
+  parent_id?: string | null
   time?: { created?: number }
   directory?: string
   createdAt?: string
@@ -402,8 +405,12 @@ export const api = {
     request<{ project: OpenimagoProject }>(`/api/platform/projects/${id}`, { method: 'PATCH', body: JSON.stringify(data) }).then((r) => r.project),
 
   // Sessions
-  listSessions: () =>
-    request<{ items?: SessionInfo[] } | SessionInfo[]>('/api/session').then(normalizeSessionResponse),
+  listSessions: (params?: { projectId?: string }) => {
+    const qs = new URLSearchParams()
+    if (params?.projectId) qs.set('projectId', params.projectId)
+    const suffix = qs.toString() ? `?${qs.toString()}` : ''
+    return request<{ items?: SessionInfo[] } | SessionInfo[]>(`/api/session${suffix}`).then(normalizeSessionResponse)
+  },
   createSession: (data: { projectId?: string }) =>
     request<SessionInfo>('/api/session', { method: 'POST', body: JSON.stringify(data) }),
   sessionMessages: (id: string) =>

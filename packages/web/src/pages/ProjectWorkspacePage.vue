@@ -453,6 +453,7 @@ const {
   (msg, opts) => $q.notify({ color: 'info', message: msg, icon: opts?.icon ?? 'info', ...(opts?.timeout !== undefined ? { timeout: opts.timeout } : {}) }),
   (msg) => $q.notify({ color: 'positive', message: msg, icon: 'check' }),
   () => { /* focus handled inside ChatInputDock */ },
+  () => projectId.value,
 )
 
 // ── Derived ─────────────────────────────────────────────────────────────────
