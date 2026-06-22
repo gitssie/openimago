@@ -203,6 +203,22 @@
             :has-episodes="storyEpisodeSummaries.length > 0"
             @go-to-overview="onWorkspaceTabChange('overview')"
           />
+
+          <!-- AI产出 tab → full-width outputs view (same panel as the right drawer) -->
+          <ProjectWorkspaceRightPanel
+            v-else-if="activeWorkspaceTab === 'outputs'"
+            class="project-workspace-page__story-view"
+            :items="aiOutputItems"
+            :selected-id="selectedOutputId"
+            :layout="outputLayout"
+            :show-view-all="aiOutputItems.length > 6"
+            :project-name="projectName"
+            @item-select="onGridOutputSelect"
+            @item-menu="onOutputMenu"
+            @layout-change="(l) => { outputLayout = l }"
+            @filter="onOutputFilter"
+            @view-all="onOutputViewAll"
+          />
         </UILayoutPage>
       </UILayoutPageContainer>
 
@@ -349,6 +365,7 @@ const PROJECT_WORKSPACE_TABS: ReadonlyArray<{ id: string; label: string }> = [
   { id: 'storyboard', label: '故事板' },
   { id: 'timeline', label: '时间线' },
   { id: 'overview', label: '概览' },
+  { id: 'outputs', label: 'AI产出' },
   { id: 'conversation', label: '对话' },
 ]
 
@@ -786,6 +803,20 @@ const creditsLabel = '—'
 function onWorkspaceTabChange(tab: string) {
   activeWorkspaceTab.value = tab
 }
+
+// The AI产出 center tab renders the same outputs panel as the right drawer, so
+// showing both at once is redundant. Auto-collapse the drawer while that tab is
+// active and restore the user's prior drawer state when they leave it.
+let rightPanelOpenBeforeOutputs: boolean | null = null
+watch(activeWorkspaceTab, (tab, prev) => {
+  if (tab === 'outputs' && prev !== 'outputs') {
+    rightPanelOpenBeforeOutputs = rightPanelOpen.value
+    rightPanelOpen.value = false
+  } else if (tab !== 'outputs' && prev === 'outputs' && rightPanelOpenBeforeOutputs !== null) {
+    rightPanelOpen.value = rightPanelOpenBeforeOutputs
+    rightPanelOpenBeforeOutputs = null
+  }
+})
 
 function onEpisodeSelect(episodeId: string) {
   if (episodeId === currentStoryEpisodeId.value) return
