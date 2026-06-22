@@ -57,15 +57,33 @@ function validateReq(token: string | null, projectId: string) {
   )
 }
 
+/** Hit the validate endpoint over the SERVICE channel (x-api-key, no JWT). */
+function validateReqService(projectId: string, apiKey: string = SERVICE_API_KEY) {
+  return app.fetch(
+    new Request(`http://localhost/api/platform/projects/${projectId}/story/validate`, {
+      method: "GET",
+      headers: { "x-api-key": apiKey },
+    }),
+  )
+}
+
+const SERVICE_API_KEY = "test-internal-key"
+
 beforeAll(async () => {
   await setup()
+  process.env.OPENIMAGO_INTERNAL_API_KEY = SERVICE_API_KEY
   app = new Hono()
   app.route("/auth", authRoutes)
-  app.route("/api/platform/projects", projectRoutes)
+  // Mount order mirrors createApp() in src/server/app.ts: storyValidateRoutes
+  // (dual-channel) MUST come before projectRoutes, whose global authMiddleware
+  // would otherwise 401 the x-api-key service channel before the dual-channel
+  // handler runs. This is the openimago-r85e regression guard.
   app.route("/api/platform/projects", storyValidateRoutes)
+  app.route("/api/platform/projects", projectRoutes)
 })
 
 afterAll(async () => {
+  delete process.env.OPENIMAGO_INTERNAL_API_KEY
   await teardown()
 })
 
@@ -93,6 +111,29 @@ test("GET /story/validate is 404 for an unknown project", async () => {
   const token = await registerUser("vmissing", "vmissing@example.com")
   const res = await validateReq(token, "proj_does_not_exist")
   expect(res.status).toBe(404)
+})
+
+// openimago-r85e: the opencode validate_story tool calls this endpoint over the
+// x-api-key SERVICE channel (no JWT). The previous mount order let projectRoutes'
+// authMiddleware 401 it first; storyValidateRoutes must match first so the
+// dual-channel handler runs and the service channel reaches the validator.
+test("GET /story/validate reaches the validator over the x-api-key service channel (no JWT)", async () => {
+  const token = await registerUser("vservice", "vservice@example.com")
+  const project = await createProject(token, "Service Channel")
+
+  const res = await validateReqService(project.id)
+  expect(res.status).toBe(200)
+  const body = (await res.json()) as { validation: { ok: boolean } }
+  // Service channel skips the owner check (trusted caller) and runs the validator.
+  expect(body.validation.ok).toBe(true)
+})
+
+test("GET /story/validate rejects an invalid x-api-key", async () => {
+  const token = await registerUser("vbadkey", "vbadkey@example.com")
+  const project = await createProject(token, "Bad Key")
+
+  const res = await validateReqService(project.id, "wrong-key")
+  expect(res.status).toBe(401)
 })
 
 test("a stamped artifact not referenced by any run surfaces an ORPHAN_ARTIFACT warning", async () => {

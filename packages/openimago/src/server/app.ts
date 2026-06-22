@@ -67,6 +67,11 @@ export function createApp() {
   adminApp.route("/billing", billingAdminRoutes)
   app.route("/api/admin", adminApp)
 
+  // storyValidateRoutes MUST be mounted before projectRoutes: projectRoutes has
+  // a global authMiddleware that would otherwise intercept
+  // /:id/story/validate and 401 the x-api-key service channel (the channel the
+  // opencode validate_story tool uses) before the dual-channel handler runs.
+  app.route("/api/platform/projects", storyValidateRoutes)
   app.route("/api/platform/projects", projectRoutes)
   app.route("/api/platform/projects", projectOutputsRoutes)
   app.route("/api/platform/projects", projectFilesRoutes)
@@ -85,7 +90,6 @@ export function createApp() {
   app.route("/api/platform/billing", billingRoutes)
   app.route("/api/platform/billing", mediaChargeRoutes)
   app.route("/api/platform/projects", storyRoutes)
-  app.route("/api/platform/projects", storyValidateRoutes)
   app.route("/", healthRoutes)
   app.route("/", createProxyRoutes(undefined, subscribe))
 
