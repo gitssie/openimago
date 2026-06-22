@@ -181,7 +181,7 @@ async function seedProject(userId: string, workspaceId: string): Promise<void> {
   const episode = await readFixture("episodes/ep_001.json")
   const workflow = await readFixture("workflow/ep_001.workflow.json")
   // Rewrite the fixture runs' cdn.example.com image URLs (which 404 → broken
-  // thumbnails) to deterministic, reachable picsum URLs before writing them, so
+  // thumbnails) to same-origin /mock/*.svg placeholders before writing them, so
   // the runs.json AND the registered artifacts below share the SAME URLs.
   const runs = rewriteRunImageUrls(await readFixture("runs/ep_001.runs.json"))
 

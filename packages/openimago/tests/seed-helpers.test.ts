@@ -1,8 +1,8 @@
 import { test, expect, describe } from "bun:test"
 import {
   completedRunArtifacts,
-  picsumUrlFor,
   rewriteRunImageUrls,
+  sameOriginPlaceholderFor,
   trimSeriesToPresent,
   withProjectId,
 } from "../scripts/seed-helpers"
@@ -79,32 +79,32 @@ describe("completedRunArtifacts", () => {
   })
 })
 
-describe("picsumUrlFor", () => {
-  test("uses aspect-ratio dimensions and a smaller same-seed thumbnail", () => {
-    const a = picsumUrlFor("wf_x", "16:9")
-    expect(a.preview).toMatch(/^https:\/\/picsum\.photos\/seed\/[a-z0-9]+\/1280\/720$/)
-    // Thumbnail keeps the ratio at 320px wide (720/1280*320 = 180).
-    expect(a.thumbnail).toMatch(/^https:\/\/picsum\.photos\/seed\/[a-z0-9]+\/320\/180$/)
-    // Same seed → preview & thumbnail share the same picsum seed segment.
-    const seedSeg = (u: string) => u.split("/seed/")[1]!.split("/")[0]
-    expect(seedSeg(a.preview)).toBe(seedSeg(a.thumbnail))
+describe("sameOriginPlaceholderFor", () => {
+  test("returns relative same-origin /mock/*.svg by aspect ratio (no external host)", () => {
+    const a = sameOriginPlaceholderFor("16:9")
+    expect(a.preview).toBe("/mock/placeholder-16x9.svg")
+    // Preview and thumbnail share the same scalable SVG.
+    expect(a.thumbnail).toBe(a.preview)
+    // Relative same-origin — never an external host.
+    expect(a.preview.startsWith("/")).toBe(true)
+    expect(a.preview).not.toContain("://")
   })
 
-  test("maps 3:4 and 2:3 ratios; defaults to 16:9", () => {
-    expect(picsumUrlFor("s", "3:4").preview).toContain("/600/800")
-    expect(picsumUrlFor("s", "2:3").preview).toContain("/600/900")
-    expect(picsumUrlFor("s").preview).toContain("/1280/720")
-    expect(picsumUrlFor("s", "weird").preview).toContain("/1280/720")
+  test("maps each known aspect ratio; defaults to 16:9", () => {
+    expect(sameOriginPlaceholderFor("3:4").preview).toBe("/mock/placeholder-3x4.svg")
+    expect(sameOriginPlaceholderFor("2:3").preview).toBe("/mock/placeholder-2x3.svg")
+    expect(sameOriginPlaceholderFor("1:1").preview).toBe("/mock/placeholder-1x1.svg")
+    expect(sameOriginPlaceholderFor().preview).toBe("/mock/placeholder-16x9.svg")
+    expect(sameOriginPlaceholderFor("weird").preview).toBe("/mock/placeholder-16x9.svg")
   })
 
-  test("is deterministic and distinct per seed", () => {
-    expect(picsumUrlFor("a", "16:9").preview).toBe(picsumUrlFor("a", "16:9").preview)
-    expect(picsumUrlFor("a", "16:9").preview).not.toBe(picsumUrlFor("b", "16:9").preview)
+  test("is deterministic regardless of seed", () => {
+    expect(sameOriginPlaceholderFor("16:9", "a").preview).toBe(sameOriginPlaceholderFor("16:9", "b").preview)
   })
 })
 
 describe("rewriteRunImageUrls", () => {
-  test("replaces completed image runs' access URLs with picsum, by artifactId + aspectRatio", () => {
+  test("replaces completed image runs' access URLs with same-origin placeholders by aspectRatio", () => {
     const doc = {
       runs: [
         {
@@ -122,9 +122,10 @@ describe("rewriteRunImageUrls", () => {
     }
     const out = rewriteRunImageUrls(doc)
     const r0 = (out.runs as any[])[0]
-    expect(r0.result.access.preview).toBe(picsumUrlFor("wf_kai", "3:4").preview)
-    expect(r0.result.access.thumbnail).toBe(picsumUrlFor("wf_kai", "3:4").thumbnail)
+    expect(r0.result.access.preview).toBe("/mock/placeholder-3x4.svg")
+    expect(r0.result.access.thumbnail).toBe("/mock/placeholder-3x4.svg")
     expect(r0.result.access.preview).not.toContain("cdn.example.com")
+    expect(r0.result.access.preview).not.toContain("://")
     // Non-completed run is left as-is.
     expect((out.runs as any[])[1].status).toBe("running")
     // Input not mutated.

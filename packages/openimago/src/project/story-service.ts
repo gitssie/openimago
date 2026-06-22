@@ -54,9 +54,29 @@ function stableHash(input: string): number {
   return h >>> 0
 }
 
-/** Browser-loadable picsum.photos URL seeded from a stable hash of `seed`. */
+/**
+ * Same-origin placeholder image URLs committed under packages/web/public/mock/
+ * (Quasar serves public/<name> at /<name>). External image hosts (picsum, CDNs)
+ * are NOT reachable in the user's network, so — like the mock VIDEO
+ * (MOCK_VIDEO_SAMPLE_URL) — generated mock images must be relative same-origin
+ * URLs that need no internet. SVG renders directly in <img>.
+ */
+const MOCK_IMAGE_PLACEHOLDERS = [
+  "/mock/placeholder-16x9.svg",
+  "/mock/placeholder-3x4.svg",
+  "/mock/placeholder-2x3.svg",
+  "/mock/placeholder-1x1.svg",
+] as const
+
+/**
+ * Browser-loadable mock image URL. Deterministic: a stable hash of `seed`
+ * selects one of the committed same-origin placeholders, so the same shot
+ * always maps to the same image while different shots vary. Relative URL →
+ * resolved against the web app's own origin (no external network).
+ */
 function mockImageUrl(seed: string): string {
-  return `https://picsum.photos/seed/${stableHash(seed).toString(36)}/1024/1024`
+  const idx = stableHash(seed) % MOCK_IMAGE_PLACEHOLDERS.length
+  return MOCK_IMAGE_PLACEHOLDERS[idx]!
 }
 
 /**

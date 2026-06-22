@@ -14,60 +14,50 @@ export function withProjectId(doc: JsonObject, projectId: string): JsonObject {
   return { ...doc, projectId }
 }
 
-// ── Deterministic picsum image URLs ───────────────────────────────────────────
+// ── Same-origin placeholder image URLs ────────────────────────────────────────
+//
+// External image hosts (picsum, cdn.example.com) are NOT reachable in the
+// user's network (China egress times out). Use RELATIVE same-origin SVG
+// placeholders committed under packages/web/public/mock/, exactly like the mock
+// VIDEO does (story-service.ts MOCK_VIDEO_SAMPLE_URL = "/mock-clip.mp4"). Quasar
+// serves public/<name> at /<name>, so the browser resolves these against its
+// own origin — no internet required. The same SVG scales in <img> for both the
+// preview and the thumbnail.
 
-/** Stable, positive 32-bit FNV-1a hash (mirrors story-service.ts's mock seed). */
-function stableHash(input: string): number {
-  let h = 0x811c9dc5
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i)
-    h = Math.imul(h, 0x01000193)
-  }
-  return h >>> 0
+/** Aspect ratio → committed placeholder SVG under web/public/mock/. */
+const PLACEHOLDER_BY_ASPECT: Record<string, string> = {
+  "16:9": "/mock/placeholder-16x9.svg",
+  "3:4": "/mock/placeholder-3x4.svg",
+  "2:3": "/mock/placeholder-2x3.svg",
+  "1:1": "/mock/placeholder-1x1.svg",
 }
+const DEFAULT_PLACEHOLDER = "/mock/placeholder-16x9.svg"
 
-/** Full-size dimensions per aspect ratio; default 16:9 (1280x720). */
-const ASPECT_DIMENSIONS: Record<string, { w: number; h: number }> = {
-  "16:9": { w: 1280, h: 720 },
-  "3:4": { w: 600, h: 800 },
-  "2:3": { w: 600, h: 900 },
-}
-const DEFAULT_DIMENSIONS = { w: 1280, h: 720 }
-/** Thumbnail target width (px); height scales to keep the aspect ratio. */
-const THUMB_WIDTH = 320
-
-export interface PicsumUrls {
+export interface PlaceholderUrls {
   preview: string
   thumbnail: string
 }
 
 /**
- * Deterministic, publicly-reachable picsum.photos image URLs for a seeded
- * artifact. The seed (artifactId/shotId) maps to a stable picsum seed so each
- * shot gets a distinct image that is identical across re-runs; the thumbnail
- * uses the SAME seed at ~320px so it shows the same picture, smaller.
- *
- * Mirrors the existing mock convention in story-service.ts (picsum.photos/seed
- * /<hash36>/W/H). Dimensions follow the aspect ratio (16:9 → 1280x720,
- * 3:4 → 600x800, 2:3 → 600x900; default 16:9).
+ * Deterministic same-origin placeholder image URLs for a seeded artifact,
+ * chosen by aspect ratio (16:9 / 3:4 / 2:3 / 1:1; default 16:9). The SVG is a
+ * labeled gradient box that renders in <img> with no network. `seed` is
+ * accepted for API symmetry / future per-shot variants but does not change the
+ * URL — the placeholder is shared per aspect ratio, which is enough to make the
+ * storyboard look populated without external assets. preview and thumbnail are
+ * the same scalable SVG.
  */
-export function picsumUrlFor(seed: string, aspectRatio?: string): PicsumUrls {
-  const dims = (aspectRatio && ASPECT_DIMENSIONS[aspectRatio]) || DEFAULT_DIMENSIONS
-  const seedHash = stableHash(seed).toString(36)
-  const thumbW = THUMB_WIDTH
-  const thumbH = Math.max(1, Math.round((dims.h / dims.w) * thumbW))
-  return {
-    preview: `https://picsum.photos/seed/${seedHash}/${dims.w}/${dims.h}`,
-    thumbnail: `https://picsum.photos/seed/${seedHash}/${thumbW}/${thumbH}`,
-  }
+export function sameOriginPlaceholderFor(aspectRatio?: string, _seed?: string): PlaceholderUrls {
+  const url = (aspectRatio && PLACEHOLDER_BY_ASPECT[aspectRatio]) || DEFAULT_PLACEHOLDER
+  return { preview: url, thumbnail: url }
 }
 
 /**
- * Rewrite every COMPLETED run's `result.access.{preview,thumbnail}` in a runs
- * doc to deterministic picsum URLs (the fixtures point at cdn.example.com, which
- * 404s → broken thumbnails). The picsum seed is the run's artifactId and the
- * dimensions follow its params.aspectRatio. Returns a NEW doc; the input is not
- * mutated. Non-completed runs and runs without a result are left untouched.
+ * Rewrite every COMPLETED image run's `result.access.{preview,thumbnail}` in a
+ * runs doc to same-origin placeholder URLs (the fixtures point at
+ * cdn.example.com, which 404s → broken thumbnails). The placeholder is chosen by
+ * the run's params.aspectRatio. Returns a NEW doc; the input is not mutated.
+ * Non-completed runs and non-image runs are left untouched.
  */
 export function rewriteRunImageUrls(runsDoc: JsonObject): JsonObject {
   const runs = Array.isArray(runsDoc.runs) ? runsDoc.runs : []
@@ -83,7 +73,7 @@ export function rewriteRunImageUrls(runsDoc: JsonObject): JsonObject {
 
     const params = typeof r.params === "object" && r.params !== null ? (r.params as JsonObject) : {}
     const aspectRatio = typeof params.aspectRatio === "string" ? params.aspectRatio : undefined
-    const urls = picsumUrlFor(artifactId, aspectRatio)
+    const urls = sameOriginPlaceholderFor(aspectRatio, artifactId)
     return {
       ...r,
       result: { ...result, access: { preview: urls.preview, thumbnail: urls.thumbnail } },
