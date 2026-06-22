@@ -270,7 +270,6 @@ function formatRunTime(startedAt: string): string {
   display: flex;
   flex-direction: column;
   gap: 26px;
-  scrollbar-width: thin;
 }
 
 // ── Section heading (shared) ──────────────────────────────────────────────────

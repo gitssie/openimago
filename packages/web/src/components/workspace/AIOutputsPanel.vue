@@ -367,7 +367,6 @@ function kindLabel(kind: AIOutputItem['kind']): string {
   overflow-y: auto;
   flex: 1 1 auto;
   min-height: 0;
-  scrollbar-width: thin;
 }
 
 .ai-outputs__list--grid {

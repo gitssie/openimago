@@ -353,7 +353,6 @@ function episodeStatusLabel(status: StoryEpisodeSummary['status']): string {
   display: flex;
   flex-direction: column;
   gap: 26px;
-  scrollbar-width: thin;
 }
 
 // ── Panel-level empty state ───────────────────────────────────────────────────

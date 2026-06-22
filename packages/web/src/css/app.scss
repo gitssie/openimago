@@ -46,6 +46,10 @@
   --imago-border-cyan-active: rgba(0, 240, 255, 0.40);
   --imago-border-purple:      rgba(168, 85, 247, 0.06);
 
+  /* ── Scrollbars (see §9) ─────────────────────── */
+  --imago-scrollbar-thumb:       rgba(168, 85, 247, 0.12);
+  --imago-scrollbar-thumb-hover: rgba(168, 85, 247, 0.25);
+
   /* ── Opacity scales — repeated accent fills ──── */
   --imago-cyan-04:  rgba(0, 240, 255, 0.04);
   --imago-cyan-06:  rgba(0, 240, 255, 0.06);
@@ -537,19 +541,27 @@ input:-webkit-autofill {
 
 // -----------------------------------------------------------------
 // §9  SCROLLBARS
-//    WebKit scrollbar customization — subtle purple thumb.
+//    One global, token-driven scrollbar style — subtle purple thumb.
+//    WebKit gets the pseudo-element rules; Firefox gets parity via
+//    scrollbar-width/scrollbar-color on html (both inherit + cascade).
+//    Components should NOT override this; just let it inherit.
 // -----------------------------------------------------------------
+
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--imago-scrollbar-thumb) transparent;
+}
 
 ::-webkit-scrollbar { width: 5px; }
 
 ::-webkit-scrollbar-track { background: transparent; }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(168, 85, 247, 0.12);
+  background: var(--imago-scrollbar-thumb);
   border-radius: 10px;
 }
 
-::-webkit-scrollbar-thumb:hover { background: rgba(168, 85, 247, 0.25); }
+::-webkit-scrollbar-thumb:hover { background: var(--imago-scrollbar-thumb-hover); }
 
 
 // -----------------------------------------------------------------
