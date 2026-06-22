@@ -315,8 +315,8 @@ async function rejectAll() {
 .agent-question-dock--inline {
   position: relative;
   width: 100%;
-  max-width: none;
-  margin: 0;
+  max-width: 760px;
+  margin: 0 auto;
 }
 
 .question-header {
