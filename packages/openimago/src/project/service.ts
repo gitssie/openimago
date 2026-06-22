@@ -102,8 +102,11 @@ export class ProjectService {
   /**
    * Scaffold AI-readable project files in the project directory.
    * Skips any file that already exists (no overwrite).
+   *
+   * Public so the seed script can reuse the exact AGENTS.md + manifest
+   * scaffolding (then overwrite the story/*.json with fixtures).
    */
-  private async scaffoldProjectFiles(
+  async scaffoldProjectFiles(
     projectId: string,
     projectName: string,
     directory: string,
