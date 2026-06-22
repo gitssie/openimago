@@ -9,6 +9,13 @@ describe("tool registry", () => {
     expect(registry.imago_status.description).toContain("diagnostic")
   })
 
+  test("registers validate_story story-graph validator tool", () => {
+    const registry = createToolRegistry()
+
+    expect(registry.validate_story).toBeDefined()
+    expect(registry.validate_story.description).toContain("story")
+  })
+
   test("registers image_generate media tool with contract prefix", () => {
     const registry = createToolRegistry()
 
@@ -28,10 +35,11 @@ describe("tool registry", () => {
     const names = Object.keys(registry)
 
     expect(names).toContain("imago_status")
+    expect(names).toContain("validate_story")
     expect(names).toContain("image_generate")
     expect(names).toContain("video_generate")
     expect(names).toContain("audio_generate")
-    expect(names.length).toBe(4)
+    expect(names.length).toBe(5)
 
     // No legacy imago_generate_* names remain — they would not match the
     // frontend's image_*/video_*/audio_* media detection.

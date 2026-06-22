@@ -1,5 +1,6 @@
 import type { ToolDefinition } from "@opencode-ai/plugin"
 import { createImagoStatusTool } from "./diagnostics/imago-status.js"
+import { createValidateStoryTool } from "./diagnostics/validate-story.js"
 import { createGenerateImageTool } from "./media/generate-image.js"
 import { createGenerateVideoTool } from "./media/generate-video.js"
 import { createGenerateAudioTool } from "./media/generate-audio.js"
@@ -26,6 +27,9 @@ export function createToolRegistry(): Record<string, ToolDefinition> {
   return {
     /** Diagnostic tool — reports workspace context and plugin health */
     imago_status: createImagoStatusTool(),
+
+    /** Story-graph validator — a "typecheck" for bible/series/episodes/workflow/runs */
+    validate_story: createValidateStoryTool(),
 
     /** Image generation tool — text-to-image via Effect IOC media chain */
     image_generate: createGenerateImageTool(),

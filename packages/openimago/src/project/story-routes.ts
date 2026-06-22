@@ -1,10 +1,42 @@
 import { Hono } from "hono"
 import { authMiddleware } from "../server/middleware"
+import { hasServiceApiKey, validateServiceApiKey } from "../server/service-auth"
 import { storyService } from "./story-service"
+import { storyValidationService } from "./story-validation-service"
 
 export const storyRoutes = new Hono()
 
 storyRoutes.use("/*", authMiddleware)
+
+// ── Story validation (dual-channel auth) ──────────────────────────────────────
+//
+// GET /api/platform/projects/:id/story/validate — full story-graph "typecheck".
+// Mounted as its OWN Hono app (separate from storyRoutes' JWT-only middleware)
+// so the opencode plugin can reach it over the trusted service channel:
+//   - Service channel: x-api-key (OPENIMAGO_INTERNAL_API_KEY) → owner check skipped.
+//   - User channel: Authorization: Bearer <jwt> → project ownership enforced.
+export const storyValidateRoutes = new Hono()
+
+storyValidateRoutes.use("/*", async (c, next) => {
+  if (hasServiceApiKey(c)) {
+    const authError = validateServiceApiKey(c)
+    if (authError) return authError
+    return next()
+  }
+  return authMiddleware(c, next)
+})
+
+storyValidateRoutes.get("/:id/story/validate", async (c) => {
+  const projectId = c.req.param("id")
+  // Service channel has no JWT identity → null skips the ownership check.
+  const userId = hasServiceApiKey(c) ? null : (c.get("userId") as string)
+
+  const result = await storyValidationService.validate(projectId, userId)
+  if ("error" in result) {
+    return c.json({ error: result.error }, result.status as any)
+  }
+  return c.json({ validation: result.report })
+})
 
 // GET /api/platform/projects/:id/story/manifest
 storyRoutes.get("/:id/story/manifest", async (c) => {
