@@ -163,8 +163,21 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
 
     // Scope to a single project when requested. All of a user's projects share
     // one workspace, so without this the list leaks sessions across projects.
+    // We CANNOT filter by SessionTable.project_id: opencode's session writer
+    // always stores project_id = "global", so the proxy never sees a per-project
+    // value there. Instead resolve the project's persistent directory (which
+    // project sessions are created in — see the POST handler) and filter on it.
     const requestedProject = filters.projectId ?? filters.project_id
-    if (requestedProject) conditions.push(eq(SessionTable.project_id, requestedProject))
+    if (requestedProject) {
+      const [project] = await db
+        .select({ directory: projects.directory })
+        .from(projects)
+        .where(and(eq(projects.id, String(requestedProject)), eq(projects.userId, userId)))
+        .limit(1)
+      // Unknown / unowned project → no sessions to show.
+      if (!project) return c.json([])
+      conditions.push(eq(SessionTable.directory, project.directory))
+    }
 
     if (filters.directory) conditions.push(eq(SessionTable.directory, filters.directory))
     if (filters.path) conditions.push(or(eq(SessionTable.path, filters.path), like(SessionTable.path, `${filters.path}/%`))!)
