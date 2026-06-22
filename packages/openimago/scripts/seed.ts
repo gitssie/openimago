@@ -24,6 +24,7 @@ import { authId } from "../src/utils/ids"
 import { logger } from "../src/server/logger"
 import {
   completedRunArtifacts,
+  rewriteRunImageUrls,
   trimSeriesToPresent,
   withProjectId,
   type JsonObject,
@@ -179,7 +180,10 @@ async function seedProject(userId: string, workspaceId: string): Promise<void> {
   const seriesRaw = withProjectId(await readFixture("series.json"), SEED_PROJECT_ID)
   const episode = await readFixture("episodes/ep_001.json")
   const workflow = await readFixture("workflow/ep_001.workflow.json")
-  const runs = await readFixture("runs/ep_001.runs.json")
+  // Rewrite the fixture runs' cdn.example.com image URLs (which 404 → broken
+  // thumbnails) to deterministic, reachable picsum URLs before writing them, so
+  // the runs.json AND the registered artifacts below share the SAME URLs.
+  const runs = rewriteRunImageUrls(await readFixture("runs/ep_001.runs.json"))
 
   // Only ep_001 files exist → trim the series index to ep_001 so validate_story
   // does not flag MISSING_EPISODE_FILE for ep_002/ep_003.
