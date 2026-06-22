@@ -100,14 +100,35 @@ export class StoryValidationService {
     const stampedArtifacts: StampedArtifact[] = []
     for (const row of rows) {
       knownArtifactIds.add(row.id)
-      const meta = (row.metadata ?? {}) as Record<string, unknown>
-      const shotId = typeof meta["shotId"] === "string" ? meta["shotId"] : null
-      const nodeId = typeof meta["nodeId"] === "string" ? meta["nodeId"] : null
-      if (shotId !== null || nodeId !== null) {
-        stampedArtifacts.push({ artifactId: row.id, shotId, nodeId })
+      const stamp = this.readStamp((row.metadata ?? {}) as Record<string, unknown>)
+      if (stamp.shotId !== null || stamp.nodeId !== null) {
+        stampedArtifacts.push({ artifactId: row.id, shotId: stamp.shotId, nodeId: stamp.nodeId })
       }
     }
     return { knownArtifactIds, stampedArtifacts }
+  }
+
+  /**
+   * Extract the story-graph stamp (shotId/nodeId) from an artifact's metadata.
+   * The generate-image tool passes provenance as inputArgs, which the
+   * workspace-files service stores under metadata.genRun.inputArgs. Falls back
+   * to a top-level metadata stamp for robustness.
+   */
+  private readStamp(meta: Record<string, unknown>): { shotId: string | null; nodeId: string | null } {
+    const pick = (src: Record<string, unknown>, key: string): string | null =>
+      typeof src[key] === "string" ? (src[key] as string) : null
+
+    const genRun = meta["genRun"]
+    if (typeof genRun === "object" && genRun !== null) {
+      const inputArgs = (genRun as Record<string, unknown>)["inputArgs"]
+      if (typeof inputArgs === "object" && inputArgs !== null) {
+        const ia = inputArgs as Record<string, unknown>
+        const shotId = pick(ia, "shotId")
+        const nodeId = pick(ia, "nodeId")
+        if (shotId !== null || nodeId !== null) return { shotId, nodeId }
+      }
+    }
+    return { shotId: pick(meta, "shotId"), nodeId: pick(meta, "nodeId") }
   }
 
   /** Episode ids declared by series.json (used to enumerate episode files). */

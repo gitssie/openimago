@@ -52,10 +52,41 @@ export function createGenerateImageTool(): ToolDefinition {
         .string()
         .optional()
         .describe("Workspace directory for billing context"),
+      // ── Story-graph provenance (ADR 0004) ──────────────────────────────────
+      // When generating an asset for a story shot/concept, pass these so the
+      // artifact is stamped with its place in the story graph. validate_story
+      // uses the stamp to flag orphan artifacts (generated for a shot/node but
+      // never referenced by a GenerationRun). The Agent still authors
+      // workflow.json/runs.json itself — this only records provenance.
+      projectId: tool.schema
+        .string()
+        .optional()
+        .describe("Story project id (for artifact provenance)"),
+      episodeId: tool.schema
+        .string()
+        .optional()
+        .describe("Story episode id, e.g. ep_001 (for artifact provenance)"),
+      shotId: tool.schema
+        .string()
+        .optional()
+        .describe("Episode shot id this asset belongs to (for artifact provenance)"),
+      nodeId: tool.schema
+        .string()
+        .optional()
+        .describe("Workflow node id that produced this asset (for artifact provenance)"),
     },
     async execute(args, ctx) {
       const sessionId = args.sessionId ?? ctx.sessionID
       const model = args.model ?? "mock-image-model"
+
+      // Story-graph provenance: only the fields the caller actually supplied,
+      // so artifacts without story context carry no (empty) inputArgs stamp.
+      const inputArgs: Record<string, unknown> = {}
+      if (args.projectId) inputArgs.projectId = args.projectId
+      if (args.episodeId) inputArgs.episodeId = args.episodeId
+      if (args.shotId) inputArgs.shotId = args.shotId
+      if (args.nodeId) inputArgs.nodeId = args.nodeId
+      const hasProvenance = Object.keys(inputArgs).length > 0
 
       const effect = Effect.gen(function* () {
         const svc = yield* MediaGenerationService
@@ -83,6 +114,7 @@ export function createGenerateImageTool(): ToolDefinition {
           ...(provider ? { provider } : {}),
           model,
           metadata: { aspectRatio: args.aspectRatio },
+          ...(hasProvenance ? { inputArgs } : {}),
         })
 
         return buildMediaToolOutput({

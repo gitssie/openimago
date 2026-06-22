@@ -352,6 +352,13 @@ test("project creation scaffolds AGENTS.md", async () => {
   expect(agentsContent).toContain("Canonical Layout")
   expect(agentsContent).toContain("Rules for AI Agents")
   expect(agentsContent).toContain("story/*.json")
+  // Closed-loop guidance (openimago-1mcx): DAG → generate WITH shot/node →
+  // append GenerationRun → validate_story until green.
+  expect(agentsContent).toContain("Generation Closed Loop")
+  expect(agentsContent).toContain("image_generate")
+  expect(agentsContent).toContain("validate_story")
+  expect(agentsContent).toContain("GenerationRun")
+  expect(agentsContent).toContain('"nodeId": "n01-char-kai-concept"')
 })
 
 // ---------------------------------------------------------------------------

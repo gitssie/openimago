@@ -95,6 +95,42 @@ describe("image_generate tool execution", () => {
     expect(lastRegisterBody?.sessionId).toBe("test-session")
     expect(lastRegisterBody?.kind).toBe("image")
   })
+
+  test("stamps shot/node provenance into inputArgs when provided", async () => {
+    const { createGenerateImageTool } = await import(
+      "../src/tools/media/generate-image.ts"
+    )
+
+    const tool = createGenerateImageTool()
+    await tool.execute(
+      {
+        prompt: "kai concept",
+        projectId: "proj_abc",
+        episodeId: "ep_001",
+        shotId: "s01-opening",
+        nodeId: "n07-shot-s01-opening",
+      } as any,
+      mockToolContext,
+    )
+
+    const inputArgs = lastRegisterBody?.inputArgs as Record<string, unknown> | undefined
+    expect(inputArgs).toBeDefined()
+    expect(inputArgs?.projectId).toBe("proj_abc")
+    expect(inputArgs?.episodeId).toBe("ep_001")
+    expect(inputArgs?.shotId).toBe("s01-opening")
+    expect(inputArgs?.nodeId).toBe("n07-shot-s01-opening")
+  })
+
+  test("omits inputArgs entirely when no provenance is provided", async () => {
+    const { createGenerateImageTool } = await import(
+      "../src/tools/media/generate-image.ts"
+    )
+
+    const tool = createGenerateImageTool()
+    await tool.execute({ prompt: "no provenance" } as any, mockToolContext)
+
+    expect(lastRegisterBody?.inputArgs).toBeUndefined()
+  })
 })
 
 describe("video_generate tool execution", () => {

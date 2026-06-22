@@ -63,6 +63,13 @@ export interface RegisterWorkspaceFileInput {
   provider?: string
   model?: string
   metadata?: Record<string, unknown>
+  /**
+   * Tool-call input arguments persisted as generation-run provenance. The
+   * backend stores these under metadata.genRun.inputArgs (workspace-files
+   * service), which validate_story reads to detect orphan artifacts (media
+   * generated for a shot/node but never referenced by a run).
+   */
+  inputArgs?: Record<string, unknown>
 }
 
 /** Successful registration result. */
