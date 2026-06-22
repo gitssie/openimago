@@ -195,6 +195,14 @@
             @clip-delete="onClipDelete"
             @clip-add-to-chat="onClipAddToChat"
           />
+
+          <!-- 时间线 tab, no episode selected → empty-state guidance -->
+          <StoryTimelineEmpty
+            v-else-if="activeWorkspaceTab === 'timeline'"
+            class="project-workspace-page__story-view"
+            :has-episodes="storyEpisodeSummaries.length > 0"
+            @go-to-overview="onWorkspaceTabChange('overview')"
+          />
         </UILayoutPage>
       </UILayoutPageContainer>
 
@@ -311,6 +319,7 @@ import { workspaceFileToAIOutputItem } from 'src/utils/session-output-mapper'
 import { formatRelativeTime } from 'src/utils/format-time'
 import StoryOverviewPanel from 'src/components/session-workspace/StoryOverviewPanel.vue'
 import StoryCutPanel from 'src/components/session-workspace/StoryCutPanel.vue'
+import StoryTimelineEmpty from 'src/components/session-workspace/StoryTimelineEmpty.vue'
 import type { EpisodeCut } from 'src/utils/cut/cut-types'
 import { rawCutToEpisodeCut } from 'src/utils/cut/cut-api-mapper'
 import { dispatchCutEdit } from 'src/utils/cut/cut-edit-dispatcher'
