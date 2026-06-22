@@ -49,6 +49,8 @@ services:
       - TZ=Asia/Shanghai
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       - OPENCODE_DB_URL=${OPENCODE_DB_URL:-postgresql://postgres:my-secret-pw@db:5432/opencode_test}
+      - OPENIMAGO_BACKEND_URL=http://backend:5467
+      - OPENIMAGO_BACKEND_API_KEY=${OPENIMAGO_INTERNAL_API_KEY}
     ports:
       - "4096:4096"
     networks:
@@ -75,6 +77,7 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - OPENCODE_URL=http://opencode:4096
       - COS_BASE_PATH=${COS_BASE_PATH:-/opt/work}
+      - OPENIMAGO_INTERNAL_API_KEY=${OPENIMAGO_INTERNAL_API_KEY}
     ports:
       - "5467:5467"
     networks:
