@@ -3,6 +3,9 @@ import {
   mapElementCards,
   mapShotCards,
   mapAudioCards,
+  mapSelectedPreview,
+  stepPreviewSelection,
+  emptyPreview,
 } from 'src/components/session-workspace/left-panel/mapper'
 import type {
   StoryBibleSummary,
@@ -196,5 +199,120 @@ describe('mapAudioCards', () => {
     ]
     const cards = mapAudioCards(bible({ audioElements: [bgm] }), runs)
     expect(cards[0]!.thumbnails).toEqual(['/mock/wave.svg'])
+  })
+})
+
+// ── selectedPreview (center PreviewPane) ──────────────────────────────────────
+
+const bgmEl = {
+  id: 'bgm-neon-pulse',
+  displayName: 'Neon Pulse',
+  kind: 'bgm' as const,
+  description: 'Synthwave bed',
+  timingNote: 'Loops',
+  referenceArtifactIds: [],
+}
+
+describe('emptyPreview', () => {
+  it('is a stable empty PreviewVM', () => {
+    expect(emptyPreview()).toEqual({
+      id: '',
+      section: 'element',
+      kind: 'empty',
+      title: '',
+      mediaUrl: null,
+      hasPrev: false,
+      hasNext: false,
+    })
+  })
+})
+
+describe('mapSelectedPreview', () => {
+  const fullBible = bible({ characters: [kai], scenes: [neonAlley], audioElements: [bgmEl] })
+
+  it('returns empty when nothing is selected', () => {
+    const lists = { elements: [], shots: [], audio: [] }
+    expect(mapSelectedPreview(null, lists, []).kind).toBe('empty')
+  })
+
+  it('maps an element selection to an image preview from its concept run', () => {
+    const runs = [run({ nodeId: 'n01-char-kai-concept', shotId: '', kind: 'image', previewUrl: '/mock/kai.png', model: 'flux-pro' })]
+    const elements = mapElementCards(fullBible, runs)
+    const lists = { elements, shots: [], audio: [] }
+    const vm = mapSelectedPreview({ section: 'element', id: 'kai-the-runner' }, lists, runs)
+    expect(vm).toMatchObject({
+      id: 'kai-the-runner',
+      section: 'element',
+      kind: 'image',
+      title: '凯 (Kai)',
+      mediaUrl: '/mock/kai.png',
+      modelLabel: 'flux-pro',
+    })
+  })
+
+  it('maps a shot selection to a video preview from its completed video run', () => {
+    const runs = [
+      run({ shotId: 's01-opening', kind: 'video', previewUrl: '/mock/s01.mp4', model: 'kling-v2' }),
+      run({ shotId: 's01-opening', kind: 'audio', previewUrl: '/mock/s01.mp3' }),
+    ]
+    const shots = mapShotCards([shot()], fullBible, runs)
+    const lists = { elements: [], shots, audio: [] }
+    const vm = mapSelectedPreview({ section: 'shot', id: 's01-opening' }, lists, runs)
+    expect(vm).toMatchObject({ section: 'shot', kind: 'video', mediaUrl: '/mock/s01.mp4', modelLabel: 'kling-v2' })
+  })
+
+  it('maps an audio selection to an audio preview from a global audio run', () => {
+    const runs = [run({ nodeId: 'n15-bgm-neon-pulse', shotId: '', kind: 'audio', previewUrl: '/mock/bgm.mp3' })]
+    const audio = mapAudioCards(fullBible, runs)
+    const lists = { elements: [], shots: [], audio }
+    const vm = mapSelectedPreview({ section: 'audio', id: 'bgm-neon-pulse' }, lists, runs)
+    expect(vm).toMatchObject({ section: 'audio', kind: 'audio', mediaUrl: '/mock/bgm.mp3' })
+  })
+
+  it('still resolves title/kind with a null media url when no run matches', () => {
+    const elements = mapElementCards(fullBible, [])
+    const lists = { elements, shots: [], audio: [] }
+    const vm = mapSelectedPreview({ section: 'element', id: 'kai-the-runner' }, lists, [])
+    expect(vm).toMatchObject({ kind: 'image', mediaUrl: null, title: '凯 (Kai)' })
+  })
+
+  it('computes hasPrev/hasNext within the active section list', () => {
+    const elements = mapElementCards(fullBible, []) // [kai, neon-alley]
+    const lists = { elements, shots: [], audio: [] }
+    const first = mapSelectedPreview({ section: 'element', id: 'kai-the-runner' }, lists, [])
+    expect(first.hasPrev).toBe(false)
+    expect(first.hasNext).toBe(true)
+    const last = mapSelectedPreview({ section: 'element', id: 'neon-alley' }, lists, [])
+    expect(last.hasPrev).toBe(true)
+    expect(last.hasNext).toBe(false)
+  })
+
+  it('returns empty when the selected id is not in its section list', () => {
+    const lists = { elements: mapElementCards(fullBible, []), shots: [], audio: [] }
+    expect(mapSelectedPreview({ section: 'element', id: 'ghost' }, lists, []).kind).toBe('empty')
+  })
+})
+
+describe('stepPreviewSelection', () => {
+  const fullBible = bible({ characters: [kai], scenes: [neonAlley] })
+  const lists = { elements: mapElementCards(fullBible, []), shots: [], audio: [] }
+
+  it('steps to the next item in the same section', () => {
+    expect(stepPreviewSelection({ section: 'element', id: 'kai-the-runner' }, 'next', lists)).toEqual({
+      section: 'element',
+      id: 'neon-alley',
+    })
+  })
+
+  it('steps to the previous item in the same section', () => {
+    expect(stepPreviewSelection({ section: 'element', id: 'neon-alley' }, 'prev', lists)).toEqual({
+      section: 'element',
+      id: 'kai-the-runner',
+    })
+  })
+
+  it('clamps at the ends (returns null when stepping past the edge)', () => {
+    expect(stepPreviewSelection({ section: 'element', id: 'kai-the-runner' }, 'prev', lists)).toBeNull()
+    expect(stepPreviewSelection({ section: 'element', id: 'neon-alley' }, 'next', lists)).toBeNull()
   })
 })

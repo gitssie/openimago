@@ -30,6 +30,7 @@ import type {
   ShotCardVM,
   ShotMediaThumb,
 } from './types'
+import type { PreviewVM, PreviewKind } from '../PreviewPane.vue'
 
 /** Slug tokens of length >= 3 (drops filler like "the"/"a" only by length). */
 function slugTokens(id: string): string[] {
@@ -42,13 +43,17 @@ function slugTokens(id: string): string[] {
 /**
  * Does a completed run of the wanted media kind link to `elementId` via the
  * node-id naming convention? True when the run's nodeId contains any meaningful
- * token of the element id.
+ * token of the element id. URL-agnostic — callers gate on thumbnail/preview.
  */
-function runMatchesElement(run: StoryRunSummary, elementId: string, wantKind: 'image' | 'audio'): boolean {
+function runNodeMatchesElement(run: StoryRunSummary, elementId: string, wantKind: 'image' | 'audio'): boolean {
   if (run.status !== 'completed' || run.kind !== wantKind) return false
-  if (!run.thumbnailUrl) return false
   const node = run.nodeId.toLowerCase()
   return slugTokens(elementId).some((t) => node.includes(t))
+}
+
+/** As runNodeMatchesElement, additionally requiring a thumbnail URL. */
+function runMatchesElement(run: StoryRunSummary, elementId: string, wantKind: 'image' | 'audio'): boolean {
+  return Boolean(run.thumbnailUrl) && runNodeMatchesElement(run, elementId, wantKind)
 }
 
 /**
@@ -163,4 +168,130 @@ function audioElementToCard(el: StoryAudioElementSummary, runs: StoryRunSummary[
 
 export function mapAudioCards(bible: StoryBibleSummary, runs: StoryRunSummary[]): AudioCardVM[] {
   return bible.audioElements.map((el) => audioElementToCard(el, runs))
+}
+
+// ── 中央预览 (PreviewPane) ─────────────────────────────────────────────────────
+//
+// The center PreviewPane is selection-driven: a {section,id} picks one card from
+// one of the three left lists and shows its big media. Media URL derivation lives
+// here (pure) so the page only owns the selection ref.
+
+/** Which left section a selection points at (mirrors PreviewVM.section). */
+export type PreviewSection = 'element' | 'shot' | 'audio'
+
+/** A cross-section selection: which list, and which card id within it. */
+export interface PreviewSelection {
+  section: PreviewSection
+  id: string
+}
+
+/** The three ordered card lists the PreviewPane steps through. */
+export interface PreviewLists {
+  elements: ElementCardVM[]
+  shots: ShotCardVM[]
+  audio: AudioCardVM[]
+}
+
+/** The canonical empty preview (nothing selected). */
+export function emptyPreview(): PreviewVM {
+  return { id: '', section: 'element', kind: 'empty', title: '', mediaUrl: null, hasPrev: false, hasNext: false }
+}
+
+/** The ordered id list for a section (for prev/next + index lookup). */
+function sectionIds(section: PreviewSection, lists: PreviewLists): string[] {
+  if (section === 'shot') return lists.shots.map((s) => s.id)
+  if (section === 'audio') return lists.audio.map((a) => a.id)
+  return lists.elements.map((e) => e.id)
+}
+
+/** First completed run of `wantKind` that matches a concept/global element id. */
+function elementPreviewRun(
+  elementId: string,
+  runs: StoryRunSummary[],
+  wantKind: 'image' | 'audio',
+): StoryRunSummary | undefined {
+  return runs.find(
+    (run) => !run.shotId && run.previewUrl && runNodeMatchesElement(run, elementId, wantKind),
+  )
+}
+
+/** First completed run of `wantKind` for a specific shot. */
+function shotPreviewRun(
+  shotId: string,
+  runs: StoryRunSummary[],
+  wantKind: 'video' | 'audio',
+): StoryRunSummary | undefined {
+  return runs.find(
+    (run) => run.shotId === shotId && run.status === 'completed' && run.previewUrl && run.kind === wantKind,
+  )
+}
+
+/** Build the media half of a PreviewVM (kind + url + optional model label). */
+function previewMedia(
+  selection: PreviewSelection,
+  runs: StoryRunSummary[],
+): { kind: PreviewKind; mediaUrl: string | null; modelLabel?: string } {
+  if (selection.section === 'element') {
+    const run = elementPreviewRun(selection.id, runs, 'image')
+    return { kind: 'image', mediaUrl: run?.previewUrl ?? null, ...(run?.model ? { modelLabel: run.model } : {}) }
+  }
+  if (selection.section === 'shot') {
+    const run = shotPreviewRun(selection.id, runs, 'video')
+    return { kind: 'video', mediaUrl: run?.previewUrl ?? null, ...(run?.model ? { modelLabel: run.model } : {}) }
+  }
+  // audio: prefer a global (shotId-null) audio run for this element.
+  const run = elementPreviewRun(selection.id, runs, 'audio')
+  return { kind: 'audio', mediaUrl: run?.previewUrl ?? null, ...(run?.model ? { modelLabel: run.model } : {}) }
+}
+
+/** Human title for the selected card across the three sections. */
+function selectionTitle(selection: PreviewSelection, lists: PreviewLists): string | undefined {
+  if (selection.section === 'shot') return lists.shots.find((s) => s.id === selection.id)?.title
+  if (selection.section === 'audio') return lists.audio.find((a) => a.id === selection.id)?.title
+  return lists.elements.find((e) => e.id === selection.id)?.title
+}
+
+/**
+ * Project the current {section,id} selection into a PreviewVM for the center
+ * PreviewPane. Returns the empty preview when nothing is selected or the id is
+ * not present in its section list. Media url is best-effort (null when no run
+ * matches); title/kind/nav still resolve so the pane renders the chrome.
+ */
+export function mapSelectedPreview(
+  selection: PreviewSelection | null,
+  lists: PreviewLists,
+  runs: StoryRunSummary[],
+): PreviewVM {
+  if (!selection) return emptyPreview()
+  const ids = sectionIds(selection.section, lists)
+  const idx = ids.indexOf(selection.id)
+  if (idx < 0) return emptyPreview()
+
+  const title = selectionTitle(selection, lists) ?? selection.id
+  const media = previewMedia(selection, runs)
+  return {
+    id: selection.id,
+    section: selection.section,
+    title,
+    hasPrev: idx > 0,
+    hasNext: idx < ids.length - 1,
+    ...media,
+  }
+}
+
+/**
+ * Step the selection one item within its own section. Returns the new selection,
+ * or null when stepping past either end (the caller keeps the current selection).
+ */
+export function stepPreviewSelection(
+  selection: PreviewSelection,
+  direction: 'prev' | 'next',
+  lists: PreviewLists,
+): PreviewSelection | null {
+  const ids = sectionIds(selection.section, lists)
+  const idx = ids.indexOf(selection.id)
+  if (idx < 0) return null
+  const nextIdx = direction === 'next' ? idx + 1 : idx - 1
+  if (nextIdx < 0 || nextIdx >= ids.length) return null
+  return { section: selection.section, id: ids[nextIdx]! }
 }
