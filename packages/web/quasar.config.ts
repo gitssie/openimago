@@ -57,6 +57,41 @@ function omniclipSubpathResolver() {
   };
 }
 
+/**
+ * Vite plugin: swap omniclip's bundled `Filmstrip` class for the fork's patched
+ * one (openimago-audw). omniclip's video-effect view imports the filmstrip via a
+ * RELATIVE path resolved into node_modules; intercept that single deep import and
+ * redirect it to the fork patch module (9:16 aspect-correct frame rendering).
+ * Scoped to the omniclip importer + the exact filmstrip sub-path so nothing else
+ * is affected. Mirrors how the clip-menu/theme "patches" override sealed views.
+ */
+function omniclipFilmstripPatch() {
+  const FORK_FILMSTRIP = fileURLToPath(
+    new URL(
+      './src/vendor/omniclip-fork/patches/filmstrip.patch.ts',
+      import.meta.url,
+    ),
+  );
+  return {
+    name: 'omniclip-filmstrip-patch',
+    enforce: 'pre' as const,
+    resolveId(source: string, importer?: string) {
+      // The upstream import is:
+      //   import { Filmstrip } from ".../context/controllers/timeline/parts/filmstrip.js"
+      // (relative, from omniclip's video-effect.js). Match the resolved tail +
+      // an omniclip importer so we only touch THAT module.
+      if (
+        importer &&
+        importer.includes('omniclip') &&
+        /(^|\/)context\/controllers\/timeline\/parts\/filmstrip\.js$/.test(source)
+      ) {
+        return FORK_FILMSTRIP;
+      }
+      return undefined;
+    },
+  };
+}
+
 export default defineConfig((ctx) => {
   return {
     // https://v2.quasar.dev/quasar-cli-vite/prefetch-feature
@@ -166,6 +201,9 @@ export default defineConfig((ctx) => {
         // other package is untouched.
         viteConf.plugins = viteConf.plugins || []
         viteConf.plugins.push(omniclipSubpathResolver())
+        // Swap omniclip's Filmstrip for the fork's 9:16 patch (openimago-audw).
+        // Registered before the subpath resolver runs on its internal imports.
+        viteConf.plugins.unshift(omniclipFilmstripPatch())
       },
 
       vitePlugins: [
