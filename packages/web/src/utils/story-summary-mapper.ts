@@ -242,6 +242,7 @@ export function rawRunsToRunSummaries(runs: OpenimagoStoryRuns): StoryRunSummary
       filmstripFrameCount: safeNum(filmstripMeta['frameCount']),
       filmstripFrameW: safeNum(filmstripMeta['frameW']),
       filmstripFrameH: safeNum(filmstripMeta['frameH']),
+      durationSeconds: safeNum(result['duration']),
       error: safeStr(run['error']) || safeStr(run['errorMessage']) || null,
     }
   })

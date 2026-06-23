@@ -92,6 +92,11 @@ export async function hydrateFromCut(
       // omniclip's internal-unit duration / 2^zoom math, and never NaN/0 (which
       // would render an empty strip).
       filmstrip_duration_seconds: filmstripDurationSeconds,
+      // Real SOURCE video duration (s): the sprite spans the full source, so the
+      // filmstrip maps a cell's source time (inPoint + i*sec/cell) → sprite frame
+      // against THIS — making a clip show its inPoint-onward frames, and split
+      // halves visually distinct (openimago-px5g). null → falls back to clip dur.
+      filmstrip_source_duration_seconds: clip.filmstripSourceDurationSeconds ?? null,
     })
     cursorMs += durationMs
   }

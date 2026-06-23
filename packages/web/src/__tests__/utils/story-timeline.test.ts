@@ -21,6 +21,7 @@ function makeRun(overrides: Partial<StoryRunSummary> = {}): StoryRunSummary {
     filmstripFrameCount: null,
     filmstripFrameW: null,
     filmstripFrameH: null,
+    durationSeconds: null,
     error: null,
     ...overrides,
   }

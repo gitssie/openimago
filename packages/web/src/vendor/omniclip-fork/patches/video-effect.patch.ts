@@ -60,25 +60,27 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
     return () => dispose()
   })
 
-  // ── Static sprite filmstrip — one FIRST-FRAME cell per second ─────────────
-  // Per the user's request (openimago-78m9): each clip shows its FIRST FRAME,
-  // laid out one cell per 1 SECOND of the clip's duration.
+  // ── Static sprite filmstrip — one REAL frame per second, offset by inPoint ──
+  // (openimago-px5g) Each clip shows one cell per second of its TRIMMED length,
+  // and each cell shows the REAL source frame at that cell's ABSOLUTE source time
+  // — so a clip's strip is a moving window over the video, and after a split the
+  // 前 half [inPoint..t] and 后 half [t..outPoint] show visually distinct,
+  // frame-accurate ranges (the old first-frame-only render made both halves look
+  // identical). Static CSS background-position; no decode/seek.
   //
-  // Two RELIABLE values only (the earlier 2^zoom / omniclip-internal-duration
-  // math read wrong across the dep-optimizer boundary → 0.125px cells, 800 cells):
-  //   1. cellCount = ceil(durationSeconds) — durationSeconds is the clip's TRUE
-  //      length in seconds, threaded from the cut model (outPointSeconds -
-  //      inPointSeconds) onto the effect as filmstrip_duration_seconds.
-  //   2. cell width = the effect's REAL rendered width / cellCount — achieved
-  //      purely in CSS: the .filmstrip is width:100% of the effect, and each cell
-  //      is `flex: 1 1 0` so the N cells split that real width equally. No
-  //      getBoundingClientRect, no 2^zoom — the browser divides at layout time and
-  //      re-divides on zoom/resize for free.
-  // Every cell shows frame 0 (background-position 0,0) at the sprite's NATURAL
-  // frame size → crisp 9:16. No decode/seek. To switch to "the real frame nearest
-  // each second" later, flip ONE_FRAME_PER_SECOND (offset i*FRAME_W).
-  const ONE_FRAME_PER_SECOND = false
-
+  // Mapping (the sprite is ONE horizontal strip of `frameCount` frames spanning
+  // the FULL SOURCE video):
+  //   - inPoint seconds = effect.start / 1000 (hydrate sets start = inPoint*1000).
+  //   - cellCount = ceil(clip duration) — one cell per second of the trimmed clip.
+  //   - secondsPerCell = clipDuration / cellCount (≈1s; exact so the last cell
+  //     lands on outPoint).
+  //   - cell i absolute source time t = inPoint + i*secondsPerCell.
+  //   - frameIndex = clamp(round(t / SOURCE duration * (frameCount-1)), 0, N-1).
+  //     SOURCE duration (filmstrip_source_duration_seconds = result.duration) is
+  //     REQUIRED here — the sprite spans the source, NOT the trimmed clip.
+  //   - background-position-x = -(frameIndex * FRAME_W).
+  // Cell width is still the effect's REAL rendered width / cellCount, via CSS
+  // (`.filmstrip` width:100%, each cell `flex:1 1 0`) — no 2^zoom guesswork.
   const render_filmstrip = () => {
     const get_effect = use.context.state.effects.find((e) => e.id === effect.id) ?? effect
 
@@ -89,29 +91,36 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
       return html`<div class="filmstrip"></div>`
     }
 
-    // TRUE clip duration in seconds. GUARD: typeof NaN === 'number', so a missing
-    // in/out point that yields NaN must be caught with Number.isFinite (else
-    // ceil(NaN)=NaN, max(1,NaN)=NaN → 0 cells → an EMPTY first clip, the bug).
-    // Fallbacks, all finite>0: the effect's own duration (ms→s, set by hydrate
-    // from the same in/out points), else 1 — so a sprited clip ALWAYS shows ≥1
-    // cell (its first frame), never empty.
+    // GUARD: typeof NaN === 'number', so use Number.isFinite (a NaN duration would
+    // make ceil(NaN)=NaN, max(1,NaN)=NaN → 0 cells → an empty clip).
     const fineNum = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0)
-    const durationSeconds =
-      fineNum(get_effect.filmstrip_duration_seconds) ||
-      fineNum(get_effect.duration / 1000) ||
-      1
 
-    // One cell per second of TRUE clip duration (reliable, in seconds).
-    const cellCount = Math.max(1, Math.min(MAX_CELLS, Math.ceil(durationSeconds)))
+    // TRIMMED clip duration (cell count / width). Fallbacks all finite>0 so a
+    // sprited clip is never empty.
+    const clipDurationSeconds =
+      fineNum(get_effect.filmstrip_duration_seconds) || fineNum(get_effect.duration / 1000) || 1
 
-    // Sprite is one horizontal strip of `frameCount` frames at FRAME_W each. Use
-    // the NATURAL strip size so each shown frame is a crisp 9:16 FRAME_W×FRAME_H.
+    // SOURCE video duration (frame-index mapping basis — the sprite spans the
+    // whole source). Fall back to the clip duration when absent (then the strip
+    // still moves across the clip, just mapped to its own length).
+    const sourceDurationSeconds =
+      fineNum(get_effect.filmstrip_source_duration_seconds) || clipDurationSeconds
+
+    // inPoint in seconds (effect.start is inPoint*1000; 0 when untrimmed/missing).
+    const inPointSeconds = fineNum(get_effect.start / 1000) || 0
+
+    const cellCount = Math.max(1, Math.min(MAX_CELLS, Math.ceil(clipDurationSeconds)))
+    const secondsPerCell = clipDurationSeconds / cellCount
+
+    // Sprite NATURAL size → each shown frame is a crisp 9:16 FRAME_W×FRAME_H.
     const stripPxW = frameCount * FRAME_W
+    const lastFrame = frameCount - 1
     const cells = []
     for (let i = 0; i < cellCount; i++) {
-      // DEFAULT: first frame for every cell. Optional future mode: the frame
-      // nearest second i (clamped to the last frame).
-      const frameIdx = ONE_FRAME_PER_SECOND ? Math.min(frameCount - 1, i) : 0
+      // Absolute source time at this cell, mapped to a sprite frame index.
+      const t = inPointSeconds + i * secondsPerCell
+      const ratio = sourceDurationSeconds > 0 ? t / sourceDurationSeconds : 0
+      const frameIdx = Math.max(0, Math.min(lastFrame, Math.round(ratio * lastFrame)))
       cells.push(html`
         <div
           class="sprite-cell"

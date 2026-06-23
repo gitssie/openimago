@@ -22,6 +22,9 @@ export interface ShotMediaSource {
   filmstripFrameCount: number | null
   filmstripFrameW: number | null
   filmstripFrameH: number | null
+  /** Real SOURCE video duration in seconds (run.result.duration) — the basis for
+   *  mapping a cell's source time → sprite frame (openimago-px5g). null if unknown. */
+  sourceDurationSeconds: number | null
   /** a stable, human name for the imported file. */
   name: string
 }
@@ -70,6 +73,7 @@ export function resolveShotMediaSource(
     filmstripFrameCount: run.filmstripFrameCount,
     filmstripFrameW: run.filmstripFrameW,
     filmstripFrameH: run.filmstripFrameH,
+    sourceDurationSeconds: run.durationSeconds,
     name: `${sourceShotId}.mp4`,
   }
 }

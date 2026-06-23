@@ -12,6 +12,7 @@ function source(shotId: string): ShotMediaSource {
     filmstripFrameCount: 24,
     filmstripFrameW: 28,
     filmstripFrameH: 50,
+    sourceDurationSeconds: 30,
     name: `${shotId}.mp4`,
   }
 }
@@ -35,8 +36,8 @@ describe('buildHydrationPayload', () => {
     const { clips, orphans } = buildHydrationPayload(cut, (id) => source(id))
     expect(orphans).toEqual([])
     expect(clips).toEqual([
-      { id: 'c-a', url: 'https://cdn/shot_1.mp4', name: 'shot_1.mp4', inPointSeconds: 0, outPointSeconds: 2.5, filmstripUrl: 'shot_1.filmstrip.webp', filmstripFrameCount: 24, filmstripFrameW: 28, filmstripFrameH: 50 },
-      { id: 'c-b', url: 'https://cdn/shot_2.mp4', name: 'shot_2.mp4', inPointSeconds: 1, outPointSeconds: 4, filmstripUrl: 'shot_2.filmstrip.webp', filmstripFrameCount: 24, filmstripFrameW: 28, filmstripFrameH: 50 },
+      { id: 'c-a', url: 'https://cdn/shot_1.mp4', name: 'shot_1.mp4', inPointSeconds: 0, outPointSeconds: 2.5, filmstripUrl: 'shot_1.filmstrip.webp', filmstripFrameCount: 24, filmstripFrameW: 28, filmstripFrameH: 50, filmstripSourceDurationSeconds: 30 },
+      { id: 'c-b', url: 'https://cdn/shot_2.mp4', name: 'shot_2.mp4', inPointSeconds: 1, outPointSeconds: 4, filmstripUrl: 'shot_2.filmstrip.webp', filmstripFrameCount: 24, filmstripFrameW: 28, filmstripFrameH: 50, filmstripSourceDurationSeconds: 30 },
     ])
   })
 

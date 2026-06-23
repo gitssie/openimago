@@ -47,6 +47,7 @@ export function buildHydrationPayload(
       filmstripFrameCount: media.filmstripFrameCount,
       filmstripFrameW: media.filmstripFrameW,
       filmstripFrameH: media.filmstripFrameH,
+      filmstripSourceDurationSeconds: media.sourceDurationSeconds,
     })
   }
 

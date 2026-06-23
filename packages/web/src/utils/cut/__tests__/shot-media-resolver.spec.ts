@@ -43,6 +43,7 @@ function run(
     filmstripFrameCount: 24,
     filmstripFrameW: 28,
     filmstripFrameH: 50,
+    durationSeconds: 12,
     error: null,
     ...over,
   }
@@ -63,6 +64,7 @@ describe('resolveShotMediaSource', () => {
       filmstripFrameCount: 24,
       filmstripFrameW: 28,
       filmstripFrameH: 50,
+      sourceDurationSeconds: 12,
       name: 'shot_1.mp4',
     })
   })

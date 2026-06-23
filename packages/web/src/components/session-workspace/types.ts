@@ -244,6 +244,10 @@ export interface StoryRunSummary {
   filmstripFrameW: number | null
   /** Per-frame height in the sprite, px (result.filmstrip.frameH). */
   filmstripFrameH: number | null
+  /** Real SOURCE video duration in seconds (result.duration). The sprite spans
+   *  the full source, so the timeline maps a cell's source time → sprite frame
+   *  against THIS, not the trimmed clip length (openimago-px5g). null when unknown. */
+  durationSeconds: number | null
   error: string | null
 }
 

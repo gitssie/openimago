@@ -126,6 +126,9 @@ export interface HydrateClip {
   filmstripFrameCount?: number | null
   filmstripFrameW?: number | null
   filmstripFrameH?: number | null
+  /** Real SOURCE video duration (seconds) — sprite-frame mapping basis for the
+   *  per-second-with-inPoint filmstrip (openimago-px5g). */
+  filmstripSourceDurationSeconds?: number | null
 }
 
 export interface OmniclipForkApi {

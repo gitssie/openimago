@@ -148,6 +148,7 @@ function makeRun(over: Partial<StoryRunSummary> = {}): StoryRunSummary {
     filmstripFrameCount: over.filmstripFrameCount ?? null,
     filmstripFrameW: over.filmstripFrameW ?? null,
     filmstripFrameH: over.filmstripFrameH ?? null,
+    durationSeconds: over.durationSeconds ?? null,
     error: over.error ?? null,
   }
 }
