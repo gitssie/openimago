@@ -8,13 +8,22 @@
 //   result.access.filmstrip = <sprite url>
 //   result.filmstrip        = { frameCount, frameW, frameH }
 //
-// Shells out to the SYSTEM `ffmpeg` binary (no WASM). If ffmpeg is absent or
-// fails, generation SKIPS gracefully (warn, return null) — the caller leaves
-// access.filmstrip unset and the client no-ops cleanly. Never throws into the
-// generation flow.
+// Shells out to the SYSTEM `ffmpeg` (+ `ffprobe`) binaries (no WASM). Pipeline
+// (Recipe B, verified against real ffmpeg 8.x):
+//   1. ffprobe the duration (seconds),
+//   2. fps = N / duration,
+//   3. ffmpeg -vf "fps=${fps},scale=W:H:force_original_aspect_ratio=increase,
+//      crop=W:H,tile=Nx1" -frames:v 1 -y <out>.png
+// NB: ffmpeg's filtergraph has NO duration/framerate variables — sampling MUST
+// use a precomputed numeric fps (an earlier `select='...T*FR/N...'` form embedded
+// placeholder vars literally and ffmpeg failed to init the filters). If ffprobe
+// or ffmpeg is absent/fails, generation SKIPS gracefully (warn, return null) —
+// the caller leaves access.filmstrip unset and the client no-ops cleanly. Never
+// throws into the generation flow.
 //
-// This module's PURE parts (arg builder, output path/url derivation, metadata)
-// are unit-tested; the ffmpeg spawn + storage write are the only IO.
+// This module's PURE parts (fps calc, arg builder, duration parse, path/url
+// derivation, metadata) are unit-tested; the ffmpeg/ffprobe spawn + storage
+// write are the only IO.
 
 import { spawn } from "node:child_process"
 import { tmpdir } from "node:os"
@@ -83,23 +92,40 @@ export function filmstripUrlFrom(referenceUrl: string, artifactId: string): stri
 
 /**
  * Build the ffmpeg argv (exactly the command documented in
- * packages/web/scripts/gen-filmstrips.mjs): select every ⌊total/N⌋-th frame →
- * center-cover scale → crop to W×H → tile N×1 → one image. `-frames:v 1 -y`.
- * Pure: deterministic from the in/out paths + dims. The interval uses ffmpeg's
- * `select` expression with T (duration) * FR (frame rate) so it adapts per video.
+ * packages/web/scripts/gen-filmstrips.mjs, real-ffmpeg-verified — Recipe B):
+ * sample at a fixed `fps` so exactly N frames span the clip → center-cover scale
+ * → crop to W×H → tile N×1 → one image. `-frames:v 1 -y`.
+ *
+ * IMPORTANT (openimago-k6bl): the `fps` MUST be precomputed = N / durationSeconds
+ * (from a prior ffprobe call). ffmpeg's filtergraph has NO `T`/`FR` variables —
+ * an earlier version embedded `T*FR/N` literally and ffmpeg failed to init the
+ * filters. Keep the value-derivation outside this pure builder.
+ *
+ * Pure: deterministic from in/out paths + fps + dims.
  */
 export function buildFilmstripFfmpegArgs(
   inputPath: string,
   outputPath: string,
+  fps: number,
   dims: FilmstripMeta = filmstripMeta(),
 ): string[] {
   const { frameCount: n, frameW: w, frameH: h } = dims
   const vf =
-    `select='not(mod(n\\,floor(max(1\\,T*FR/${n}))))',` +
+    `fps=${fps},` +
     `scale=${w}:${h}:force_original_aspect_ratio=increase,` +
     `crop=${w}:${h},` +
     `tile=${n}x1`
   return ["-i", inputPath, "-vf", vf, "-frames:v", "1", "-y", outputPath]
+}
+
+/**
+ * Sampling fps so exactly `frameCount` frames span a clip of `durationSeconds`:
+ * fps = frameCount / duration. Guarded: a non-finite/≤0 duration falls back to a
+ * 1 fps default (so a tile still renders). Pure.
+ */
+export function filmstripFps(durationSeconds: number, frameCount = FILMSTRIP_FRAME_COUNT): number {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return 1
+  return frameCount / durationSeconds
 }
 
 // ── ffmpeg availability + spawn (IO) ──────────────────────────────────────────
@@ -130,6 +156,36 @@ function runFfmpeg(args: string[]): Promise<boolean> {
       proc.on("close", (code) => resolve(code === 0))
     } catch {
       resolve(false)
+    }
+  })
+}
+
+/** Parse a duration (seconds) from ffprobe's csv stdout. Pure. */
+export function parseProbedDuration(stdout: string): number | null {
+  const v = Number.parseFloat(stdout.trim())
+  return Number.isFinite(v) && v > 0 ? v : null
+}
+
+/**
+ * ffprobe the video's duration in seconds (Recipe B step 1). Returns null on any
+ * failure / missing ffprobe — the caller then skips filmstrip generation.
+ */
+function probeDurationSeconds(inputPath: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    try {
+      const proc = spawn(
+        "ffprobe",
+        ["-v", "error", "-select_streams", "v:0", "-show_entries", "format=duration", "-of", "csv=p=0", inputPath],
+        { stdio: ["ignore", "pipe", "ignore"] },
+      )
+      let out = ""
+      proc.stdout.on("data", (chunk) => {
+        out += String(chunk)
+      })
+      proc.on("error", () => resolve(null))
+      proc.on("close", (code) => resolve(code === 0 ? parseProbedDuration(out) : null))
+    } catch {
+      resolve(null)
     }
   })
 }
@@ -171,11 +227,21 @@ export class FilmstripService {
       return null
     }
 
+    // Recipe B step 1: ffprobe the duration so we can sample exactly N frames
+    // across the clip (fps = N / duration). ffmpeg has no T/FR filtergraph vars,
+    // so the value MUST be precomputed here. Missing/failed ffprobe → skip.
+    const duration = await probeDurationSeconds(input.videoPath)
+    if (duration === null) {
+      logger.warn({ artifactId: input.artifactId }, "filmstrip: ffprobe duration failed — skipping sprite")
+      return null
+    }
+    const fps = filmstripFps(duration)
+
     const storagePath = filmstripStoragePath(input.outputDir, input.artifactId)
     // ffmpeg writes to a temp file first; we then hand the bytes to the storage
     // adapter so any adapter (disk/S3) persists it the same way.
     const tmpOut = join(tmpdir(), filmstripFileName(`${input.artifactId}_${Date.now()}`))
-    const args = buildFilmstripFfmpegArgs(input.videoPath, tmpOut)
+    const args = buildFilmstripFfmpegArgs(input.videoPath, tmpOut, fps)
 
     try {
       const ok = await runFfmpeg(args)

@@ -7,6 +7,8 @@ import {
   filmstripFileName,
   filmstripStoragePath,
   filmstripUrlFrom,
+  filmstripFps,
+  parseProbedDuration,
   buildFilmstripFfmpegArgs,
 } from "../src/media/filmstrip"
 
@@ -52,8 +54,33 @@ describe("filmstripUrlFrom — mirrors the preview/thumbnail URL scheme", () => 
   })
 })
 
-describe("buildFilmstripFfmpegArgs — exact documented command", () => {
-  const args = buildFilmstripFfmpegArgs("/in.mp4", "/out.filmstrip.png")
+describe("filmstripFps — N / duration (precomputed; ffmpeg has no T/FR vars)", () => {
+  test("24 frames over a ~15.07s clip → ~1.5927 fps (the architect's verified value)", () => {
+    expect(filmstripFps(15.069)).toBeCloseTo(1.5927, 3)
+  })
+  test("falls back to 1 fps for a non-finite / non-positive duration", () => {
+    expect(filmstripFps(0)).toBe(1)
+    expect(filmstripFps(-3)).toBe(1)
+    expect(filmstripFps(Number.NaN)).toBe(1)
+  })
+  test("honors a custom frame count", () => {
+    expect(filmstripFps(6, 12)).toBe(2)
+  })
+})
+
+describe("parseProbedDuration — ffprobe csv stdout", () => {
+  test("parses a float seconds value (trims whitespace/newline)", () => {
+    expect(parseProbedDuration("15.069000\n")).toBeCloseTo(15.069, 3)
+  })
+  test("returns null for empty / N/A / non-positive", () => {
+    expect(parseProbedDuration("")).toBeNull()
+    expect(parseProbedDuration("N/A")).toBeNull()
+    expect(parseProbedDuration("0")).toBeNull()
+  })
+})
+
+describe("buildFilmstripFfmpegArgs — Recipe B (fps=, real-ffmpeg-verified)", () => {
+  const args = buildFilmstripFfmpegArgs("/in.mp4", "/out.filmstrip.png", 1.5927)
 
   test("passes input, single-frame output, overwrite", () => {
     expect(args[0]).toBe("-i")
@@ -64,21 +91,19 @@ describe("buildFilmstripFfmpegArgs — exact documented command", () => {
     expect(args[args.length - 1]).toBe("/out.filmstrip.png")
   })
 
-  test("the -vf filter selects every floor(total/24)-th frame, cover-crops 28×50, tiles 24x1", () => {
+  test("the -vf filter samples at the precomputed fps, cover-crops 28×50, tiles 24x1", () => {
     const vf = args[args.indexOf("-vf") + 1]!
-    expect(vf).toContain("T*FR/24")
-    expect(vf).toContain("scale=28:50:force_original_aspect_ratio=increase")
-    expect(vf).toContain("crop=28:50")
-    expect(vf).toContain("tile=24x1")
-    // select(...) and the mod-based interval (escaped comma) are present.
-    expect(vf).toMatch(/select='not\(mod\(n\\,floor\(max\(1\\,T\*FR\/24\)\)\)\)'/)
+    expect(vf).toBe(
+      "fps=1.5927,scale=28:50:force_original_aspect_ratio=increase,crop=28:50,tile=24x1",
+    )
+    // NO bogus ffmpeg variables — the earlier T*FR form broke filtergraph init.
+    expect(vf).not.toContain("T*FR")
+    expect(vf).not.toContain("select")
   })
 
   test("honors custom dims", () => {
-    const a = buildFilmstripFfmpegArgs("/i.mp4", "/o.png", { frameCount: 12, frameW: 40, frameH: 60 })
+    const a = buildFilmstripFfmpegArgs("/i.mp4", "/o.png", 2, { frameCount: 12, frameW: 40, frameH: 60 })
     const vf = a[a.indexOf("-vf") + 1]!
-    expect(vf).toContain("T*FR/12")
-    expect(vf).toContain("scale=40:60")
-    expect(vf).toContain("tile=12x1")
+    expect(vf).toBe("fps=2,scale=40:60:force_original_aspect_ratio=increase,crop=40:60,tile=12x1")
   })
 })

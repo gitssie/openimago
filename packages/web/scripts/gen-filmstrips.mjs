@@ -5,18 +5,24 @@
 // source). Run: `node scripts/gen-filmstrips.mjs` from packages/web.
 //
 // PRODUCTION PATH (real frames): with system ffmpeg OR @ffmpeg/core (WASM)
-// available, extract real frames. The exact, reproducible ffmpeg command per
-// input (documented so the sprites can be regenerated from real video):
+// available, extract real frames. The exact, reproducible command per input
+// (real-ffmpeg-verified, openimago-k6bl — ffmpeg's filtergraph has NO duration/
+// framerate variables, so the sampling rate MUST be precomputed from ffprobe):
 //
 //   N=24; W=28; H=50
+//   # 1. probe duration (seconds)
+//   DUR=$(ffprobe -v error -select_streams v:0 -show_entries format=duration -of csv=p=0 <in>.mp4)
+//   # 2. fps so exactly N frames span the clip
+//   FPS=$(python3 -c "print(${N}/${DUR})")   # e.g. 1.5927
+//   # 3. sample at FPS → center-cover scale/crop to W×H → tile 1×N → one image
 //   ffmpeg -i <in>.mp4 \
-//     -vf "select='not(mod(n\,floor(max(1\,T*FR/N))))',scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},tile=${N}x1" \
-//     -frames:v 1 -y <name>.filmstrip.webp
+//     -vf "fps=${FPS},scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},tile=${N}x1" \
+//     -frames:v 1 -y <name>.filmstrip.png
 //
-// (select every ⌊totalFrames/N⌋-th frame → center-cover scale/crop to 28×50 →
-//  tile into one 1×N strip → single webp.) The backend will run the equivalent
-//  at artifact-creation time and set result.access.filmstrip; the client path is
-//  identical regardless of who generated the sprite.
+// The backend (packages/openimago/src/media/filmstrip.ts FilmstripService) runs
+// exactly this (ffprobe → fps → ffmpeg) at artifact-creation time and sets
+// result.access.filmstrip; the client path is identical regardless of who
+// generated the sprite.
 //
 // THIS SANDBOX has no system ffmpeg and @ffmpeg/core (WASM) is not installed
 // (only the @ffmpeg/ffmpeg loader, which fetches core from a CDN and needs a
