@@ -28,12 +28,15 @@
 
 import { calculate_start_position } from 'omniclip/x/components/omni-timeline/utils/calculate_start_position.js'
 
-// CHANGED: 9:16 portrait frame dimensions (was 150×50 landscape). 32×56 keeps the
-// strip within the 50px lane comfortably while reading as portrait; the lane CSS
-// clips overflow. Fall back conceptually to 28×50 only if a lane height lock
-// forces it — 56 is fine because the slot is overflow:hidden in the clip view.
-const FRAME_W = 32
-const FRAME_H = 56
+// CHANGED: 9:16 portrait frame dimensions (was 150×50 landscape). 28×50 keeps the
+// frame EXACTLY within the 50px track lane. omniclip's track placement math is
+// hardcoded to 50px (calculate_effect_track_placement / _track_index /
+// _closest_track_place: trackHeight=50, y/50), so a taller 56px clip would
+// overflow its lane and desync track hit-testing (openimago-fhnz). 28/50 = 0.56
+// ≈ 9:16 (0.5625) — the sub-pixel AR delta is invisible. The clip view is
+// overflow:hidden, so the 50px-tall frame fills the lane with no clipping.
+const FRAME_W = 28
+const FRAME_H = 50
 // 9:16 target aspect the crop preserves.
 const TARGET_AR = FRAME_W / FRAME_H
 

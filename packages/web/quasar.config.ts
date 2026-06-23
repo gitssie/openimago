@@ -82,10 +82,54 @@ function omniclipFilmstripPatch() {
       // an omniclip importer so we only touch THAT module.
       if (
         importer &&
-        importer.includes('omniclip') &&
+        isOmniclipPackageImporter(importer) &&
         /(^|\/)context\/controllers\/timeline\/parts\/filmstrip\.js$/.test(source)
       ) {
         return FORK_FILMSTRIP;
+      }
+      return undefined;
+    },
+  };
+}
+
+/**
+ * True only when the importer is a file INSIDE the omniclip npm package — not the
+ * vendored fork (whose path also contains the substring "omniclip"). The fork's
+ * patch modules re-import upstream omniclip modules; guarding on the real package
+ * path prevents a self-redirect loop.
+ */
+function isOmniclipPackageImporter(importer: string): boolean {
+  return /node_modules\/[^/]*omniclip[^/]*\//.test(importer) && !importer.includes('omniclip-fork');
+}
+
+/**
+ * Vite plugin: swap omniclip's clip/effect shadow-DOM styles for the fork's
+ * imago-themed ones (openimago-fhnz). omniclip's effect view does
+ * `use.styles([..., styles])` from
+ * .../views/effects/parts/styles.js — injecting that CSS into the clip's shadow
+ * root. var(--imago-*) inherit through the shadow boundary, so the fork patch
+ * re-exports omniclip's `styles` + appends imago overrides (cyan selected ring,
+ * soft default border, theme orphan color). Scoped to the omniclip importer +
+ * the exact styles sub-path; the fork patch itself imports the upstream styles,
+ * but from a src/ importer (not "omniclip"), so it is NOT redirected → no loop.
+ */
+function omniclipEffectStylesPatch() {
+  const FORK_EFFECT_STYLES = fileURLToPath(
+    new URL(
+      './src/vendor/omniclip-fork/patches/effect-styles.patch.ts',
+      import.meta.url,
+    ),
+  );
+  return {
+    name: 'omniclip-effect-styles-patch',
+    enforce: 'pre' as const,
+    resolveId(source: string, importer?: string) {
+      if (
+        importer &&
+        isOmniclipPackageImporter(importer) &&
+        /(^|\/)views\/effects\/parts\/styles\.js$/.test(source)
+      ) {
+        return FORK_EFFECT_STYLES;
       }
       return undefined;
     },
@@ -201,9 +245,12 @@ export default defineConfig((ctx) => {
         // other package is untouched.
         viteConf.plugins = viteConf.plugins || []
         viteConf.plugins.push(omniclipSubpathResolver())
-        // Swap omniclip's Filmstrip for the fork's 9:16 patch (openimago-audw).
-        // Registered before the subpath resolver runs on its internal imports.
+        // Swap omniclip's Filmstrip for the fork's 9:16 patch (openimago-audw)
+        // and its clip styles for the imago-themed ones (openimago-fhnz).
+        // unshift so these enforce:'pre' redirects run before the subpath
+        // resolver touches omniclip's own deep imports.
         viteConf.plugins.unshift(omniclipFilmstripPatch())
+        viteConf.plugins.unshift(omniclipEffectStylesPatch())
       },
 
       vitePlugins: [

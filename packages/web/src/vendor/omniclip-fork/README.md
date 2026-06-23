@@ -47,9 +47,14 @@ We fork by *override*, not by copying all 67 MB of omniclip source:
 - `patches/effect.patch.ts` — patched clip view: context-menu trigger + items.
 - `patches/theme.css.ts` — patched styles exposing `--omni-*` custom props + `::part`.
 - `patches/state.patch.ts` — adds `transitions` to historical state + actions.
-- `patches/filmstrip.patch.ts` — drop-in `Filmstrip` replacement: 9:16 portrait,
-  center-cover frame crop (no stretch). Swapped in via a scoped `resolveId`
-  redirect in `quasar.config.ts` (`omniclipFilmstripPatch`) that intercepts
-  omniclip's relative `timeline/parts/filmstrip.js` import. Density math is
-  byte-for-byte upstream; only canvas dims + drawImage crop changed.
+- `patches/filmstrip.patch.ts` — drop-in `Filmstrip` replacement: 9:16 portrait
+  (28×50), center-cover frame crop (no stretch). Swapped in via a scoped
+  `resolveId` redirect in `quasar.config.ts` (`omniclipFilmstripPatch`) that
+  intercepts omniclip's relative `timeline/parts/filmstrip.js` import. Density
+  math is byte-for-byte upstream; only canvas dims + drawImage crop changed.
+- `patches/effect-styles.patch.ts` — clip shadow-DOM styles: re-exports omniclip's
+  effect `styles` + appends imago overrides (`--imago-bg-surface` fill, soft
+  default border, cyan selected ring + glow, theme-pink orphan). Swapped via
+  `omniclipEffectStylesPatch` (`resolveId` on `views/effects/parts/styles.js`);
+  `var(--imago-*)` inherit through the shadow boundary, so no `part=` is needed.
 - `LOCAL_VALIDATION.md` — the exact steps the user runs to validate in a browser.
