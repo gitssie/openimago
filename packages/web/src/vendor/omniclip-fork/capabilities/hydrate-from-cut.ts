@@ -53,6 +53,17 @@ export async function hydrateFromCut(
     const startMs = clip.inPointSeconds * MS_PER_S
     const endMs = clip.outPointSeconds * MS_PER_S
     const durationMs = endMs - startMs
+    // Filmstrip cell count = ceil(seconds), so compute a FINITE, POSITIVE seconds
+    // value here (openimago-78m9): the trimmed length, else the imported clip's raw
+    // duration, else 1 — so a clip with a missing/0 trim still renders ≥1 cell
+    // (its first frame) instead of an empty strip.
+    const trimmedSeconds = (endMs - startMs) / MS_PER_S
+    const filmstripDurationSeconds =
+      Number.isFinite(trimmedSeconds) && trimmedSeconds > 0
+        ? trimmedSeconds
+        : imported.rawDurationSeconds > 0
+          ? imported.rawDurationSeconds
+          : 1
 
     // Place a video effect for this clip and trim/position it to match the cut.
     // The filmstrip_* fields are custom extras carried on the effect (omniclip
@@ -76,10 +87,11 @@ export async function hydrateFromCut(
       filmstrip_frame_count: clip.filmstripFrameCount ?? null,
       filmstrip_frame_w: clip.filmstripFrameW ?? null,
       filmstrip_frame_h: clip.filmstripFrameH ?? null,
-      // TRUE clip length in SECONDS (from the cut model's in/out points) — the
-      // reliable basis for "one cell per second" in the static sprite view
-      // (openimago-78m9); avoids omniclip's internal-unit duration / 2^zoom math.
-      filmstrip_duration_seconds: clip.outPointSeconds - clip.inPointSeconds,
+      // TRUE clip length in SECONDS (guarded finite>0) — the reliable basis for
+      // "one cell per second" in the static sprite view (openimago-78m9); avoids
+      // omniclip's internal-unit duration / 2^zoom math, and never NaN/0 (which
+      // would render an empty strip).
+      filmstrip_duration_seconds: filmstripDurationSeconds,
     })
     cursorMs += durationMs
   }

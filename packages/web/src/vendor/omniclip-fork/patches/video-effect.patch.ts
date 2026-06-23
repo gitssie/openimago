@@ -84,14 +84,22 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
 
     const spriteUrl = get_effect.filmstrip_url
     const frameCount = get_effect.filmstrip_frame_count
-    const durationSeconds =
-      typeof get_effect.filmstrip_duration_seconds === 'number'
-        ? get_effect.filmstrip_duration_seconds
-        : 0
     // No sprite (orphan / pre-78m9 data) → flat lane, no broken images.
     if (!spriteUrl || !frameCount || frameCount < 1) {
       return html`<div class="filmstrip"></div>`
     }
+
+    // TRUE clip duration in seconds. GUARD: typeof NaN === 'number', so a missing
+    // in/out point that yields NaN must be caught with Number.isFinite (else
+    // ceil(NaN)=NaN, max(1,NaN)=NaN → 0 cells → an EMPTY first clip, the bug).
+    // Fallbacks, all finite>0: the effect's own duration (ms→s, set by hydrate
+    // from the same in/out points), else 1 — so a sprited clip ALWAYS shows ≥1
+    // cell (its first frame), never empty.
+    const fineNum = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0)
+    const durationSeconds =
+      fineNum(get_effect.filmstrip_duration_seconds) ||
+      fineNum(get_effect.duration / 1000) ||
+      1
 
     // One cell per second of TRUE clip duration (reliable, in seconds).
     const cellCount = Math.max(1, Math.min(MAX_CELLS, Math.ceil(durationSeconds)))
