@@ -231,42 +231,71 @@ export class Filmstrip {
   }
 
   /**
-   * Seek the shared <video> to `seconds` and resolve only once the frame at that
-   * time is actually decoded/presentable (openimago-6br9 blank-frame race). One-
-   * shot 'seeked' listener (no shared #resolve to stomp), a short timeout
-   * fallback so a no-op seek / missing event can't hang, then one
-   * requestVideoFrameCallback (or rAF) so the decoded frame is presentable before
-   * the caller draws. The recalc loop awaits each call → seeks are serialized and
-   * never stomp each other on the single shared element.
+   * Resolve once the <video> has DECODED data ready (readyState >= 2 /
+   * HAVE_CURRENT_DATA). Bounded by a timeout so a stalled load can't hang the
+   * strip. (openimago-6br9: clip 0's near-t=0 cells were drawn before the very
+   * first frame decoded → blank white; readiness must gate EVERY draw, including
+   * the already-at-target case.)
    */
-  #seek_and_wait(seconds) {
+  #wait_ready() {
     return new Promise((resolve) => {
       const video = this.#video
+      if (video.readyState >= 2) {
+        resolve(true)
+        return
+      }
       let done = false
-      let timer = 0
-      const onSeeked = () => finish()
       const finish = () => {
         if (done) return
         done = true
-        video.removeEventListener('seeked', onSeeked)
-        if (timer) clearTimeout(timer)
-        // Wait for the decoded frame to be presentable, then resolve.
-        const present = () => resolve(true)
-        const rvfc = video.requestVideoFrameCallback
-        if (typeof rvfc === 'function') rvfc.call(video, () => present())
-        else requestAnimationFrame(present)
+        video.removeEventListener('loadeddata', finish)
+        video.removeEventListener('canplay', finish)
+        clearTimeout(timer)
+        resolve(true)
       }
-      // Already at (≈) this time? Setting currentTime would be a no-op (no
-      // 'seeked'), so present the current frame on the next rVFC/rAF immediately
-      // instead of waiting out the timeout (avoids a 1.5s stall on cell 0 / t=0).
-      if (Math.abs(video.currentTime - seconds) < 0.001 && video.readyState >= 2) {
-        finish()
-        return
-      }
-      video.addEventListener('seeked', onSeeked)
-      // Bounded fallback so a missing 'seeked' can never hang the strip.
-      timer = setTimeout(finish, 1500)
-      video.currentTime = seconds
+      video.addEventListener('loadeddata', finish)
+      video.addEventListener('canplay', finish)
+      const timer = setTimeout(finish, 3000)
+    })
+  }
+
+  /**
+   * Seek the shared <video> to `seconds` and resolve only once a REAL decoded
+   * frame at that time is presentable, so the caller never drawImage()s a blank
+   * canvas (openimago-6br9). Sequence: (1) await readiness (readyState >= 2) —
+   * applies even when already at the target time, which is exactly the clip-0 /
+   * t=0 case that previously fast-pathed into a blank draw; (2) if not already at
+   * `seconds`, seek and await one-shot 'seeked' (1.5s fallback so a missing event
+   * can't hang); (3) await one requestVideoFrameCallback (fallback rAF) so the
+   * decoded frame is actually presented. The recalc loop awaits each call →
+   * seeks serialize and never stomp on the single shared element.
+   */
+  async #seek_and_wait(seconds) {
+    const video = this.#video
+    // (1) GATE on decoded data first — never draw before the first frame exists.
+    await this.#wait_ready()
+    // (2) Seek only if we're not already at this time (a no-op set emits no
+    // 'seeked'); otherwise skip straight to presenting the current frame.
+    if (Math.abs(video.currentTime - seconds) >= 0.001) {
+      await new Promise((resolve) => {
+        let done = false
+        const finish = () => {
+          if (done) return
+          done = true
+          video.removeEventListener('seeked', finish)
+          clearTimeout(timer)
+          resolve(true)
+        }
+        video.addEventListener('seeked', finish)
+        const timer = setTimeout(finish, 1500)
+        video.currentTime = seconds
+      })
+    }
+    // (3) Ensure a real frame is PRESENTED before the caller draws.
+    await new Promise((resolve) => {
+      const rvfc = video.requestVideoFrameCallback
+      if (typeof rvfc === 'function') rvfc.call(video, () => resolve(true))
+      else requestAnimationFrame(() => resolve(true))
     })
   }
 
