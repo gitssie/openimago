@@ -58,6 +58,25 @@ const imagoOverrides = css`
   .effect:hover {
     outline: 1px solid var(--imago-border-cyan, rgba(0, 240, 255, 0.35));
   }
+
+  /*
+   * Filmstrip frames flush-LEFT at natural 28px (openimago-fhnz bug 2). The
+   * VideoEffect view sets each <img class="thumbnail"> an INLINE width = slot
+   * width (#width_of_frame ≈ 55px) with no object-fit, so the browser default
+   * (object-fit: fill) stretches our 28×50 portrait frame to ~55px → squished.
+   * The frame data-URL is already an exact 28×50 9:16 crop, so pin the rendered
+   * box to 28×50 (overriding the inline width needs !important) and use
+   * object-fit: cover (exact-fit → no scale, no further crop). Each frame stays
+   * anchored at its translateX slot origin; the ~27px trailing slot space shows
+   * the lane background, which is intended per the design spec. This rule lives
+   * here because Effect injects BOTH styles.js and the video-effect css block
+   * into the SAME shadow root, so .thumbnail is reachable. */
+  .filmstrip img.thumbnail {
+    width: 28px !important;
+    height: 50px;
+    object-fit: cover;
+    object-position: center;
+  }
 `
 
 // Single combined export (the consumer wraps THIS in its own use.styles array

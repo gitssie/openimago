@@ -124,10 +124,17 @@ function omniclipEffectStylesPatch() {
     name: 'omniclip-effect-styles-patch',
     enforce: 'pre' as const,
     resolveId(source: string, importer?: string) {
+      // effect.js imports the clip styles as a RELATIVE specifier
+      // (`import { styles } from "./styles.js"`), so Vite passes raw "./styles.js"
+      // here — it does NOT contain "views/effects/parts/". Match the bare/relative
+      // `styles.js` tail and GATE on the importer being effects/parts/effect.js
+      // (the only consumer). isOmniclipPackageImporter keeps the fork's own
+      // upstream re-import (importer = src/) from being redirected → no loop.
       if (
         importer &&
         isOmniclipPackageImporter(importer) &&
-        /(^|\/)views\/effects\/parts\/styles\.js$/.test(source)
+        /(^|\/)(views\/effects\/parts\/)?styles\.js$/.test(source) &&
+        /views\/effects\/parts\/effect\.js/.test(importer)
       ) {
         return FORK_EFFECT_STYLES;
       }
