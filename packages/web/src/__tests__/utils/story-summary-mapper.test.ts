@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { rawRunsToRunSummaries } from 'src/utils/story-summary-mapper'
-import type { OpenimagoStoryRuns } from 'src/api/client'
+import { rawRunsToRunSummaries, rawBibleToSummary } from 'src/utils/story-summary-mapper'
+import type { OpenimagoStoryBible, OpenimagoStoryRuns } from 'src/api/client'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -88,5 +88,88 @@ describe('rawRunsToRunSummaries — nested result parsing', () => {
     expect(run.model).toBe('flux-pro')
     expect(run.startedAt).toBe('2026-06-08T10:05:00Z')
     expect(run.completedAt).toBe('2026-06-08T10:05:25Z')
+  })
+
+  it('extracts kind and mime from nested result', () => {
+    const run = mapOne(nestedCompletedRun({
+      result: {
+        artifactId: 'wf_audio01',
+        kind: 'audio',
+        mime: 'audio/mpeg',
+        access: { preview: '/mock/bgm-demo.mp3', thumbnail: '/mock/placeholder-1x1.svg' },
+      },
+    }))
+    expect(run.kind).toBe('audio')
+    expect(run.mime).toBe('audio/mpeg')
+  })
+
+  it('maps image/video result kinds through', () => {
+    expect(mapOne(nestedCompletedRun()).kind).toBe('image')
+    expect(
+      mapOne(nestedCompletedRun({ result: { artifactId: 'v1', kind: 'video', mime: 'video/mp4' } })).kind,
+    ).toBe('video')
+  })
+
+  it('returns null kind/mime for an unknown kind or a run with no result', () => {
+    expect(mapOne(nestedCompletedRun({ result: { artifactId: 'x', kind: 'weird' } })).kind).toBeNull()
+    const running = mapOne({
+      id: 'run_running',
+      nodeId: 'n03',
+      status: 'running',
+      startedAt: '2026-06-08T10:10:00Z',
+    })
+    expect(running.kind).toBeNull()
+    expect(running.mime).toBeNull()
+  })
+})
+
+// ── Bible audioElements ───────────────────────────────────────────────────────
+
+function makeBible(overrides: Partial<OpenimagoStoryBible> = {}): OpenimagoStoryBible {
+  return {
+    schemaVersion: 1,
+    projectId: 'proj_x',
+    world: { name: '', description: '', era: '', moodKeywords: [], visualStyleNotes: '' },
+    characters: [],
+    scenes: [],
+    styleSeeds: [],
+    updatedAt: '2026-06-08T00:00:00Z',
+    ...overrides,
+  }
+}
+
+describe('rawBibleToSummary — audioElements', () => {
+  it('maps an audio element with all fields', () => {
+    const summary = rawBibleToSummary(
+      makeBible({
+        audioElements: [
+          {
+            id: 'bgm-main-theme',
+            displayName: 'Main Theme',
+            kind: 'bgm',
+            description: 'Driving synthwave bed',
+            timingNote: 'Loops under the whole episode',
+            referenceArtifactIds: ['ref-a'],
+          },
+        ],
+      } as Partial<OpenimagoStoryBible>),
+    )
+    expect(summary.audioElements).toHaveLength(1)
+    const el = summary.audioElements[0]!
+    expect(el.id).toBe('bgm-main-theme')
+    expect(el.displayName).toBe('Main Theme')
+    expect(el.kind).toBe('bgm')
+    expect(el.description).toBe('Driving synthwave bed')
+    expect(el.timingNote).toBe('Loops under the whole episode')
+    expect(el.referenceArtifactIds).toEqual(['ref-a'])
+  })
+
+  it('defaults missing/unknown kind to narration and tolerates absent audioElements', () => {
+    expect(rawBibleToSummary(makeBible()).audioElements).toEqual([])
+    const el = rawBibleToSummary(
+      makeBible({ audioElements: [{ id: 'x', kind: 'bogus' }] } as Partial<OpenimagoStoryBible>),
+    ).audioElements[0]!
+    expect(el.kind).toBe('narration')
+    expect(el.displayName).toBe('未命名音频')
   })
 })

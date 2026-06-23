@@ -150,6 +150,8 @@ export interface StoryBible {
   characters: Record<string, unknown>[]
   scenes: Record<string, unknown>[]
   styleSeeds: Record<string, unknown>[]
+  /** Global audio beds (ADR 0004 audio layer): narration / BGM / SFX. */
+  audioElements: Record<string, unknown>[]
   updatedAt: string
 }
 

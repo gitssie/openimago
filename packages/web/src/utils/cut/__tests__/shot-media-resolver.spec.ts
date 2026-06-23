@@ -35,6 +35,8 @@ function run(
     model: 'm',
     prompt: '',
     resultArtifactId: 'a1',
+    kind: 'video',
+    mime: 'video/mp4',
     thumbnailUrl: `${id}-thumb.png`,
     previewUrl: `${id}-preview.mp4`,
     error: null,

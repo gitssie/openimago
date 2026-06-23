@@ -78,6 +78,7 @@ function makeBible(over: Partial<StoryBibleSummary> = {}): StoryBibleSummary {
     characters: over.characters ?? [makeCharacter()],
     scenes: over.scenes ?? [makeScene()],
     styleSeeds: over.styleSeeds ?? [makeStyleSeed()],
+    audioElements: over.audioElements ?? [],
     updatedAt: over.updatedAt ?? '2026-06-08T00:00:00.000Z',
   }
 }
@@ -139,6 +140,8 @@ function makeRun(over: Partial<StoryRunSummary> = {}): StoryRunSummary {
     model: over.model ?? 'nano-banana',
     prompt: over.prompt ?? 'Wide shot...',
     resultArtifactId: over.resultArtifactId ?? 'artifact-1',
+    kind: over.kind ?? null,
+    mime: over.mime ?? null,
     thumbnailUrl: over.thumbnailUrl ?? null,
     previewUrl: over.previewUrl ?? null,
     error: over.error ?? null,

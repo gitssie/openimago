@@ -79,5 +79,23 @@
       "referenceArtifactIds": []
     }
   ],
+  "audioElements": [
+    {
+      "id": "bgm-neon-pulse",
+      "displayName": "Neon Pulse (主题 BGM)",
+      "kind": "bgm",
+      "description": "Driving synthwave bed: arpeggiated bass, rain-soaked pads, a slow build that mirrors the episode's tension.",
+      "timingNote": "Loops under the whole episode; ducks beneath dialogue and lifts on the cliffhanger.",
+      "referenceArtifactIds": []
+    },
+    {
+      "id": "narration-opening",
+      "displayName": "开场旁白 (Opening Narration)",
+      "kind": "narration",
+      "description": "Cold-open voiceover establishing Neon Drift's world and Kai's debt, spoken over the rain-soaked alley.",
+      "timingNote": "Plays over shot s01-opening; fades out before Takeshi's first line.",
+      "referenceArtifactIds": []
+    }
+  ],
   "updatedAt": "2026-06-08T00:00:00Z"
 }

@@ -16,10 +16,34 @@ async function readFixture<T>(relativePath: string): Promise<T> {
 }
 
 /**
- * Build a validation input from the canonical fixtures. The fixture runs.json
- * references artifactIds wf_01h_kai_concept / wf_01h_rei_concept /
- * wf_01h_neon_alley / wf_01h_shot01, so the known-artifact set must contain
- * them for run.result.artifactId resolution to pass.
+ * Every completed run's result.artifactId in a runs doc. Mirrors the seed
+ * contract (scripts/seed-helpers.completedRunArtifacts): the seed registers a
+ * workspace_generated_files row for each completed run, so the known-artifact
+ * set the validator sees in production contains exactly these. Deriving it here
+ * (rather than hardcoding a handful) keeps the test in step as the fixtures grow
+ * new completed runs (image / video / audio layers).
+ */
+function completedRunArtifactIds(runsDoc: unknown): Set<string> {
+  const out = new Set<string>()
+  const runs =
+    typeof runsDoc === "object" && runsDoc !== null && Array.isArray((runsDoc as any).runs)
+      ? ((runsDoc as any).runs as unknown[])
+      : []
+  for (const run of runs) {
+    if (typeof run !== "object" || run === null) continue
+    const r = run as Record<string, unknown>
+    if (r.status !== "completed") continue
+    const result = typeof r.result === "object" && r.result !== null ? (r.result as Record<string, unknown>) : null
+    const artifactId = result && typeof result.artifactId === "string" ? result.artifactId : ""
+    if (artifactId) out.add(artifactId)
+  }
+  return out
+}
+
+/**
+ * Build a validation input from the canonical fixtures. The known-artifact set
+ * is derived from every completed run's result artifact (the seed contract), so
+ * run.result.artifactId resolution passes for all completed runs.
  */
 async function loadCleanInput(): Promise<StoryValidationInput> {
   const bible = await readFixture("bible.json")
@@ -37,12 +61,7 @@ async function loadCleanInput(): Promise<StoryValidationInput> {
     // series.json plans 3 episodes (docs only ship ep_001's full layer, but in
     // a real project all declared episode files exist).
     presentEpisodeIds: ["ep_001", "ep_002", "ep_003"],
-    knownArtifactIds: new Set([
-      "wf_01h_kai_concept",
-      "wf_01h_rei_concept",
-      "wf_01h_neon_alley",
-      "wf_01h_shot01",
-    ]),
+    knownArtifactIds: completedRunArtifactIds(runs),
   }
 }
 

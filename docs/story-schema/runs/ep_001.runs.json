@@ -123,6 +123,222 @@
         "referenceArtifactIds": []
       },
       "startedAt": "2026-06-08T10:10:00Z"
+    },
+    {
+      "id": "run_01h_shot07_video_v1",
+      "nodeId": "n13-shot-s07-prep",
+      "shotId": "s07-race-prep",
+      "status": "completed",
+      "params": {
+        "prompt": "AI video demo — race prep montage. Dynamic montage in a cyberpunk workshop: Kai and Rei building a futuristic race car. Welding sparks, holographic displays, time-lapse neon lighting.",
+        "negativePrompt": "blurry, low quality, deformed faces, static shot",
+        "model": "kling-v2",
+        "aspectRatio": "16:9",
+        "duration": 10,
+        "seed": 707,
+        "referenceArtifactIds": []
+      },
+      "result": {
+        "artifactId": "wf_01h_shot07_video",
+        "kind": "video",
+        "mime": "video/mp4",
+        "filename": "ep001-shot07-race-prep.mp4",
+        "access": {
+          "preview": "/mock/flova-demo.mp4",
+          "thumbnail": "/mock/placeholder-16x9.svg"
+        }
+      },
+      "startedAt": "2026-06-08T10:12:00Z",
+      "completedAt": "2026-06-08T10:12:40Z"
+    },
+    {
+      "id": "run_01h_shot01_video_v1",
+      "nodeId": "n07-shot-s01-opening",
+      "shotId": "s01-opening",
+      "status": "completed",
+      "params": {
+        "prompt": "Animated shot — neon alley opening. Rain falls steadily as Kai's modified racer drifts into frame, damaged, steam rising. Slow crane down from neon-sign level to street level.",
+        "negativePrompt": "blurry, low quality, deformed, static shot",
+        "model": "kling-v2",
+        "aspectRatio": "16:9",
+        "duration": 8,
+        "seed": 1001,
+        "referenceArtifactIds": ["wf_01h_shot01"]
+      },
+      "result": {
+        "artifactId": "wf_01h_shot01_video",
+        "kind": "video",
+        "mime": "video/mp4",
+        "filename": "ep001-shot01-opening.mp4",
+        "access": { "preview": "/mock/shot-s01.mp4", "thumbnail": "/mock/placeholder-16x9.svg" }
+      },
+      "startedAt": "2026-06-08T10:14:00Z",
+      "completedAt": "2026-06-08T10:14:32Z"
+    },
+    {
+      "id": "run_01h_shot02_video_v1",
+      "nodeId": "n08-shot-s02-kai-defeat",
+      "shotId": "s02-kai-defeat",
+      "status": "completed",
+      "params": {
+        "prompt": "Animated shot — Kai's defeat. Emotional close-up; the race is lost. Flickering neon reflections drift across his face inside the cockpit.",
+        "negativePrompt": "blurry, low quality, deformed, static shot",
+        "model": "kling-v2",
+        "aspectRatio": "16:9",
+        "duration": 8,
+        "seed": 1002,
+        "referenceArtifactIds": []
+      },
+      "result": {
+        "artifactId": "wf_01h_shot02_video",
+        "kind": "video",
+        "mime": "video/mp4",
+        "filename": "ep001-shot02-kai-defeat.mp4",
+        "access": { "preview": "/mock/shot-s02.mp4", "thumbnail": "/mock/placeholder-16x9.svg" }
+      },
+      "startedAt": "2026-06-08T10:15:00Z",
+      "completedAt": "2026-06-08T10:15:30Z"
+    },
+    {
+      "id": "run_01h_shot03_video_v1",
+      "nodeId": "n09-shot-s03-takeshi",
+      "shotId": "s03-takeshi-arrives",
+      "status": "completed",
+      "params": {
+        "prompt": "Animated shot — Takeshi arrives. The white-suited enforcer steps from shadow into neon; steam and rain part around him as he approaches.",
+        "negativePrompt": "blurry, low quality, deformed, static shot",
+        "model": "kling-v2",
+        "aspectRatio": "16:9",
+        "duration": 8,
+        "seed": 1003,
+        "referenceArtifactIds": []
+      },
+      "result": {
+        "artifactId": "wf_01h_shot03_video",
+        "kind": "video",
+        "mime": "video/mp4",
+        "filename": "ep001-shot03-takeshi-arrives.mp4",
+        "access": { "preview": "/mock/shot-s03.mp4", "thumbnail": "/mock/placeholder-16x9.svg" }
+      },
+      "startedAt": "2026-06-08T10:16:00Z",
+      "completedAt": "2026-06-08T10:16:31Z"
+    },
+    {
+      "id": "run_01h_shot04_video_v1",
+      "nodeId": "n10-shot-s04-garage",
+      "shotId": "s04-garage-entrance",
+      "status": "completed",
+      "params": {
+        "prompt": "Animated shot — garage entrance. Kai rolls his damaged racer into Rei's underground garage; warm workshop light spills over wet asphalt.",
+        "negativePrompt": "blurry, low quality, deformed, static shot",
+        "model": "kling-v2",
+        "aspectRatio": "16:9",
+        "duration": 8,
+        "seed": 1004,
+        "referenceArtifactIds": []
+      },
+      "result": {
+        "artifactId": "wf_01h_shot04_video",
+        "kind": "video",
+        "mime": "video/mp4",
+        "filename": "ep001-shot04-garage-entrance.mp4",
+        "access": { "preview": "/mock/shot-s04.mp4", "thumbnail": "/mock/placeholder-16x9.svg" }
+      },
+      "startedAt": "2026-06-08T10:17:00Z",
+      "completedAt": "2026-06-08T10:17:33Z"
+    },
+    {
+      "id": "run_01h_shot05_video_v1",
+      "nodeId": "n11-shot-s05-rei-plan",
+      "shotId": "s05-rei-plan",
+      "status": "completed",
+      "params": {
+        "prompt": "Animated shot — Rei's plan. Rei sketches a route on a holographic display, neon streaks in her ponytail catching the glow as the plan takes shape.",
+        "negativePrompt": "blurry, low quality, deformed, static shot",
+        "model": "kling-v2",
+        "aspectRatio": "16:9",
+        "duration": 8,
+        "seed": 1005,
+        "referenceArtifactIds": []
+      },
+      "result": {
+        "artifactId": "wf_01h_shot05_video",
+        "kind": "video",
+        "mime": "video/mp4",
+        "filename": "ep001-shot05-rei-plan.mp4",
+        "access": { "preview": "/mock/shot-s05.mp4", "thumbnail": "/mock/placeholder-16x9.svg" }
+      },
+      "startedAt": "2026-06-08T10:18:00Z",
+      "completedAt": "2026-06-08T10:18:34Z"
+    },
+    {
+      "id": "run_01h_shot06_video_v1",
+      "nodeId": "n12-shot-s06-decision",
+      "shotId": "s06-decision",
+      "status": "completed",
+      "params": {
+        "prompt": "Animated shot — the decision. Kai clenches his cybernetic fist; resolve hardens on his face as the camera pushes in under flickering neon.",
+        "negativePrompt": "blurry, low quality, deformed, static shot",
+        "model": "kling-v2",
+        "aspectRatio": "16:9",
+        "duration": 8,
+        "seed": 1006,
+        "referenceArtifactIds": []
+      },
+      "result": {
+        "artifactId": "wf_01h_shot06_video",
+        "kind": "video",
+        "mime": "video/mp4",
+        "filename": "ep001-shot06-decision.mp4",
+        "access": { "preview": "/mock/shot-s06.mp4", "thumbnail": "/mock/placeholder-16x9.svg" }
+      },
+      "startedAt": "2026-06-08T10:19:00Z",
+      "completedAt": "2026-06-08T10:19:35Z"
+    },
+    {
+      "id": "run_01h_bgm_neon_pulse_v1",
+      "nodeId": "n15-bgm-neon-pulse",
+      "shotId": null,
+      "status": "completed",
+      "params": {
+        "prompt": "Synthwave background music bed. Driving arpeggiated bass, rain-soaked pads, slow build matching the episode's tension. Loopable, instrumental.",
+        "model": "mock-music-model",
+        "audioElementId": "bgm-neon-pulse",
+        "seed": 2001,
+        "referenceArtifactIds": []
+      },
+      "result": {
+        "artifactId": "wf_01h_bgm_neon_pulse",
+        "kind": "audio",
+        "mime": "audio/mpeg",
+        "filename": "ep001-bgm-neon-pulse.mp3",
+        "access": { "preview": "/mock/bgm-demo.mp3", "thumbnail": "/mock/placeholder-1x1.svg" }
+      },
+      "startedAt": "2026-06-08T10:20:00Z",
+      "completedAt": "2026-06-08T10:20:18Z"
+    },
+    {
+      "id": "run_01h_narration_s01_v1",
+      "nodeId": "n16-narration-s01-opening",
+      "shotId": "s01-opening",
+      "status": "completed",
+      "params": {
+        "prompt": "Cold-open narration establishing the Neon Drift world and Kai's debt, spoken over the rain-soaked alley. Calm, world-weary male voice.",
+        "model": "mock-tts-model",
+        "audioElementId": "narration-opening",
+        "voiceId": "voice_default",
+        "seed": 2002,
+        "referenceArtifactIds": []
+      },
+      "result": {
+        "artifactId": "wf_01h_narration_s01",
+        "kind": "audio",
+        "mime": "audio/mpeg",
+        "filename": "ep001-narration-s01-opening.mp3",
+        "access": { "preview": "/mock/narration-s01.mp3", "thumbnail": "/mock/placeholder-1x1.svg" }
+      },
+      "startedAt": "2026-06-08T10:21:00Z",
+      "completedAt": "2026-06-08T10:21:14Z"
     }
   ]
 }

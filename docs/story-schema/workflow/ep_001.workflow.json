@@ -198,6 +198,32 @@
         "referenceArtifactIds": []
       },
       "dependsOn": ["n01-char-kai-concept", "n03-char-takeshi-concept", "n06-scene-expressway"]
+    },
+    {
+      "id": "n15-bgm-neon-pulse",
+      "shotId": null,
+      "toolKind": "audio_generate",
+      "label": "BGM: Neon Pulse Theme",
+      "params": {
+        "promptTemplate": "Synthwave background music bed. Driving arpeggiated bass, rain-soaked pads, slow build matching the episode's tension. Loopable, instrumental.",
+        "model": "mock-music-model",
+        "audioElementId": "bgm-neon-pulse",
+        "referenceArtifactIds": []
+      },
+      "dependsOn": []
+    },
+    {
+      "id": "n16-narration-s01-opening",
+      "shotId": "s01-opening",
+      "toolKind": "audio_generate",
+      "label": "Narration: Opening Voiceover",
+      "params": {
+        "promptTemplate": "Cold-open narration establishing the Neon Drift world and Kai's debt, spoken over the rain-soaked alley. Calm, world-weary male voice.",
+        "model": "mock-tts-model",
+        "audioElementId": "narration-opening",
+        "referenceArtifactIds": []
+      },
+      "dependsOn": ["n07-shot-s01-opening"]
     }
   ],
   "edges": [
@@ -208,6 +234,7 @@
     { "from": "n04-scene-neon-alley", "to": "n09-shot-s03-takeshi", "relation": "depends_on" },
     { "from": "n01-char-kai-concept", "to": "n10-shot-s04-garage", "relation": "character_ref" },
     { "from": "n02-char-rei-concept", "to": "n10-shot-s04-garage", "relation": "character_ref" },
-    { "from": "n05-scene-underground-garage", "to": "n10-shot-s04-garage", "relation": "depends_on" }
+    { "from": "n05-scene-underground-garage", "to": "n10-shot-s04-garage", "relation": "depends_on" },
+    { "from": "n07-shot-s01-opening", "to": "n16-narration-s01-opening", "relation": "depends_on" }
   ]
 }

@@ -13,6 +13,7 @@ import type {
   OpenimagoStoryWorkflow,
 } from '../api/client'
 import type {
+  StoryAudioElementSummary,
   StoryBibleSummary,
   StoryCharacterSummary,
   StoryEpisodeSummary,
@@ -102,6 +103,17 @@ function mapStyleSeed(raw: Record<string, unknown>, _idx: number): StoryStyleSee
   }
 }
 
+function mapAudioElement(raw: Record<string, unknown>, _idx: number): StoryAudioElementSummary {
+  return {
+    id: safeStr(raw['id']) || safeStr(raw['slug']) || `audio-${_idx}`,
+    displayName: safeStr(raw['displayName']) || safeStr(raw['name']) || '未命名音频',
+    kind: isStatus(raw['kind'], ['bgm', 'narration', 'sfx'] as const) ?? 'narration',
+    description: safeStr(raw['description']) || '',
+    timingNote: safeStr(raw['timingNote']) || safeStr(raw['timing']) || '',
+    referenceArtifactIds: safeStrArr(raw['referenceArtifactIds']),
+  }
+}
+
 export function rawBibleToSummary(bible: OpenimagoStoryBible): StoryBibleSummary {
   return {
     schemaVersion: bible.schemaVersion,
@@ -113,6 +125,7 @@ export function rawBibleToSummary(bible: OpenimagoStoryBible): StoryBibleSummary
     characters: (bible.characters ?? []).map((c, idx) => mapCharacter(c, idx)),
     scenes: (bible.scenes ?? []).map((s, idx) => mapScene(s, idx)),
     styleSeeds: (bible.styleSeeds ?? []).map((ss, idx) => mapStyleSeed(ss, idx)),
+    audioElements: (bible.audioElements ?? []).map((ae, idx) => mapAudioElement(ae, idx)),
     updatedAt: bible.updatedAt ?? null,
   }
 }
@@ -218,6 +231,8 @@ export function rawRunsToRunSummaries(runs: OpenimagoStoryRuns): StoryRunSummary
         || safeStr(run['resultArtifactId'])
         || safeStr(run['artifactId'])
         || null,
+      kind: isStatus(result['kind'], ['image', 'video', 'audio'] as const) ?? null,
+      mime: safeStr(result['mime']) || null,
       thumbnailUrl: safeStr(access['thumbnail']) || null,
       previewUrl: safeStr(access['preview']) || null,
       error: safeStr(run['error']) || safeStr(run['errorMessage']) || null,

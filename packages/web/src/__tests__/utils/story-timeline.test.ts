@@ -13,6 +13,8 @@ function makeRun(overrides: Partial<StoryRunSummary> = {}): StoryRunSummary {
     model: 'flux-pro',
     prompt: 'a shot',
     resultArtifactId: 'art-1',
+    kind: null,
+    mime: null,
     thumbnailUrl: null,
     previewUrl: null,
     error: null,

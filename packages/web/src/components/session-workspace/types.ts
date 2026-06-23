@@ -128,6 +128,18 @@ export interface StoryStyleSeedSummary {
   referenceArtifactIds: string[]
 }
 
+/** Lightweight audio-element projection (ADR 0004 audio layer, flattened).
+ *  Global narration / BGM / SFX beds that shots and the Cut reference. */
+export interface StoryAudioElementSummary {
+  id: string
+  displayName: string
+  kind: 'bgm' | 'narration' | 'sfx'
+  description: string
+  /** Free-form note on when/where the bed plays (e.g. "Loops under act 1"). */
+  timingNote: string
+  referenceArtifactIds: string[]
+}
+
 /** Lightweight bible container — the canon reference. */
 export interface StoryBibleSummary {
   schemaVersion: number
@@ -139,6 +151,7 @@ export interface StoryBibleSummary {
   characters: StoryCharacterSummary[]
   scenes: StorySceneSummary[]
   styleSeeds: StoryStyleSeedSummary[]
+  audioElements: StoryAudioElementSummary[]
   updatedAt: string | null
 }
 
@@ -205,6 +218,12 @@ export interface StoryRunSummary {
   model: string
   prompt: string
   resultArtifactId: string | null
+  /** Media kind of the run's result artifact (ADR 0004 audio layer). null when
+   *  the run has no result yet or the kind is unrecognized. */
+  kind: 'image' | 'video' | 'audio' | null
+  /** MIME type of the run's result artifact (e.g. "audio/mpeg"). null when the
+   *  run has no result yet. */
+  mime: string | null
   /** Thumbnail URL from the run's inlined result.access (authoritative). */
   thumbnailUrl: string | null
   /** Full-size preview URL from the run's inlined result.access. */

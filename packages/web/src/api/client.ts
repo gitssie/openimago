@@ -189,6 +189,7 @@ export interface OpenimagoStoryBible {
   characters: Record<string, unknown>[]
   scenes: Record<string, unknown>[]
   styleSeeds: Record<string, unknown>[]
+  audioElements?: Record<string, unknown>[]
   updatedAt: string
 }
 
