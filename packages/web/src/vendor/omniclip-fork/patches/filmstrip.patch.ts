@@ -10,17 +10,17 @@
 // WHY: omniclip draws every frame STRETCHED into a 150×50 landscape canvas
 // (drawImage(video,0,0,150,50)). Our shot videos are portrait (≈9:16), so faces
 // look horizontally squished. This replacement:
-//   1. sizes the frame canvas to 9:16 PORTRAIT (32×56),
+//   1. sizes the frame canvas to 9:16 PORTRAIT (28×50 — fits the 50px lane),
 //   2. draws with a 9-arg CENTER-COVER crop computed from the real source dims
 //      (video.videoWidth/Height) — preserve aspect, crop overflow, no stretch
 //      (also auto-corrects any stray landscape source),
-//   3. leaves the DENSITY math 100% untouched (#width_of_frame = duration *
-//      2^zoom / frames, frame_count ≈ visible/100, scroll/recalc) per the spec —
-//      ONLY the rendered frame SHAPE changes. Portrait 32px frames sit flush-left
-//      in each (wider) horizontal slot; the trailing slot space shows the lane
-//      background by design.
-//   4. loading placeholders are 32×56 slots painted with the lane "raised" bg
-//      (a single flat fill — no per-frame spinner).
+//   3. makes the strip DENSE/edge-to-edge: the cell count is a LIVE getter
+//      (ceil(effect_width / 28)), so #width_of_frame and the view's render slot
+//      both stay ≈28px even after the cut assembler reassigns effect.duration
+//      post-init → frames butt together, no gaps (openimago-6br9),
+//   4. paints not-yet-drawn cells with a CLEAN baked canvas data-URL solid fill
+//      (never the bogus `${location.href}/assets/loading.svg`, which 404s under
+//      hash routing → broken-image icons), reused for every placeholder slot.
 //
 // Verbatim from the omniclip source EXCEPT the four marked CHANGED/ADDED blocks,
 // so re-applying on an omniclip upgrade is mechanical (diff against the upstream
@@ -57,6 +57,30 @@ const MAX_SLOTS = 600
 // ADDED: subtle right-edge separator baked into each frame so adjacent frames
 // read as distinct without a DOM gap. Kept faint; remove if it looks noisy.
 const SEPARATOR_RGBA = 'rgba(0,0,0,0.28)'
+
+// Clean placeholder for not-yet-drawn cells (openimago-6br9). Upstream pushed
+// `${window.location.href}/assets/loading.svg`, but under hash routing
+// window.location.href is `http://host/#/projects/...` → that URL 404s → broken
+// <img> in every undrawn cell. Instead, bake ONE 28×50 canvas solid-fill data-URL
+// (data-URLs never 404) in the imago "raised lane" tone (canvas can't read CSS
+// vars, so a concrete hex ≈ --imago-bg-raised composited over the clip surface),
+// reused for every placeholder slot. Lazy + memoised (no DOM work at import).
+let PLACEHOLDER_DATA_URL = ''
+function placeholderDataUrl() {
+  if (PLACEHOLDER_DATA_URL) return PLACEHOLDER_DATA_URL
+  const c = document.createElement('canvas')
+  c.width = FRAME_W
+  c.height = FRAME_H
+  const ctx = c.getContext('2d')
+  if (ctx) {
+    ctx.fillStyle = '#14141f' // ≈ raised lane over the clip --imago-bg-surface
+    ctx.fillRect(0, 0, FRAME_W, FRAME_H)
+    ctx.fillStyle = SEPARATOR_RGBA
+    ctx.fillRect(FRAME_W - 1, 0, 1, FRAME_H)
+  }
+  PLACEHOLDER_DATA_URL = c.toDataURL('image/webp', 0.4)
+  return PLACEHOLDER_DATA_URL
+}
 
 export class Filmstrip {
   effect
@@ -136,9 +160,10 @@ export class Filmstrip {
   }
 
   #generate_filmstrip_placeholders(frames) {
+    const placeholder = placeholderDataUrl()
     const new_arr = []
     for (let i = 0; i <= frames - 1; i++) {
-      new_arr.push(`${window.location.href}/assets/loading.svg`)
+      new_arr.push(placeholder)
     }
     return new_arr
   }
@@ -288,8 +313,9 @@ export class Filmstrip {
         const position = normalized_left + this.#width_of_frame * i
         if (position <= this.effect_width) {
           const filmstrip = this.#filmstrip_frames[this.#get_filmstrip_frame_at(effect, position, zoom)]
-          const filmstrip_is_already_drawn =
-            filmstrip !== `${window.location.href}/assets/loading.svg` && filmstrip
+          // "Already drawn" = a real frame URL, i.e. present and NOT the clean
+          // placeholder (openimago-6br9; was a comparison to the bogus loading.svg).
+          const filmstrip_is_already_drawn = !!filmstrip && filmstrip !== placeholderDataUrl()
           if (filmstrip_is_already_drawn) {
             yield { url: filmstrip, normalized_left, i: Math.floor(i) }
           } else {
