@@ -76,6 +76,10 @@ export async function hydrateFromCut(
       filmstrip_frame_count: clip.filmstripFrameCount ?? null,
       filmstrip_frame_w: clip.filmstripFrameW ?? null,
       filmstrip_frame_h: clip.filmstripFrameH ?? null,
+      // TRUE clip length in SECONDS (from the cut model's in/out points) — the
+      // reliable basis for "one cell per second" in the static sprite view
+      // (openimago-78m9); avoids omniclip's internal-unit duration / 2^zoom math.
+      filmstrip_duration_seconds: clip.outPointSeconds - clip.inPointSeconds,
     })
     cursorMs += durationMs
   }

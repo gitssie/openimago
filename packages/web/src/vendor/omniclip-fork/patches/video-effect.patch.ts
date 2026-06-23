@@ -29,12 +29,13 @@
 import { html, css } from '@benev/slate'
 import { Effect } from 'omniclip/x/components/omni-timeline/views/effects/parts/effect.js'
 import { shadow_view } from 'omniclip/x/context/context.js'
-import { calculate_effect_width } from 'omniclip/x/components/omni-timeline/utils/calculate_effect_width.js'
 
 // Sprite frame natural size: 9:16 portrait, full lane height (omniclip lanes are
 // 50px). 28/50 ≈ 0.56. FRAME_W/H is the per-frame size baked into the sprite
-// sheet (matches result.filmstrip.frameW/H). Cell WIDTH is now one second of
-// timeline (2^zoom px), independent of FRAME_W (openimago-78m9).
+// sheet (matches result.filmstrip.frameW/H) and drives the background-size of the
+// first-frame crop. Cell WIDTH is NOT derived from FRAME_W or zoom — each cell is
+// `flex: 1 1 0`, so the N (= ceil(durationSeconds)) cells split the effect's real
+// rendered width equally (openimago-78m9).
 const FRAME_W = 28
 const CELL_H = 50
 // Bound the DOM cell count for very long/zoomed clips (each cell is a cheap div).
@@ -60,34 +61,39 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
   })
 
   // ── Static sprite filmstrip — one FIRST-FRAME cell per second ─────────────
-  // Per the user's request (openimago-78m9): each clip just shows its FIRST FRAME,
-  // laid out one cell per 1 SECOND of the clip's duration. So:
-  //   - cell width = one second in timeline px = 2^(live zoom) (= clipWidth /
-  //     durationSeconds; 1s of duration renders as 2^zoom px),
-  //   - cellCount = ceil(durationSeconds),
-  //   - EVERY cell shows frame 0 (background-position 0,0) at the sprite's NATURAL
-  //     frame size, so the first frame is crisp 9:16 (no stretch to the cell).
-  // No decode, no seek — pure CSS background. To later switch to "the real frame
-  // nearest each second", flip ONE_FRAME_PER_SECOND below; the per-cell sprite
-  // offset is then second*FRAME_W (see the commented formula).
+  // Per the user's request (openimago-78m9): each clip shows its FIRST FRAME,
+  // laid out one cell per 1 SECOND of the clip's duration.
+  //
+  // Two RELIABLE values only (the earlier 2^zoom / omniclip-internal-duration
+  // math read wrong across the dep-optimizer boundary → 0.125px cells, 800 cells):
+  //   1. cellCount = ceil(durationSeconds) — durationSeconds is the clip's TRUE
+  //      length in seconds, threaded from the cut model (outPointSeconds -
+  //      inPointSeconds) onto the effect as filmstrip_duration_seconds.
+  //   2. cell width = the effect's REAL rendered width / cellCount — achieved
+  //      purely in CSS: the .filmstrip is width:100% of the effect, and each cell
+  //      is `flex: 1 1 0` so the N cells split that real width equally. No
+  //      getBoundingClientRect, no 2^zoom — the browser divides at layout time and
+  //      re-divides on zoom/resize for free.
+  // Every cell shows frame 0 (background-position 0,0) at the sprite's NATURAL
+  // frame size → crisp 9:16. No decode/seek. To switch to "the real frame nearest
+  // each second" later, flip ONE_FRAME_PER_SECOND (offset i*FRAME_W).
   const ONE_FRAME_PER_SECOND = false
 
   const render_filmstrip = () => {
     const get_effect = use.context.state.effects.find((e) => e.id === effect.id) ?? effect
-    const zoom = use.context.state.zoom
-    const clipWidth = calculate_effect_width(get_effect, zoom)
 
     const spriteUrl = get_effect.filmstrip_url
     const frameCount = get_effect.filmstrip_frame_count
-    // No sprite (e.g. orphan or pre-78m9 data) → flat lane, no broken images.
-    if (!spriteUrl || !frameCount || frameCount < 1 || clipWidth <= 0) {
+    const durationSeconds =
+      typeof get_effect.filmstrip_duration_seconds === 'number'
+        ? get_effect.filmstrip_duration_seconds
+        : 0
+    // No sprite (orphan / pre-78m9 data) → flat lane, no broken images.
+    if (!spriteUrl || !frameCount || frameCount < 1) {
       return html`<div class="filmstrip"></div>`
     }
 
-    // One second of timeline = 2^zoom px (same basis as calculate_effect_width =
-    // duration_seconds * 2^zoom). One cell per second.
-    const secondPx = Math.pow(2, zoom)
-    const durationSeconds = secondPx > 0 ? clipWidth / secondPx : 0
+    // One cell per second of TRUE clip duration (reliable, in seconds).
     const cellCount = Math.max(1, Math.min(MAX_CELLS, Math.ceil(durationSeconds)))
 
     // Sprite is one horizontal strip of `frameCount` frames at FRAME_W each. Use
@@ -102,7 +108,6 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
         <div
           class="sprite-cell"
           style="
-            width: ${secondPx}px;
             height: ${CELL_H}px;
             background-image: url('${spriteUrl}');
             background-repeat: no-repeat;
@@ -131,8 +136,12 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
         width: 100%;
         pointer-events: none;
       }
+      /* Each cell splits the effect's REAL rendered width equally → one second
+         per cell at the true on-screen scale (no 2^zoom guesswork). min-width:0
+         lets flex shrink them below content size for short clips. */
       .sprite-cell {
-        flex: 0 0 auto;
+        flex: 1 1 0;
+        min-width: 0;
         image-rendering: auto;
       }
     `,
