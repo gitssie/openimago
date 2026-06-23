@@ -31,8 +31,11 @@ import { Effect } from 'omniclip/x/components/omni-timeline/views/effects/parts/
 import { shadow_view } from 'omniclip/x/context/context.js'
 import { calculate_effect_width } from 'omniclip/x/components/omni-timeline/utils/calculate_effect_width.js'
 
-// 9:16 portrait cell, full lane height (omniclip lanes are 50px). 28/50 ≈ 0.56.
-const CELL_W = 28
+// Sprite frame natural size: 9:16 portrait, full lane height (omniclip lanes are
+// 50px). 28/50 ≈ 0.56. FRAME_W/H is the per-frame size baked into the sprite
+// sheet (matches result.filmstrip.frameW/H). Cell WIDTH is now one second of
+// timeline (2^zoom px), independent of FRAME_W (openimago-78m9).
+const FRAME_W = 28
 const CELL_H = 50
 // Bound the DOM cell count for very long/zoomed clips (each cell is a cheap div).
 const MAX_CELLS = 800
@@ -56,7 +59,19 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
     return () => dispose()
   })
 
-  // ── Static sprite filmstrip ──────────────────────────────────────────────
+  // ── Static sprite filmstrip — one FIRST-FRAME cell per second ─────────────
+  // Per the user's request (openimago-78m9): each clip just shows its FIRST FRAME,
+  // laid out one cell per 1 SECOND of the clip's duration. So:
+  //   - cell width = one second in timeline px = 2^(live zoom) (= clipWidth /
+  //     durationSeconds; 1s of duration renders as 2^zoom px),
+  //   - cellCount = ceil(durationSeconds),
+  //   - EVERY cell shows frame 0 (background-position 0,0) at the sprite's NATURAL
+  //     frame size, so the first frame is crisp 9:16 (no stretch to the cell).
+  // No decode, no seek — pure CSS background. To later switch to "the real frame
+  // nearest each second", flip ONE_FRAME_PER_SECOND below; the per-cell sprite
+  // offset is then second*FRAME_W (see the commented formula).
+  const ONE_FRAME_PER_SECOND = false
+
   const render_filmstrip = () => {
     const get_effect = use.context.state.effects.find((e) => e.id === effect.id) ?? effect
     const zoom = use.context.state.zoom
@@ -69,25 +84,30 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
       return html`<div class="filmstrip"></div>`
     }
 
-    const cellCount = Math.max(1, Math.min(MAX_CELLS, Math.ceil(clipWidth / CELL_W)))
-    // The sprite is one horizontal strip of `frameCount` frames. Scale it so each
-    // frame is CELL_W wide when used as a background; pick the frame nearest each
-    // cell's proportional position and offset background-position-x to it.
-    const stripPxW = frameCount * CELL_W
+    // One second of timeline = 2^zoom px (same basis as calculate_effect_width =
+    // duration_seconds * 2^zoom). One cell per second.
+    const secondPx = Math.pow(2, zoom)
+    const durationSeconds = secondPx > 0 ? clipWidth / secondPx : 0
+    const cellCount = Math.max(1, Math.min(MAX_CELLS, Math.ceil(durationSeconds)))
+
+    // Sprite is one horizontal strip of `frameCount` frames at FRAME_W each. Use
+    // the NATURAL strip size so each shown frame is a crisp 9:16 FRAME_W×FRAME_H.
+    const stripPxW = frameCount * FRAME_W
     const cells = []
     for (let i = 0; i < cellCount; i++) {
-      const t = cellCount === 1 ? 0 : i / (cellCount - 1)
-      const frameIdx = Math.min(frameCount - 1, Math.round(t * (frameCount - 1)))
+      // DEFAULT: first frame for every cell. Optional future mode: the frame
+      // nearest second i (clamped to the last frame).
+      const frameIdx = ONE_FRAME_PER_SECOND ? Math.min(frameCount - 1, i) : 0
       cells.push(html`
         <div
           class="sprite-cell"
           style="
-            width: ${CELL_W}px;
+            width: ${secondPx}px;
             height: ${CELL_H}px;
             background-image: url('${spriteUrl}');
             background-repeat: no-repeat;
             background-size: ${stripPxW}px ${CELL_H}px;
-            background-position: ${-(frameIdx * CELL_W)}px 0;
+            background-position: ${-(frameIdx * FRAME_W)}px 0;
           "
         ></div>
       `)
