@@ -5,6 +5,10 @@ import { SessionTable } from "../db/session-schema"
 import { WorkspaceTable } from "../db/workspace-schema"
 import { workspaceFileId as generateWorkspaceFileId } from "../utils/ids"
 import { logger } from "../server/logger"
+import { filmstripService, type FilmstripMeta } from "../media/filmstrip"
+import { tmpdir } from "node:os"
+import { join as pathJoin } from "node:path"
+import { writeFile as fsWriteFile, rm as fsRm } from "node:fs/promises"
 
 export const VALID_MEDIA_KINDS = ["image", "video", "audio"] as const
 export type MediaKind = (typeof VALID_MEDIA_KINDS)[number]
@@ -73,6 +77,14 @@ export interface WorkspaceFileAccessLocators {
   download?: MediaAccessLocator
   thumbnail?: MediaAccessLocator
   poster?: MediaAccessLocator
+  /**
+   * Precomputed timeline filmstrip SPRITE (openimago-k6bl): a horizontal strip of
+   * 9:16 frames the NLE renders statically. Set ASYNC after registration by the
+   * background filmstrip task (video only); the frame dims live in
+   * metadata.filmstrip { frameCount, frameW, frameH }. Absent until the sprite is
+   * generated (or when ffmpeg is unavailable — graceful skip).
+   */
+  filmstrip?: MediaAccessLocator
 }
 
 export interface WorkspaceFileRecord {
@@ -245,6 +257,22 @@ export class WorkspaceFilesService {
       updatedAt: now,
     })
 
+    // openimago-k6bl: for a VIDEO, kick off filmstrip-sprite generation in the
+    // BACKGROUND (do NOT block the registration response). It downloads the
+    // preview, runs ffmpeg, writes the sprite via the storage adapter, and PATCHes
+    // this row's access_locators.filmstrip (+ metadata.filmstrip dims). Any
+    // failure / missing ffmpeg is swallowed (warn) so registration is unaffected;
+    // a later viewer just sees the sprite appear once ready.
+    if (input.kind === "video" && session.directory) {
+      void this.#generateFilmstripInBackground({
+        workspaceFileId: id,
+        previewHref: input.accessPreviewHref,
+        outputDir: session.directory,
+        existingMetadata: mergedMetadata,
+        accessLocators,
+      })
+    }
+
     const result: WorkspaceFileRecord = {
       workspaceFileId: id,
       kind: input.kind,
@@ -266,6 +294,72 @@ export class WorkspaceFilesService {
     logger.info({ workspaceFileId: id, sessionId: input.sessionId, kind: input.kind }, "workspace-files: registered")
 
     return { workspaceFileId: id, result, status: 201 }
+  }
+
+  /**
+   * Background filmstrip-sprite generation for a registered VIDEO (openimago-k6bl).
+   * Downloads the preview to a temp file (http/https only — relative/mock URLs have
+   * no fetchable host, so they skip), runs FilmstripService.generate (system
+   * ffmpeg → storage adapter), then PATCHes the row's access_locators.filmstrip +
+   * metadata.filmstrip dims. Never throws — all failures are logged and swallowed
+   * so the (already-returned) registration is unaffected.
+   */
+  async #generateFilmstripInBackground(args: {
+    workspaceFileId: string
+    previewHref: string
+    outputDir: string
+    existingMetadata: Record<string, unknown> | null
+    accessLocators: WorkspaceFileAccessLocators
+  }): Promise<void> {
+    const { workspaceFileId, previewHref, outputDir } = args
+    let tmpVideo: string | null = null
+    try {
+      // Only http(s) previews are fetchable to a local file for ffmpeg. Relative
+      // (/mock/*) or data URLs have no real video to sample → skip quietly.
+      if (!/^https?:\/\//i.test(previewHref)) {
+        logger.info({ workspaceFileId }, "filmstrip: non-fetchable preview href — skipping sprite")
+        return
+      }
+      const res = await fetch(previewHref)
+      if (!res.ok) {
+        logger.warn({ workspaceFileId, status: res.status }, "filmstrip: preview download failed — skipping")
+        return
+      }
+      const bytes = new Uint8Array(await res.arrayBuffer())
+      tmpVideo = pathJoin(tmpdir(), `filmstrip_src_${workspaceFileId}_${Date.now()}.mp4`)
+      await fsWriteFile(tmpVideo, bytes)
+
+      const generated = await filmstripService.generate({
+        artifactId: workspaceFileId,
+        videoPath: tmpVideo,
+        outputDir,
+        referenceUrl: previewHref,
+      })
+      if (!generated) return // ffmpeg unavailable/failed — already warned, skip.
+
+      await this.#patchFilmstrip(workspaceFileId, args.accessLocators, args.existingMetadata, generated.url, generated.filmstrip)
+      logger.info({ workspaceFileId, filmstrip: generated.url }, "filmstrip: sprite ready")
+    } catch (err) {
+      logger.warn({ workspaceFileId, err }, "filmstrip: background generation error — skipping")
+    } finally {
+      if (tmpVideo) await fsRm(tmpVideo, { force: true }).catch(() => {})
+    }
+  }
+
+  /** PATCH a row's access_locators.filmstrip + metadata.filmstrip dims (JSONB; no migration). */
+  async #patchFilmstrip(
+    workspaceFileId: string,
+    accessLocators: WorkspaceFileAccessLocators,
+    existingMetadata: Record<string, unknown> | null,
+    filmstripUrl: string,
+    dims: FilmstripMeta,
+  ): Promise<void> {
+    const nextAccess: WorkspaceFileAccessLocators = { ...accessLocators, filmstrip: { href: filmstripUrl } }
+    const nextMetadata: Record<string, unknown> = { ...(existingMetadata ?? {}), filmstrip: dims }
+    await db
+      .update(workspaceGeneratedFiles)
+      .set({ accessLocators: nextAccess, metadata: nextMetadata, updatedAt: new Date() })
+      .where(eq(workspaceGeneratedFiles.id, workspaceFileId))
   }
 
   async listFiles(

@@ -153,6 +153,9 @@ export interface WorkspaceFile extends Omit<MediaToolResultV1, 'access' | 'creat
     download?: WorkspaceFileAccessLocator
     thumbnail?: WorkspaceFileAccessLocator
     poster?: WorkspaceFileAccessLocator
+    /** Precomputed timeline filmstrip sprite (openimago-k6bl), video only; set
+     *  async by the backend after generation. Dims live in metadata.filmstrip. */
+    filmstrip?: WorkspaceFileAccessLocator
   }
   prompt?: string
   provider?: string

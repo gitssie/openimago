@@ -25,6 +25,8 @@ export interface MediaToolResultV1 {
     download?: MediaAccessLocator
     thumbnail?: MediaAccessLocator
     poster?: MediaAccessLocator
+    /** Precomputed timeline filmstrip sprite (openimago-k6bl); video only. */
+    filmstrip?: MediaAccessLocator
   }
 
   mime: string

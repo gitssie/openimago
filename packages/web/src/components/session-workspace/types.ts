@@ -37,6 +37,8 @@ export interface WorkspaceArtifact {
     download?: string
     thumbnail?: string
     poster?: string
+    /** Precomputed timeline filmstrip sprite URL (openimago-k6bl); video only. */
+    filmstrip?: string
   }
 
   filename?: string
