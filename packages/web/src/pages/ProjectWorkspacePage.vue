@@ -87,13 +87,11 @@
         <UILayoutPage class="project-workspace-page">
           <!--
             Center content switches with the top-bar tab:
-              对话   → ProjectWorkspaceGrid + chat (this block)
-              故事板 → PreviewPane (selection-driven, below)
+              对话 / 故事板 → ProjectWorkspaceGrid + chat (this block, isChatSurfaceTab)
               概览/时间线/AI产出 → their own panels (below)
-            The chat lives in exactly one place at a time (here for 对话, in the
-            right rail otherwise), so the single chatViewRef always resolves to
-            the live instance. Mounted with v-if so it unmounts off-对话 and never
-            double-mounts the chat with the rail.
+            故事板 keeps the full-width chat here; selecting a left-storyboard item
+            opens the PreviewPane in a centered q-dialog (see below) rather than
+            taking over the center.
           -->
           <ProjectWorkspaceGrid
             v-if="isChatSurfaceTab"
@@ -167,21 +165,6 @@
             </template>
           </ProjectWorkspaceGrid>
 
-          <!-- 故事板 tab → selection-driven center PreviewPane -->
-          <PreviewPane
-            v-else-if="isStoryboardTab"
-            class="project-workspace-page__story-view"
-            :preview="selectedPreview"
-            @prev="onPreviewStep('prev')"
-            @next="onPreviewStep('next')"
-            @regenerate="onPreviewRegenerate"
-            @manual-edit="onPreviewManualEdit"
-            @comment-submit="onPreviewCommentSubmit"
-            @download="onPreviewDownload"
-            @delete="onPreviewDelete"
-            @toggle-hd="onPreviewToggleHd"
-          />
-
           <!-- 概览 tab → story bible + episode list -->
           <StoryOverviewPanel
             v-else-if="activeWorkspaceTab === 'overview'"
@@ -236,90 +219,52 @@
         </UILayoutPage>
       </UILayoutPageContainer>
 
-      <!-- ── Right rail: dual-tab 对话 (chat) + AI产出 (outputs) ──────────── -->
+      <!-- ── Right drawer: project AI outputs ─────────────────────────── -->
       <UILayoutDrawer
         :model-value="rightPanelOpen"
         side="right"
-        :width="420"
+        :width="360"
         :breakpoint="1280"
         behavior="desktop"
         bordered
         @update:model-value="rightPanelOpen = $event"
       >
-        <WorkspaceRightRail
-          :active-tab="rightRailTab"
-          :outputs-count="aiOutputItems.length"
-          @tab-change="onRightRailTabChange"
-        >
-          <!--
-            Chat home for every tab EXCEPT 对话 (which shows it full-width in the
-            center). v-if keeps exactly one chat instance live, so chatViewRef is
-            unambiguous; session state survives via useAgentSession regardless.
-          -->
-          <template #chat>
-            <div v-if="!isChatSurfaceTab" class="right-rail-chat">
-              <div class="right-rail-chat__log">
-                <SessionChatView
-                  ref="chatViewRef"
-                  :session-id="sessionId"
-                  :display-messages="displayMessages"
-                  :part-text="partText"
-                  :is-loading="isLoading"
-                  :session-status="sessionStatus"
-                  :history-exhausted="historyExhausted"
-                  :history-loading="historyLoading"
-                  :current-session-item="currentSessionItem"
-                  :active-attention-call-id="activeAttentionCallId"
-                  :is-session-switching="messagesLoading"
-                  @load-history="onLoadHistory"
-                  @switch-session="handleSwitchSession"
-                  @revert-turn="(msgId) => void revertMessage(msgId)"
-                  @use-suggestion="useSuggestion"
-                />
-              </div>
-              <div v-if="hasExtras" class="right-rail-chat__extras">
-                <AgentQuestion
-                  v-if="pendingQuestion"
-                  :request="pendingQuestion"
-                  :on-reply="replyToQuestion"
-                  :on-reject="rejectQuestion"
-                />
-                <AgentPermission
-                  v-if="pendingPermission"
-                  :request="pendingPermission"
-                  :on-respond="replyToPermission"
-                />
-              </div>
-              <ChatInputDock
-                :loading="isLoading"
-                :connected="isConnected"
-                :disabled="isSessionSwitching"
-                :attachments="pendingAttachments"
-                @submit="submitDraftMessage"
-                @abort="abortSession"
-                @remove-attachment="(id) => removeAttachment(id)"
-                @attach-files="onFilesSelected"
-              />
-            </div>
-          </template>
-
-          <template #outputs>
-            <ProjectWorkspaceRightPanel
-              :items="aiOutputItems"
-              :selected-id="selectedOutputId"
-              :layout="'grid'"
-              :show-view-all="aiOutputItems.length > 6"
-              :project-name="projectName"
-              @item-select="onGridOutputSelect"
-              @item-menu="onOutputMenu"
-              @layout-change="(l) => { outputLayout = l }"
-              @filter="onOutputFilter"
-              @view-all="onOutputViewAll"
-            />
-          </template>
-        </WorkspaceRightRail>
+        <ProjectWorkspaceRightPanel
+          :items="aiOutputItems"
+          :selected-id="selectedOutputId"
+          :layout="'grid'"
+          :show-view-all="aiOutputItems.length > 6"
+          :project-name="projectName"
+          @item-select="onGridOutputSelect"
+          @item-menu="onOutputMenu"
+          @layout-change="(l) => { outputLayout = l }"
+          @filter="onOutputFilter"
+          @view-all="onOutputViewAll"
+        />
       </UILayoutDrawer>
     </UILayout>
+
+    <!-- ── Selection preview dialog (故事板: opens on a left-storyboard select) ── -->
+    <q-dialog v-model="previewDialogOpen">
+      <!-- Inline sizing: q-dialog teleports to <body>, so scoped CSS can't reach
+           this; size the card directly. PreviewPane fills it (height:100%). -->
+      <div
+        class="preview-dialog"
+        style="width: 880px; max-width: 92vw; height: 78vh; max-height: 860px; display: flex;"
+      >
+        <PreviewPane
+          :preview="selectedPreview"
+          @prev="onPreviewStep('prev')"
+          @next="onPreviewStep('next')"
+          @regenerate="onPreviewRegenerate"
+          @manual-edit="onPreviewManualEdit"
+          @comment-submit="onPreviewCommentSubmit"
+          @download="onPreviewDownload"
+          @delete="onPreviewDelete"
+          @toggle-hd="onPreviewToggleHd"
+        />
+      </div>
+    </q-dialog>
 
     <!-- WorkspaceArtifactsPanel overlay (project scope, ADR 0003) — unchanged -->
     <div v-if="showArtifactsPanel" class="artifacts-panel-overlay">
@@ -383,7 +328,6 @@ import {
   type PreviewSection,
 } from 'src/components/session-workspace/left-panel/mapper'
 import PreviewPane from 'src/components/session-workspace/PreviewPane.vue'
-import WorkspaceRightRail, { type RightRailTab } from 'src/components/session-workspace/WorkspaceRightRail.vue'
 import ProjectWorkspaceRightPanel from 'src/components/session-workspace/ProjectWorkspaceRightPanel.vue'
 import AgentQuestion from 'src/components/AgentQuestion.vue'
 import AgentPermission from 'src/components/AgentPermission.vue'
@@ -493,12 +437,12 @@ const projectOutputsLoading = ref(false)
 const projectWorkspaceFileItems = ref<AIOutputItem[]>([])
 const selectedOutputId = ref<string | null>(null)
 const selectedSceneId = ref<string | null>(null)
-// Cross-section selection driving the center PreviewPane on the 故事板 tab
+// Cross-section selection driving the PreviewPane dialog on the 故事板 tab
 // ({ section: 'element' | 'shot' | 'audio', id }). selectedSceneId mirrors its id
 // for the existing active-card highlight + context strip.
 const previewSelection = ref<PreviewSelection | null>(null)
-// Right-rail (对话 / AI产出) active tab — defaults to chat.
-const rightRailTab = ref<RightRailTab>('chat')
+// Whether the selection-preview dialog is open (opened on left-storyboard select).
+const previewDialogOpen = ref(false)
 // Canonical HD toggle state for the PreviewPane (parent-owned).
 const previewHdActive = ref(false)
 const projectFiles = ref<OutputItem[]>([])
@@ -737,11 +681,12 @@ const currentStoryRuns = computed<StoryRunSummary[]>(() => {
   return rawRunsToRunSummaries(storyRuns.value)
 })
 
-// The center chat surface (Grid + chat) now backs ONLY the 对话 tab. 故事板 shows
-// the selection-driven PreviewPane in the center; overview/timeline/outputs
-// render their own center panels.
-const isChatSurfaceTab = computed(() => activeWorkspaceTab.value === 'conversation')
-const isStoryboardTab = computed(() => activeWorkspaceTab.value === 'storyboard')
+// The center chat surface (Grid + chat) backs BOTH the 对话 and 故事板 tabs; on
+// 故事板 a left-storyboard selection opens the PreviewPane in a dialog instead of
+// taking over the center. overview/timeline/outputs render their own panels.
+const isChatSurfaceTab = computed(
+  () => activeWorkspaceTab.value === 'conversation' || activeWorkspaceTab.value === 'storyboard',
+)
 
 // Shot-adding is the single supported story write (ADR 0005); enabled once an
 // episode is selected so the new shot has a target.
@@ -914,9 +859,9 @@ function onWorkspaceTabChange(tab: string) {
   activeWorkspaceTab.value = tab
 }
 
-// Per-tab layout side effects. The right rail (对话 / AI产出) stays visible on
-// every tab — only the left storyboard and the rail's default sub-tab change.
+// Per-tab layout side effects.
 let leftPanelOpenBeforeTimeline: boolean | null = null
+let rightPanelOpenBeforeOutputs: boolean | null = null
 watch(activeWorkspaceTab, (tab, prev) => {
   // 时间线 is a near-full-screen NLE editor → hide the left storyboard while
   // active, restore the user's prior state on leave.
@@ -928,9 +873,15 @@ watch(activeWorkspaceTab, (tab, prev) => {
     leftPanelOpenBeforeTimeline = null
   }
 
-  // The AI产出 center tab already shows the outputs full-width; nudge the rail to
-  // its chat tab so outputs aren't shown twice (the rail itself stays open).
-  if (tab === 'outputs') rightRailTab.value = 'chat'
+  // The AI产出 center tab shows the same outputs panel as the right drawer, so
+  // collapse the drawer while that tab is active and restore it on leave.
+  if (tab === 'outputs' && prev !== 'outputs') {
+    rightPanelOpenBeforeOutputs = rightPanelOpen.value
+    rightPanelOpen.value = false
+  } else if (tab !== 'outputs' && prev === 'outputs' && rightPanelOpenBeforeOutputs !== null) {
+    rightPanelOpen.value = rightPanelOpenBeforeOutputs
+    rightPanelOpenBeforeOutputs = null
+  }
 })
 
 function onEpisodeSelect(episodeId: string) {
@@ -1086,9 +1037,9 @@ function previewSectionOf(id: string): PreviewSection | null {
 /**
  * A card was selected in any of the three accordion sections (item-select).
  * `selectedSceneId` drives the active-card highlight + the context strip;
- * `previewSelection` drives the center PreviewPane. When the selected id is a
- * shot, also track it as the current story shot so the timeline / generate
- * affordances target it.
+ * `previewSelection` feeds the PreviewPane dialog, which opens on select. When
+ * the selected id is a shot, also track it as the current story shot so the
+ * timeline / generate affordances target it.
  */
 function onSceneSelect(id: string) {
   selectedSceneId.value = id
@@ -1097,6 +1048,8 @@ function onSceneSelect(id: string) {
   if (section === 'shot') {
     currentStoryShotId.value = id
   }
+  // Open the centered preview dialog for a real selection (a known section).
+  if (section) previewDialogOpen.value = true
 }
 
 /** A section header was collapsed/expanded. Collapse state is owned in-memory by
@@ -1195,11 +1148,6 @@ function onPreviewDelete() {
 /** HD toggle — track the canonical state in the parent (visual only for now). */
 function onPreviewToggleHd() {
   previewHdActive.value = !previewHdActive.value
-}
-
-/** Right-rail tab change (对话 / AI产出). */
-function onRightRailTabChange(tab: RightRailTab) {
-  rightRailTab.value = tab
 }
 
 /** Replace one episode in storyEpisodes with the latest from the backend. When
