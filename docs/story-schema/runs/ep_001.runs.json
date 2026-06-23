@@ -142,13 +142,18 @@
         "artifactId": "wf_01h_shot07_video",
         "kind": "video",
         "mime": "video/mp4",
+        "duration": 64.767,
         "filename": "ep001-shot07-race-prep.mp4",
         "access": {
           "preview": "/mock/flova-demo.mp4",
           "thumbnail": "/mock/placeholder-16x9.svg",
           "filmstrip": "/mock/flova-demo.filmstrip.png"
         },
-        "filmstrip": { "frameCount": 24, "frameW": 28, "frameH": 50 }
+        "filmstrip": {
+          "frameCount": 24,
+          "frameW": 28,
+          "frameH": 50
+        }
       },
       "startedAt": "2026-06-08T10:12:00Z",
       "completedAt": "2026-06-08T10:12:40Z"
@@ -165,15 +170,26 @@
         "aspectRatio": "16:9",
         "duration": 8,
         "seed": 1001,
-        "referenceArtifactIds": ["wf_01h_shot01"]
+        "referenceArtifactIds": [
+          "wf_01h_shot01"
+        ]
       },
       "result": {
         "artifactId": "wf_01h_shot01_video",
         "kind": "video",
         "mime": "video/mp4",
+        "duration": 15.069,
         "filename": "ep001-shot01-opening.mp4",
-        "access": { "preview": "/mock/shot-s01.mp4", "thumbnail": "/mock/placeholder-16x9.svg", "filmstrip": "/mock/shot-s01.filmstrip.png" },
-        "filmstrip": { "frameCount": 24, "frameW": 28, "frameH": 50 }
+        "access": {
+          "preview": "/mock/shot-s01.mp4",
+          "thumbnail": "/mock/placeholder-16x9.svg",
+          "filmstrip": "/mock/shot-s01.filmstrip.png"
+        },
+        "filmstrip": {
+          "frameCount": 24,
+          "frameW": 28,
+          "frameH": 50
+        }
       },
       "startedAt": "2026-06-08T10:14:00Z",
       "completedAt": "2026-06-08T10:14:32Z"
@@ -196,9 +212,18 @@
         "artifactId": "wf_01h_shot02_video",
         "kind": "video",
         "mime": "video/mp4",
+        "duration": 15.069,
         "filename": "ep001-shot02-kai-defeat.mp4",
-        "access": { "preview": "/mock/shot-s02.mp4", "thumbnail": "/mock/placeholder-16x9.svg", "filmstrip": "/mock/shot-s02.filmstrip.png" },
-        "filmstrip": { "frameCount": 24, "frameW": 28, "frameH": 50 }
+        "access": {
+          "preview": "/mock/shot-s02.mp4",
+          "thumbnail": "/mock/placeholder-16x9.svg",
+          "filmstrip": "/mock/shot-s02.filmstrip.png"
+        },
+        "filmstrip": {
+          "frameCount": 24,
+          "frameW": 28,
+          "frameH": 50
+        }
       },
       "startedAt": "2026-06-08T10:15:00Z",
       "completedAt": "2026-06-08T10:15:30Z"
@@ -221,9 +246,18 @@
         "artifactId": "wf_01h_shot03_video",
         "kind": "video",
         "mime": "video/mp4",
+        "duration": 10.054,
         "filename": "ep001-shot03-takeshi-arrives.mp4",
-        "access": { "preview": "/mock/shot-s03.mp4", "thumbnail": "/mock/placeholder-16x9.svg", "filmstrip": "/mock/shot-s03.filmstrip.png" },
-        "filmstrip": { "frameCount": 24, "frameW": 28, "frameH": 50 }
+        "access": {
+          "preview": "/mock/shot-s03.mp4",
+          "thumbnail": "/mock/placeholder-16x9.svg",
+          "filmstrip": "/mock/shot-s03.filmstrip.png"
+        },
+        "filmstrip": {
+          "frameCount": 24,
+          "frameW": 28,
+          "frameH": 50
+        }
       },
       "startedAt": "2026-06-08T10:16:00Z",
       "completedAt": "2026-06-08T10:16:31Z"
@@ -246,9 +280,18 @@
         "artifactId": "wf_01h_shot04_video",
         "kind": "video",
         "mime": "video/mp4",
+        "duration": 12.051,
         "filename": "ep001-shot04-garage-entrance.mp4",
-        "access": { "preview": "/mock/shot-s04.mp4", "thumbnail": "/mock/placeholder-16x9.svg", "filmstrip": "/mock/shot-s04.filmstrip.png" },
-        "filmstrip": { "frameCount": 24, "frameW": 28, "frameH": 50 }
+        "access": {
+          "preview": "/mock/shot-s04.mp4",
+          "thumbnail": "/mock/placeholder-16x9.svg",
+          "filmstrip": "/mock/shot-s04.filmstrip.png"
+        },
+        "filmstrip": {
+          "frameCount": 24,
+          "frameW": 28,
+          "frameH": 50
+        }
       },
       "startedAt": "2026-06-08T10:17:00Z",
       "completedAt": "2026-06-08T10:17:33Z"
@@ -271,9 +314,18 @@
         "artifactId": "wf_01h_shot05_video",
         "kind": "video",
         "mime": "video/mp4",
+        "duration": 12.051,
         "filename": "ep001-shot05-rei-plan.mp4",
-        "access": { "preview": "/mock/shot-s05.mp4", "thumbnail": "/mock/placeholder-16x9.svg", "filmstrip": "/mock/shot-s05.filmstrip.png" },
-        "filmstrip": { "frameCount": 24, "frameW": 28, "frameH": 50 }
+        "access": {
+          "preview": "/mock/shot-s05.mp4",
+          "thumbnail": "/mock/placeholder-16x9.svg",
+          "filmstrip": "/mock/shot-s05.filmstrip.png"
+        },
+        "filmstrip": {
+          "frameCount": 24,
+          "frameW": 28,
+          "frameH": 50
+        }
       },
       "startedAt": "2026-06-08T10:18:00Z",
       "completedAt": "2026-06-08T10:18:34Z"
@@ -296,9 +348,18 @@
         "artifactId": "wf_01h_shot06_video",
         "kind": "video",
         "mime": "video/mp4",
+        "duration": 10.054,
         "filename": "ep001-shot06-decision.mp4",
-        "access": { "preview": "/mock/shot-s06.mp4", "thumbnail": "/mock/placeholder-16x9.svg", "filmstrip": "/mock/shot-s06.filmstrip.png" },
-        "filmstrip": { "frameCount": 24, "frameW": 28, "frameH": 50 }
+        "access": {
+          "preview": "/mock/shot-s06.mp4",
+          "thumbnail": "/mock/placeholder-16x9.svg",
+          "filmstrip": "/mock/shot-s06.filmstrip.png"
+        },
+        "filmstrip": {
+          "frameCount": 24,
+          "frameW": 28,
+          "frameH": 50
+        }
       },
       "startedAt": "2026-06-08T10:19:00Z",
       "completedAt": "2026-06-08T10:19:35Z"
@@ -320,7 +381,10 @@
         "kind": "audio",
         "mime": "audio/mpeg",
         "filename": "ep001-bgm-neon-pulse.mp3",
-        "access": { "preview": "/mock/bgm-demo.mp3", "thumbnail": "/mock/placeholder-1x1.svg" }
+        "access": {
+          "preview": "/mock/bgm-demo.mp3",
+          "thumbnail": "/mock/placeholder-1x1.svg"
+        }
       },
       "startedAt": "2026-06-08T10:20:00Z",
       "completedAt": "2026-06-08T10:20:18Z"
@@ -343,7 +407,10 @@
         "kind": "audio",
         "mime": "audio/mpeg",
         "filename": "ep001-narration-s01-opening.mp3",
-        "access": { "preview": "/mock/narration-s01.mp3", "thumbnail": "/mock/placeholder-1x1.svg" }
+        "access": {
+          "preview": "/mock/narration-s01.mp3",
+          "thumbnail": "/mock/placeholder-1x1.svg"
+        }
       },
       "startedAt": "2026-06-08T10:21:00Z",
       "completedAt": "2026-06-08T10:21:14Z"

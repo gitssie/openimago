@@ -210,6 +210,10 @@ export interface GeneratedFilmstrip {
   filmstrip: FilmstripMeta
   /** On-disk path the sprite was written to. */
   storagePath: string
+  /** The video's REAL duration in seconds (from the ffprobe pass). The caller
+   *  records this on the artifact (metadata.duration) so the timeline ruler /
+   *  clip widths use the true length, not an estimate (openimago-9uwt). */
+  durationSeconds: number
 }
 
 /**
@@ -255,6 +259,7 @@ export class FilmstripService {
         url: filmstripUrlFrom(input.referenceUrl, input.artifactId),
         filmstrip: filmstripMeta(),
         storagePath,
+        durationSeconds: duration,
       }
     } catch (err) {
       logger.warn({ artifactId: input.artifactId, err }, "filmstrip: generation error — skipping sprite")

@@ -337,8 +337,18 @@ export class WorkspaceFilesService {
       })
       if (!generated) return // ffmpeg unavailable/failed — already warned, skip.
 
-      await this.#patchFilmstrip(workspaceFileId, args.accessLocators, args.existingMetadata, generated.url, generated.filmstrip)
-      logger.info({ workspaceFileId, filmstrip: generated.url }, "filmstrip: sprite ready")
+      await this.#patchFilmstrip(
+        workspaceFileId,
+        args.accessLocators,
+        args.existingMetadata,
+        generated.url,
+        generated.filmstrip,
+        generated.durationSeconds,
+      )
+      logger.info(
+        { workspaceFileId, filmstrip: generated.url, duration: generated.durationSeconds },
+        "filmstrip: sprite ready",
+      )
     } catch (err) {
       logger.warn({ workspaceFileId, err }, "filmstrip: background generation error — skipping")
     } finally {
@@ -346,19 +356,35 @@ export class WorkspaceFilesService {
     }
   }
 
-  /** PATCH a row's access_locators.filmstrip + metadata.filmstrip dims (JSONB; no migration). */
+  /**
+   * PATCH a video row after filmstrip generation: access_locators.filmstrip (URL),
+   * metadata.filmstrip dims, and the REAL probed duration (openimago-9uwt) — on
+   * both the `duration` column and metadata.duration, so the timeline ruler / clip
+   * widths use the true length, not an estimate. JSONB + existing column; no
+   * migration. Rounded to whole seconds for the integer `duration` column.
+   */
   async #patchFilmstrip(
     workspaceFileId: string,
     accessLocators: WorkspaceFileAccessLocators,
     existingMetadata: Record<string, unknown> | null,
     filmstripUrl: string,
     dims: FilmstripMeta,
+    durationSeconds: number,
   ): Promise<void> {
     const nextAccess: WorkspaceFileAccessLocators = { ...accessLocators, filmstrip: { href: filmstripUrl } }
-    const nextMetadata: Record<string, unknown> = { ...(existingMetadata ?? {}), filmstrip: dims }
+    const nextMetadata: Record<string, unknown> = {
+      ...(existingMetadata ?? {}),
+      filmstrip: dims,
+      duration: durationSeconds,
+    }
     await db
       .update(workspaceGeneratedFiles)
-      .set({ accessLocators: nextAccess, metadata: nextMetadata, updatedAt: new Date() })
+      .set({
+        accessLocators: nextAccess,
+        metadata: nextMetadata,
+        duration: Math.round(durationSeconds),
+        updatedAt: new Date(),
+      })
       .where(eq(workspaceGeneratedFiles.id, workspaceFileId))
   }
 
