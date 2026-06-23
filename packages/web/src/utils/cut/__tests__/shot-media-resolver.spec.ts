@@ -39,6 +39,10 @@ function run(
     mime: 'video/mp4',
     thumbnailUrl: `${id}-thumb.png`,
     previewUrl: `${id}-preview.mp4`,
+    filmstripUrl: `${id}.filmstrip.webp`,
+    filmstripFrameCount: 24,
+    filmstripFrameW: 28,
+    filmstripFrameH: 50,
     error: null,
     ...over,
   }
@@ -55,6 +59,10 @@ describe('resolveShotMediaSource', () => {
       sourceShotId: 'shot_1',
       url: 'r2-preview.mp4',
       thumbnailUrl: 'r2-thumb.png',
+      filmstripUrl: 'r2.filmstrip.webp',
+      filmstripFrameCount: 24,
+      filmstripFrameW: 28,
+      filmstripFrameH: 50,
       name: 'shot_1.mp4',
     })
   })

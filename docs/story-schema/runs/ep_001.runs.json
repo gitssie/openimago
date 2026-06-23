@@ -145,8 +145,10 @@
         "filename": "ep001-shot07-race-prep.mp4",
         "access": {
           "preview": "/mock/flova-demo.mp4",
-          "thumbnail": "/mock/placeholder-16x9.svg"
-        }
+          "thumbnail": "/mock/placeholder-16x9.svg",
+          "filmstrip": "/mock/flova-demo.filmstrip.png"
+        },
+        "filmstrip": { "frameCount": 24, "frameW": 28, "frameH": 50 }
       },
       "startedAt": "2026-06-08T10:12:00Z",
       "completedAt": "2026-06-08T10:12:40Z"
@@ -170,7 +172,8 @@
         "kind": "video",
         "mime": "video/mp4",
         "filename": "ep001-shot01-opening.mp4",
-        "access": { "preview": "/mock/shot-s01.mp4", "thumbnail": "/mock/placeholder-16x9.svg" }
+        "access": { "preview": "/mock/shot-s01.mp4", "thumbnail": "/mock/placeholder-16x9.svg", "filmstrip": "/mock/shot-s01.filmstrip.png" },
+        "filmstrip": { "frameCount": 24, "frameW": 28, "frameH": 50 }
       },
       "startedAt": "2026-06-08T10:14:00Z",
       "completedAt": "2026-06-08T10:14:32Z"
@@ -194,7 +197,8 @@
         "kind": "video",
         "mime": "video/mp4",
         "filename": "ep001-shot02-kai-defeat.mp4",
-        "access": { "preview": "/mock/shot-s02.mp4", "thumbnail": "/mock/placeholder-16x9.svg" }
+        "access": { "preview": "/mock/shot-s02.mp4", "thumbnail": "/mock/placeholder-16x9.svg", "filmstrip": "/mock/shot-s02.filmstrip.png" },
+        "filmstrip": { "frameCount": 24, "frameW": 28, "frameH": 50 }
       },
       "startedAt": "2026-06-08T10:15:00Z",
       "completedAt": "2026-06-08T10:15:30Z"
@@ -218,7 +222,8 @@
         "kind": "video",
         "mime": "video/mp4",
         "filename": "ep001-shot03-takeshi-arrives.mp4",
-        "access": { "preview": "/mock/shot-s03.mp4", "thumbnail": "/mock/placeholder-16x9.svg" }
+        "access": { "preview": "/mock/shot-s03.mp4", "thumbnail": "/mock/placeholder-16x9.svg", "filmstrip": "/mock/shot-s03.filmstrip.png" },
+        "filmstrip": { "frameCount": 24, "frameW": 28, "frameH": 50 }
       },
       "startedAt": "2026-06-08T10:16:00Z",
       "completedAt": "2026-06-08T10:16:31Z"
@@ -242,7 +247,8 @@
         "kind": "video",
         "mime": "video/mp4",
         "filename": "ep001-shot04-garage-entrance.mp4",
-        "access": { "preview": "/mock/shot-s04.mp4", "thumbnail": "/mock/placeholder-16x9.svg" }
+        "access": { "preview": "/mock/shot-s04.mp4", "thumbnail": "/mock/placeholder-16x9.svg", "filmstrip": "/mock/shot-s04.filmstrip.png" },
+        "filmstrip": { "frameCount": 24, "frameW": 28, "frameH": 50 }
       },
       "startedAt": "2026-06-08T10:17:00Z",
       "completedAt": "2026-06-08T10:17:33Z"
@@ -266,7 +272,8 @@
         "kind": "video",
         "mime": "video/mp4",
         "filename": "ep001-shot05-rei-plan.mp4",
-        "access": { "preview": "/mock/shot-s05.mp4", "thumbnail": "/mock/placeholder-16x9.svg" }
+        "access": { "preview": "/mock/shot-s05.mp4", "thumbnail": "/mock/placeholder-16x9.svg", "filmstrip": "/mock/shot-s05.filmstrip.png" },
+        "filmstrip": { "frameCount": 24, "frameW": 28, "frameH": 50 }
       },
       "startedAt": "2026-06-08T10:18:00Z",
       "completedAt": "2026-06-08T10:18:34Z"
@@ -290,7 +297,8 @@
         "kind": "video",
         "mime": "video/mp4",
         "filename": "ep001-shot06-decision.mp4",
-        "access": { "preview": "/mock/shot-s06.mp4", "thumbnail": "/mock/placeholder-16x9.svg" }
+        "access": { "preview": "/mock/shot-s06.mp4", "thumbnail": "/mock/placeholder-16x9.svg", "filmstrip": "/mock/shot-s06.filmstrip.png" },
+        "filmstrip": { "frameCount": 24, "frameW": 28, "frameH": 50 }
       },
       "startedAt": "2026-06-08T10:19:00Z",
       "completedAt": "2026-06-08T10:19:35Z"

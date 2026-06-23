@@ -228,6 +228,20 @@ export interface StoryRunSummary {
   thumbnailUrl: string | null
   /** Full-size preview URL from the run's inlined result.access. */
   previewUrl: string | null
+  /**
+   * Precomputed filmstrip SPRITE for the timeline (openimago-78m9): a single
+   * horizontal-strip image of N evenly-spaced 9:16 frames, from
+   * result.access.filmstrip. The NLE renders the strip statically via CSS
+   * background-position (Canva approach) — no client-side WebCodecs extraction.
+   * null when the artifact has no precomputed sprite.
+   */
+  filmstripUrl: string | null
+  /** Number of frames tiled in the sprite (from result.filmstrip.frameCount). */
+  filmstripFrameCount: number | null
+  /** Per-frame width in the sprite, px (result.filmstrip.frameW). */
+  filmstripFrameW: number | null
+  /** Per-frame height in the sprite, px (result.filmstrip.frameH). */
+  filmstripFrameH: number | null
   error: string | null
 }
 

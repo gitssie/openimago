@@ -24,8 +24,8 @@
 //
 // Height stays 50px: omniclip's track placement is hardcoded to 50px lanes
 // (calculate_effect_track_placement/_index/_closest: trackHeight=50, y/50), so
-// the clip must NOT grow to 56px — the 9:16 frames are 28×50 to fit (see
-// filmstrip.patch.ts). BROWSER-ONLY.
+// the clip must NOT grow to 56px — the 9:16 sprite cells are 28×50 to fit (see
+// video-effect.patch.ts, openimago-78m9). BROWSER-ONLY.
 
 import { css } from '@benev/slate'
 import { styles as upstreamStyles } from 'omniclip/x/components/omni-timeline/views/effects/parts/styles.js'

@@ -118,6 +118,14 @@ export interface HydrateClip {
   name: string
   inPointSeconds: number
   outPointSeconds: number
+  /** Precomputed filmstrip sprite for the timeline strip (openimago-78m9):
+   *  a horizontal-strip image of N 9:16 frames + its dims. The fork renders the
+   *  strip statically via CSS background-position (no WebCodecs). null → the clip
+   *  falls back to a flat lane (no per-frame thumbnails). */
+  filmstripUrl?: string | null
+  filmstripFrameCount?: number | null
+  filmstripFrameW?: number | null
+  filmstripFrameH?: number | null
 }
 
 export interface OmniclipForkApi {

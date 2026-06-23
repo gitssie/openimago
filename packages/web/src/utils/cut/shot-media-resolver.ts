@@ -15,6 +15,13 @@ export interface ShotMediaSource {
   url: string
   /** thumbnail URL for quick display. */
   thumbnailUrl: string | null
+  /** Precomputed filmstrip sprite URL for the timeline strip (openimago-78m9),
+   *  or null when the run has no sprite. */
+  filmstripUrl: string | null
+  /** Sprite frame count / per-frame px dims (null when no sprite). */
+  filmstripFrameCount: number | null
+  filmstripFrameW: number | null
+  filmstripFrameH: number | null
   /** a stable, human name for the imported file. */
   name: string
 }
@@ -48,6 +55,10 @@ export function resolveShotMediaSource(
     sourceShotId,
     url: run.previewUrl,
     thumbnailUrl: run.thumbnailUrl,
+    filmstripUrl: run.filmstripUrl,
+    filmstripFrameCount: run.filmstripFrameCount,
+    filmstripFrameW: run.filmstripFrameW,
+    filmstripFrameH: run.filmstripFrameH,
     name: `${sourceShotId}.mp4`,
   }
 }

@@ -55,6 +55,9 @@ export async function hydrateFromCut(
     const durationMs = endMs - startMs
 
     // Place a video effect for this clip and trim/position it to match the cut.
+    // The filmstrip_* fields are custom extras carried on the effect (omniclip
+    // stores arbitrary fields in state); the patched video-effect view reads them
+    // to render the precomputed sprite statically (openimago-78m9) — no WebCodecs.
     ctx.actions.add_video_effect({
       kind: 'video',
       id: clip.id, // reuse the CutClip id so edits map back 1:1
@@ -69,6 +72,10 @@ export async function hydrateFromCut(
       raw_duration: imported.rawDurationSeconds * MS_PER_S,
       frames: imported.frames,
       rect: fullFrameRect(),
+      filmstrip_url: clip.filmstripUrl ?? null,
+      filmstrip_frame_count: clip.filmstripFrameCount ?? null,
+      filmstrip_frame_w: clip.filmstripFrameW ?? null,
+      filmstrip_frame_h: clip.filmstripFrameH ?? null,
     })
     cursorMs += durationMs
   }
@@ -81,33 +88,27 @@ export async function hydrateFromCut(
     setTransition(transition)
   }
 
-  // Filmstrip refresh (openimago-vwjl). The per-clip frame strip is drawn ONLY by
-  // the VideoEffect view's on_media_change("added") listener, which runs
-  // filmstrip.on_file_found() → recalculate_filmstrip_frames(true). Two reasons
-  // it never fired for our clips:
-  //   (a) we publish "added" INSIDE importFromUrl, BEFORE add_video_effect mounts
-  //       the view → the listener (subscribed at mount) misses that event; and
-  //   (b) the listener is guarded by `!is_effect_already_composed`
-  //       (compositor.managers.videoManager.get(effect.id)) — and by the time a
-  //       later re-publish lands, the compositor has already composed all effects,
-  //       so the guard blocks every redraw (confirmed by e2e: childCount 0).
-  // Fix: after the views have mounted, DELETE each effect from the videoManager
-  // (so its guard passes), then re-publish "added". The listener then re-inits the
-  // filmstrip (get_file now resolves — Part 1) and re-composes the effect via
-  // compositor.recreate, so the un-compose is self-healing. Fire-and-forget; we
-  // never await on_media_change (no 60s event-timeout regression, per 1mcb).
-  refreshFilmstrips(placed)
+  // Compose the placed clips into the WebCodecs PREVIEW compositor (openimago-vwjl,
+  // refined for 78m9). The patched VideoEffect view composes a clip in its
+  // on_media_change("added") listener, but we publish "added" INSIDE importFromUrl
+  // — BEFORE add_video_effect mounts the view — so the mounted listener misses it.
+  // Re-publish after the views mount so each composes. The listener is gated by
+  // `!is_effect_already_composed`, so first DELETE each effect from the
+  // videoManager (the guard then passes) and re-announce. NOTE: with the static
+  // sprite filmstrip (78m9) this no longer drives any thumbnail drawing — it ONLY
+  // ensures playback composition; the timeline strip renders from the precomputed
+  // sprite with no events. Fire-and-forget (no on_media_change await; per 1mcb).
+  composePlacedClips(placed)
 }
 
 /**
- * Force each placed clip's VideoEffect view to (re)draw its filmstrip. The view's
- * on_media_change("added") listener owns the only reliable strip draw but is
- * gated by `!is_effect_already_composed`; we clear the effect from the
- * compositor's videoManager first so that guard passes, then re-announce the
- * media. The listener's own compositor.recreate re-composes the effect. Deduped
- * publish per hash (multiple effects can share one source file).
+ * Ensure each placed clip is composed into the preview compositor. The patched
+ * VideoEffect view's on_media_change("added") listener does compositor.recreate
+ * but is gated by `!is_effect_already_composed`; clear the effect from the
+ * videoManager first so the guard passes, then re-announce the media. Deduped
+ * publish per source hash (multiple clips can share one source file).
  */
-function refreshFilmstrips(placed: { id: string; fileHash: string }[]): void {
+function composePlacedClips(placed: { id: string; fileHash: string }[]): void {
   if (placed.length === 0) return
   const ctx = omnislate.context
   const media = ctx.controllers.media
@@ -120,7 +121,7 @@ function refreshFilmstrips(placed: { id: string; fileHash: string }[]): void {
       for (const { id } of placed) {
         videoManager.delete(id)
       }
-      // Re-announce each unique source hash → listeners re-init + redraw the strip.
+      // Re-announce each unique source hash → listeners re-compose for playback.
       const seen = new Set<string>()
       for (const { fileHash } of placed) {
         if (seen.has(fileHash)) continue

@@ -217,6 +217,9 @@ export function rawRunsToRunSummaries(runs: OpenimagoStoryRuns): StoryRunSummary
     // artifact + access URLs under `run.result`; running/queued runs omit it.
     const result = safeRecord(run['result'])
     const access = safeRecord(result['access'])
+    // Precomputed filmstrip sprite (openimago-78m9): URL on result.access.filmstrip,
+    // dims on result.filmstrip { frameCount, frameW, frameH }.
+    const filmstripMeta = safeRecord(result['filmstrip'])
     return {
       id: safeStr(run['id']) || '',
       nodeId: safeStr(run['nodeId']) || safeStr(run['toolNodeId']) || '',
@@ -235,6 +238,10 @@ export function rawRunsToRunSummaries(runs: OpenimagoStoryRuns): StoryRunSummary
       mime: safeStr(result['mime']) || null,
       thumbnailUrl: safeStr(access['thumbnail']) || null,
       previewUrl: safeStr(access['preview']) || null,
+      filmstripUrl: safeStr(access['filmstrip']) || null,
+      filmstripFrameCount: safeNum(filmstripMeta['frameCount']),
+      filmstripFrameW: safeNum(filmstripMeta['frameW']),
+      filmstripFrameH: safeNum(filmstripMeta['frameH']),
       error: safeStr(run['error']) || safeStr(run['errorMessage']) || null,
     }
   })

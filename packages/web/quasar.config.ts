@@ -58,34 +58,32 @@ function omniclipSubpathResolver() {
 }
 
 /**
- * Vite plugin: swap omniclip's bundled `Filmstrip` class for the fork's patched
- * one (openimago-audw). omniclip's video-effect view imports the filmstrip via a
- * RELATIVE path resolved into node_modules; intercept that single deep import and
- * redirect it to the fork patch module (9:16 aspect-correct frame rendering).
- * Scoped to the omniclip importer + the exact filmstrip sub-path so nothing else
- * is affected. Mirrors how the clip-menu/theme "patches" override sealed views.
+ * Vite plugin: swap omniclip's bundled `VideoEffect` timeline view for the fork's
+ * STATIC sprite-sheet filmstrip (openimago-78m9). Replaces the WebCodecs
+ * client-side frame extraction (seek/draw per cell → lag/flicker/white frames)
+ * with a precomputed sprite rendered via CSS background-position. omni-timeline's
+ * component.js imports the view via a RELATIVE `./views/effects/video-effect.js`,
+ * so match that tail gated on an omniclip importer. The fork patch re-imports
+ * upstream omniclip modules (Effect, shadow_view, calculate_effect_width) from a
+ * src/ importer, which isOmniclipPackageImporter excludes → no redirect loop.
  */
-function omniclipFilmstripPatch() {
-  const FORK_FILMSTRIP = fileURLToPath(
+function omniclipVideoEffectPatch() {
+  const FORK_VIDEO_EFFECT = fileURLToPath(
     new URL(
-      './src/vendor/omniclip-fork/patches/filmstrip.patch.ts',
+      './src/vendor/omniclip-fork/patches/video-effect.patch.ts',
       import.meta.url,
     ),
   );
   return {
-    name: 'omniclip-filmstrip-patch',
+    name: 'omniclip-video-effect-patch',
     enforce: 'pre' as const,
     resolveId(source: string, importer?: string) {
-      // The upstream import is:
-      //   import { Filmstrip } from ".../context/controllers/timeline/parts/filmstrip.js"
-      // (relative, from omniclip's video-effect.js). Match the resolved tail +
-      // an omniclip importer so we only touch THAT module.
       if (
         importer &&
         isOmniclipPackageImporter(importer) &&
-        /(^|\/)context\/controllers\/timeline\/parts\/filmstrip\.js$/.test(source)
+        /(^|\/)(views\/effects\/)?video-effect\.js$/.test(source)
       ) {
-        return FORK_FILMSTRIP;
+        return FORK_VIDEO_EFFECT;
       }
       return undefined;
     },
@@ -252,11 +250,11 @@ export default defineConfig((ctx) => {
         // other package is untouched.
         viteConf.plugins = viteConf.plugins || []
         viteConf.plugins.push(omniclipSubpathResolver())
-        // Swap omniclip's Filmstrip for the fork's 9:16 patch (openimago-audw)
-        // and its clip styles for the imago-themed ones (openimago-fhnz).
-        // unshift so these enforce:'pre' redirects run before the subpath
-        // resolver touches omniclip's own deep imports.
-        viteConf.plugins.unshift(omniclipFilmstripPatch())
+        // Swap omniclip's VideoEffect view for the fork's static sprite-sheet
+        // filmstrip (openimago-78m9) and its clip styles for the imago-themed
+        // ones (openimago-fhnz). unshift so these enforce:'pre' redirects run
+        // before the subpath resolver touches omniclip's own deep imports.
+        viteConf.plugins.unshift(omniclipVideoEffectPatch())
         viteConf.plugins.unshift(omniclipEffectStylesPatch())
       },
 

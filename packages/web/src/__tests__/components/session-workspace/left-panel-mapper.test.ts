@@ -47,6 +47,10 @@ function run(over: Partial<StoryRunSummary> = {}): StoryRunSummary {
     mime: null,
     thumbnailUrl: null,
     previewUrl: null,
+    filmstripUrl: null,
+    filmstripFrameCount: null,
+    filmstripFrameW: null,
+    filmstripFrameH: null,
     error: null,
     ...over,
   }

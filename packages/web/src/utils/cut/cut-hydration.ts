@@ -43,6 +43,10 @@ export function buildHydrationPayload(
       name: media.name,
       inPointSeconds: clip.inPoint,
       outPointSeconds: clip.outPoint,
+      filmstripUrl: media.filmstripUrl,
+      filmstripFrameCount: media.filmstripFrameCount,
+      filmstripFrameW: media.filmstripFrameW,
+      filmstripFrameH: media.filmstripFrameH,
     })
   }
 

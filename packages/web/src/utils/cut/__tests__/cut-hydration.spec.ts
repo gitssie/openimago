@@ -4,7 +4,16 @@ import type { EpisodeCut } from '../cut-types'
 import type { ShotMediaSource } from '../shot-media-resolver'
 
 function source(shotId: string): ShotMediaSource {
-  return { sourceShotId: shotId, url: `https://cdn/${shotId}.mp4`, thumbnailUrl: `${shotId}.png`, name: `${shotId}.mp4` }
+  return {
+    sourceShotId: shotId,
+    url: `https://cdn/${shotId}.mp4`,
+    thumbnailUrl: `${shotId}.png`,
+    filmstripUrl: `${shotId}.filmstrip.webp`,
+    filmstripFrameCount: 24,
+    filmstripFrameW: 28,
+    filmstripFrameH: 50,
+    name: `${shotId}.mp4`,
+  }
 }
 
 const cut: EpisodeCut = {
@@ -26,8 +35,8 @@ describe('buildHydrationPayload', () => {
     const { clips, orphans } = buildHydrationPayload(cut, (id) => source(id))
     expect(orphans).toEqual([])
     expect(clips).toEqual([
-      { id: 'c-a', url: 'https://cdn/shot_1.mp4', name: 'shot_1.mp4', inPointSeconds: 0, outPointSeconds: 2.5 },
-      { id: 'c-b', url: 'https://cdn/shot_2.mp4', name: 'shot_2.mp4', inPointSeconds: 1, outPointSeconds: 4 },
+      { id: 'c-a', url: 'https://cdn/shot_1.mp4', name: 'shot_1.mp4', inPointSeconds: 0, outPointSeconds: 2.5, filmstripUrl: 'shot_1.filmstrip.webp', filmstripFrameCount: 24, filmstripFrameW: 28, filmstripFrameH: 50 },
+      { id: 'c-b', url: 'https://cdn/shot_2.mp4', name: 'shot_2.mp4', inPointSeconds: 1, outPointSeconds: 4, filmstripUrl: 'shot_2.filmstrip.webp', filmstripFrameCount: 24, filmstripFrameW: 28, filmstripFrameH: 50 },
     ])
   })
 

@@ -144,6 +144,10 @@ function makeRun(over: Partial<StoryRunSummary> = {}): StoryRunSummary {
     mime: over.mime ?? null,
     thumbnailUrl: over.thumbnailUrl ?? null,
     previewUrl: over.previewUrl ?? null,
+    filmstripUrl: over.filmstripUrl ?? null,
+    filmstripFrameCount: over.filmstripFrameCount ?? null,
+    filmstripFrameW: over.filmstripFrameW ?? null,
+    filmstripFrameH: over.filmstripFrameH ?? null,
     error: over.error ?? null,
   }
 }
