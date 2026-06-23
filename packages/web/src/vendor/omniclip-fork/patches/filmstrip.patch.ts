@@ -40,6 +40,20 @@ const FRAME_H = 50
 // 9:16 target aspect the crop preserves.
 const TARGET_AR = FRAME_W / FRAME_H
 
+// DENSE TILING (openimago-6br9). Each filmstrip cell is exactly one FRAME_W-wide
+// portrait frame, so frames butt edge-to-edge (a real-NLE continuous strip, no
+// gaps). The slot width equals the thumbnail width; the number of cells per clip
+// is effect_width / FRAME_W (NOT the upstream ~clipWidth/100 → ~116px gaps).
+// .thumbnail is CSS-pinned to FRAME_W (effect-styles.patch.ts) so the img fills
+// its cell exactly. Upstream keyed the cell count off the real video frame count;
+// here it is the DISPLAY cell count — each cell samples the clip's duration at
+// its proportional time (currentTime = duration/cellCount * cellIndex), which is
+// the correct filmstrip behavior and keeps #width_of_frame / frames_count /
+// #get_filmstrip_frame_at internally consistent. Capped so a very long/zoomed
+// clip can't request an unbounded number of WebCodecs extractions.
+const SLOT_W = FRAME_W
+const MAX_SLOTS = 600
+
 // ADDED: subtle right-edge separator baked into each frame so adjacent frames
 // read as distinct without a DOM gap. Kept faint; remove if it looks noisy.
 const SEPARATOR_RGBA = 'rgba(0,0,0,0.28)'
@@ -94,10 +108,16 @@ export class Filmstrip {
   async #init_filmstrip() {
     const file = await this.media.get_file(this.effect.file_hash)
     if (file) {
-      const frames = await this.ffmpeg.get_frames_count(file)
-      this.frames_count = frames
-      const placeholders = this.#generate_filmstrip_placeholders(frames)
-      this.#filmstrip_frames = placeholders
+      // CHANGED (openimago-6br9): cell count = effect_width / SLOT_W so every cell
+      // is one FRAME_W-wide frame and the strip tiles edge-to-edge. (Upstream used
+      // the real video frame count → ~116px cells with big gaps.) get_frames_count
+      // is still awaited to keep the WebCodecs/cache path warm (don't regress the
+      // extraction fix) but the value no longer drives the cell count. Clamp to
+      // [1, MAX_SLOTS] for short clips and to bound extraction on long/zoomed ones.
+      await this.ffmpeg.get_frames_count(file)
+      const cells = Math.max(1, Math.min(MAX_SLOTS, Math.ceil(this.effect_width / SLOT_W)))
+      this.frames_count = cells
+      this.#filmstrip_frames = this.#generate_filmstrip_placeholders(cells)
     }
   }
 
@@ -210,10 +230,15 @@ export class Filmstrip {
 
   async *recalculate_all_visible_filmstrip_frames(effect, timeline, zoom, force_recalculate) {
     const margin = this.#width_of_frame * 2
+    // CHANGED (openimago-6br9): step the visible window by #width_of_frame (≈28px,
+    // = one frame) instead of the upstream /100, so the drawn frames cover the
+    // whole visible span edge-to-edge with no gaps. (Was effect_width/100 →
+    // ~1 frame per 100px → sparse strip.) +1 so the right edge is fully covered.
     const frame_count =
-      this.effect_width < timeline.clientWidth
-        ? this.effect_width / 100
-        : timeline.clientWidth / 100
+      Math.ceil(
+        (this.effect_width < timeline.clientWidth ? this.effect_width : timeline.clientWidth) /
+          this.#width_of_frame,
+      ) + 1
     const effect_left = calculate_start_position(effect.start_at_position - effect.start, zoom)
     const normalized_left =
       Math.floor((timeline.scrollLeft - effect_left) / this.#width_of_frame) * this.#width_of_frame -
