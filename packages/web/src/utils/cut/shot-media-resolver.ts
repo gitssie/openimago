@@ -27,9 +27,16 @@ export interface ShotMediaSource {
 }
 
 /**
- * Pick the run that supplies a shot's media: the most recently completed run
- * for that shot that has a preview URL. Returns null when the shot has no
- * usable completed run (clip becomes an orphan placeholder on the timeline).
+ * Pick the run that supplies a Cut clip's media. A clip lives on the VIDEO track,
+ * so its source must be the shot's VIDEO run — NOT merely the latest completed run
+ * (a shot can also have image-concept and audio/narration runs that complete later
+ * and carry a previewUrl but no video and no filmstrip sprite; openimago-78m9).
+ * Selection priority among the shot's completed runs with a previewUrl:
+ *   1. the most-recent VIDEO run (kind==='video') — the right clip source AND the
+ *      one carrying the precomputed filmstrip sprite,
+ *   2. else any run that has a filmstripUrl (defensive),
+ *   3. else the most-recent completed run (legacy fallback; e.g. video-less shots).
+ * Returns null when the shot has no usable completed run (orphan placeholder).
  */
 export function resolveShotMediaSource(
   sourceShotId: string,
@@ -39,16 +46,20 @@ export function resolveShotMediaSource(
   const shot = shots.find((s) => s.id === sourceShotId)
   if (!shot) return null
 
+  // newest first: prefer the shot's latestRunId, else by completedAt desc.
+  const byRecency = (a: StoryRunSummary, b: StoryRunSummary) => {
+    if (a.id === shot.latestRunId) return -1
+    if (b.id === shot.latestRunId) return 1
+    return (b.completedAt ?? '').localeCompare(a.completedAt ?? '')
+  }
   const completed = runs
     .filter((r) => r.shotId === sourceShotId && r.status === 'completed' && r.previewUrl)
-    // newest first: prefer the shot's latestRunId, else by completedAt desc
-    .sort((a, b) => {
-      if (a.id === shot.latestRunId) return -1
-      if (b.id === shot.latestRunId) return 1
-      return (b.completedAt ?? '').localeCompare(a.completedAt ?? '')
-    })
+    .sort(byRecency)
 
-  const run = completed[0]
+  const run =
+    completed.find((r) => r.kind === 'video') ??
+    completed.find((r) => Boolean(r.filmstripUrl)) ??
+    completed[0]
   if (!run || !run.previewUrl) return null
 
   return {
