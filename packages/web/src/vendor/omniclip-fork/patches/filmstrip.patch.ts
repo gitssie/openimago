@@ -65,7 +65,6 @@ export class Filmstrip {
   #filmstrip_frames = []
   #resolve = null
   #previous_scroll_position = 0
-  frames_count = 0
   effect_last_offset_left_position = 0
   #video = document.createElement('video')
   #canvas = document.createElement('canvas')
@@ -108,16 +107,13 @@ export class Filmstrip {
   async #init_filmstrip() {
     const file = await this.media.get_file(this.effect.file_hash)
     if (file) {
-      // CHANGED (openimago-6br9): cell count = effect_width / SLOT_W so every cell
-      // is one FRAME_W-wide frame and the strip tiles edge-to-edge. (Upstream used
-      // the real video frame count → ~116px cells with big gaps.) get_frames_count
-      // is still awaited to keep the WebCodecs/cache path warm (don't regress the
-      // extraction fix) but the value no longer drives the cell count. Clamp to
-      // [1, MAX_SLOTS] for short clips and to bound extraction on long/zoomed ones.
+      // get_frames_count is still awaited to keep the WebCodecs/cache path warm
+      // (don't regress the extraction fix) but no longer drives the cell count —
+      // that is now the LIVE `frames_count` getter (openimago-6br9). Seed the
+      // drawn-URL cache with loading placeholders for the CURRENT cell count; the
+      // cache is sparse/index-keyed so it tolerates the count changing later.
       await this.ffmpeg.get_frames_count(file)
-      const cells = Math.max(1, Math.min(MAX_SLOTS, Math.ceil(this.effect_width / SLOT_W)))
-      this.frames_count = cells
-      this.#filmstrip_frames = this.#generate_filmstrip_placeholders(cells)
+      this.#filmstrip_frames = this.#generate_filmstrip_placeholders(this.frames_count)
     }
   }
 
@@ -131,8 +127,10 @@ export class Filmstrip {
   }
 
   #get_filmstrip_frame_at(effect, position, zoom) {
-    const width_of_frame_if_all_frames =
-      (effect.duration * Math.pow(2, zoom)) / this.#filmstrip_frames.length
+    // Divide by the LIVE frames_count (NOT #filmstrip_frames.length, which is a
+    // stale cache seed). Keeps the cell-index mapping consistent with the live
+    // #width_of_frame / render-slot width even after the effect duration changes.
+    const width_of_frame_if_all_frames = (effect.duration * Math.pow(2, zoom)) / this.frames_count
     const start_at_filmstrip = position / width_of_frame_if_all_frames
     return Math.floor(start_at_filmstrip)
   }
@@ -157,8 +155,24 @@ export class Filmstrip {
     return this.effect.duration * Math.pow(2, 2)
   }
 
+  /**
+   * LIVE cell count (openimago-6br9). Computed from the CURRENT effect_width on
+   * every read, NOT frozen at init — the cut assembler reassigns effect.duration
+   * AFTER the Filmstrip is constructed, and the VideoEffect view reads both
+   * `filmstrip.frames_count` and `filmstrip.effect_width` at render time. Keying
+   * the count off the same live effect_width guarantees the view's slot width
+   * (effect_width / frames_count) and the draw slot (#width_of_frame) are BOTH
+   * exactly SLOT_W ≈ 28px for every clip → frames butt edge-to-edge. ceil keeps
+   * the slot ≤ SLOT_W (never a gap); clamped to [1, MAX_SLOTS].
+   */
+  get frames_count() {
+    return Math.max(1, Math.min(MAX_SLOTS, Math.ceil(this.effect_width / SLOT_W)))
+  }
+
   get #width_of_frame() {
-    return (this.effect.duration * Math.pow(2, 2)) / this.#filmstrip_frames.length
+    // Derive from the live frames_count so it == the view's render slot width
+    // (effect_width / frames_count) regardless of post-init duration changes.
+    return this.effect_width / this.frames_count
   }
 
   *#yield_loading_placeholders(frame_count, normalized_left, effect, zoom) {
@@ -187,9 +201,12 @@ export class Filmstrip {
     // portrait canvas. No stretch → faces are not squished.
     this.#draw_cover_frame()
     const url = this.#canvas.toDataURL('image/webp', 0.5)
-    URL.revokeObjectURL(this.#filmstrip_frames[this.#get_filmstrip_frame_at(effect, position, zoom)])
-    if (this.#get_filmstrip_frame_at(effect, position, zoom) <= this.#filmstrip_frames.length) {
-      return (this.#filmstrip_frames[this.#get_filmstrip_frame_at(effect, position, zoom)] = url)
+    const idx = this.#get_filmstrip_frame_at(effect, position, zoom)
+    URL.revokeObjectURL(this.#filmstrip_frames[idx])
+    // Guard against the live frames_count (the cache array may be a stale seed
+    // length after a post-init duration change); a sparse write auto-extends it.
+    if (idx >= 0 && idx <= this.frames_count) {
+      return (this.#filmstrip_frames[idx] = url)
     } else return undefined
   }
 
