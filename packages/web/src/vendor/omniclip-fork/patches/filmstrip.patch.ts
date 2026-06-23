@@ -27,6 +27,7 @@
 // filmstrip.js). Private #fields are reproduced as-is. BROWSER-ONLY.
 
 import { calculate_start_position } from 'omniclip/x/components/omni-timeline/utils/calculate_start_position.js'
+import { omnislate } from 'omniclip/x/context/context.js'
 
 // CHANGED: 9:16 portrait frame dimensions (was 150×50 landscape). 28×50 keeps the
 // frame EXACTLY within the 50px track lane. omniclip's track placement math is
@@ -87,7 +88,6 @@ export class Filmstrip {
   media
   ffmpeg
   #filmstrip_frames = []
-  #resolve = null
   #previous_scroll_position = 0
   effect_last_offset_left_position = 0
   #video = document.createElement('video')
@@ -114,11 +114,14 @@ export class Filmstrip {
     const file = await this.media.get_file(this.effect.file_hash)
     if (file) {
       this.#video.src = URL.createObjectURL(file)
+      // muted + playsInline so some browsers allow off-DOM decode/seek.
+      this.#video.muted = true
+      this.#video.playsInline = true
+      this.#video.preload = 'auto'
       this.#video.load()
-      this.#video.addEventListener('seeked', () => {
-        const res = this.#resolve
-        if (res) res(true)
-      })
+      // NOTE (openimago-6br9): the per-cell draw owns a ONE-SHOT 'seeked' await
+      // (#seek_and_wait); no persistent listener here — a shared #resolve stomped
+      // across rapid dense seeks was the blank/white-frame race.
     }
   }
 
@@ -177,7 +180,21 @@ export class Filmstrip {
   }
 
   get effect_width() {
-    return this.effect.duration * Math.pow(2, 2)
+    // REAL rendered clip width in CSS px (openimago-6br9). MUST equal what the
+    // timeline lays the clip out at — omniclip's calculate_effect_width is
+    // (effect.end - effect.start) * 2^zoom with the LIVE state zoom — otherwise
+    // frames_count (= ceil(effect_width/28)) is computed against the wrong width
+    // and the view's slot (effect_width/frames_count) drifts off 28px → gaps. The
+    // VideoEffect view reads THIS getter for both the cell position and width, so
+    // keying it to the live zoom makes the rendered slot exactly ≈28px. (Was a
+    // hardcoded 2^2, which only matched at zoom===2 → gaps at other zooms.)
+    const span =
+      typeof this.effect.end === 'number' && typeof this.effect.start === 'number'
+        ? this.effect.end - this.effect.start
+        : this.effect.duration
+    const zoom = omnislate?.context?.state?.zoom
+    const z = typeof zoom === 'number' ? zoom : 2
+    return span * Math.pow(2, z)
   }
 
   /**
@@ -213,17 +230,56 @@ export class Filmstrip {
     }
   }
 
+  /**
+   * Seek the shared <video> to `seconds` and resolve only once the frame at that
+   * time is actually decoded/presentable (openimago-6br9 blank-frame race). One-
+   * shot 'seeked' listener (no shared #resolve to stomp), a short timeout
+   * fallback so a no-op seek / missing event can't hang, then one
+   * requestVideoFrameCallback (or rAF) so the decoded frame is presentable before
+   * the caller draws. The recalc loop awaits each call → seeks are serialized and
+   * never stomp each other on the single shared element.
+   */
+  #seek_and_wait(seconds) {
+    return new Promise((resolve) => {
+      const video = this.#video
+      let done = false
+      let timer = 0
+      const onSeeked = () => finish()
+      const finish = () => {
+        if (done) return
+        done = true
+        video.removeEventListener('seeked', onSeeked)
+        if (timer) clearTimeout(timer)
+        // Wait for the decoded frame to be presentable, then resolve.
+        const present = () => resolve(true)
+        const rvfc = video.requestVideoFrameCallback
+        if (typeof rvfc === 'function') rvfc.call(video, () => present())
+        else requestAnimationFrame(present)
+      }
+      // Already at (≈) this time? Setting currentTime would be a no-op (no
+      // 'seeked'), so present the current frame on the next rVFC/rAF immediately
+      // instead of waiting out the timeout (avoids a 1.5s stall on cell 0 / t=0).
+      if (Math.abs(video.currentTime - seconds) < 0.001 && video.readyState >= 2) {
+        finish()
+        return
+      }
+      video.addEventListener('seeked', onSeeked)
+      // Bounded fallback so a missing 'seeked' can never hang the strip.
+      timer = setTimeout(finish, 1500)
+      video.currentTime = seconds
+    })
+  }
+
   async #draw_filmstrip_frame_and_get_its_url(effect, position, zoom) {
-    this.#video.currentTime = +(
+    const seconds = +(
       (this.#video_fps_in_ms *
         this.#get_filmstrip_frame_at(effect, Number(position.toFixed(2)), zoom)) /
       1000
     ).toFixed(2)
-    await new Promise((r) => (this.#resolve = r))
-    // CHANGED: 9-arg center-COVER crop (was the 4-arg stretch
-    // drawImage(video,0,0,150,50)). Compute the source crop rect that preserves
-    // the video's real aspect, cropping the overflowing axis, then scale to the
-    // portrait canvas. No stretch → faces are not squished.
+    // AWAIT the seek+decode before drawing (was: set currentTime then draw via a
+    // stomped shared resolver → blank/white frames under dense seeks).
+    await this.#seek_and_wait(seconds)
+    // 9-arg center-COVER crop (preserve source aspect, crop overflow, no stretch).
     this.#draw_cover_frame()
     const url = this.#canvas.toDataURL('image/webp', 0.5)
     const idx = this.#get_filmstrip_frame_at(effect, position, zoom)
