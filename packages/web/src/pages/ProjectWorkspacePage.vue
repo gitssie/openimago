@@ -61,7 +61,7 @@
         :width="300"
         :breakpoint="1024"
         bordered
-        show-if-above
+        :show-if-above="activeWorkspaceTab !== 'timeline'"
         @update:model-value="leftPanelOpen = $event"
       >
         <ProjectWorkspaceLeftPanel
