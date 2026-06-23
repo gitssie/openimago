@@ -96,6 +96,18 @@ export const importFromUrl: ImportFromUrl = async (url, options) => {
   }
   media.set(hash, file)
 
+  // CRITICAL (openimago-vwjl): flip the controller's private #files_ready flag.
+  // Media.get_file(hash) — used by the per-clip Filmstrip frame extractor and the
+  // compositor — first `await media.are_files_ready()`, which resolves ONLY once
+  // #files_ready === true. import_file() sets that flag inside its <input> flow;
+  // a raw media.set() does NOT, so without this the filmstrip's get_file() polls
+  // forever and every clip renders as an empty block (the thumbnail still works
+  // because create_videos_from_video_files takes the File directly). #files_ready
+  // is truly private, so the only public lever that sets it is get_imported_files(),
+  // which reloads the "files" store (now containing our record) into the Map and
+  // flips the flag. Idempotent + cheap (one IndexedDB getAll); no event await.
+  await media.get_imported_files()
+
   // Notify omniclip's own listeners so the clip composes on the timeline.
   media.on_media_change.publish({ files: [record], action: 'added' })
 

@@ -40,10 +40,13 @@ export async function hydrateFromCut(
   const ctx = omnislate.context
   ctx.actions.remove_all_effects()
 
+  const importedHashes: string[] = []
+
   let cursorMs = 0
   for (const clip of clips) {
     // Import the clip's media (fetch → File → omniclip content-hash/IndexedDB).
     const imported = await importFromUrl(clip.url, { name: clip.name })
+    importedHashes.push(imported.fileHash)
 
     const startMs = clip.inPointSeconds * MS_PER_S
     const endMs = clip.outPointSeconds * MS_PER_S
@@ -75,4 +78,40 @@ export async function hydrateFromCut(
   for (const transition of transitions) {
     setTransition(transition)
   }
+
+  // Filmstrip refresh (openimago-vwjl). Each VideoEffect view subscribes (on
+  // mount) to media.on_media_change and, for an "added" event matching its
+  // file_hash on an as-yet-uncomposed effect, runs filmstrip.on_file_found() →
+  // recalculate_filmstrip_frames(true) — the ONLY reliable path that draws the
+  // per-clip frame strip (the constructor's eager recalc races the async frame
+  // init and yields nothing). We publish "added" INSIDE importFromUrl, but that
+  // is BEFORE add_video_effect mounts the view, so those events are missed.
+  // Re-publish here AFTER the effects are placed; a rAF lets the slate/Lit views
+  // mount + subscribe first. Effects added via actions.add_video_effect are not
+  // yet in the compositor's videoManager, so each listener's
+  // !is_effect_already_composed guard passes and the strip regenerates. Fire and
+  // forget — we never await on_media_change (no event-timeout, per 1mcb).
+  refreshFilmstrips(importedHashes)
+}
+
+/**
+ * Re-publish media.on_media_change("added") for the given hashes after a frame,
+ * so the now-mounted VideoEffect views regenerate their filmstrips. Deduped so a
+ * clip reused across the cut only re-emits once.
+ */
+function refreshFilmstrips(hashes: string[]): void {
+  const unique = [...new Set(hashes)]
+  if (unique.length === 0) return
+  const media = omnislate.context.controllers.media
+  // Two rAFs: the first lets the state-driven slate render commit, the second
+  // ensures the VideoEffect use.mount() listeners are attached before we publish.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      for (const hash of unique) {
+        const file = media.get(hash)
+        if (!file) continue
+        media.on_media_change.publish({ files: [{ hash, file, kind: 'video' }], action: 'added' })
+      }
+    })
+  })
 }
