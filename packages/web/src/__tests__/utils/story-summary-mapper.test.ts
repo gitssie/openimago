@@ -152,7 +152,7 @@ describe('rawBibleToSummary — audioElements', () => {
             referenceArtifactIds: ['ref-a'],
           },
         ],
-      } as Partial<OpenimagoStoryBible>),
+      }),
     )
     expect(summary.audioElements).toHaveLength(1)
     const el = summary.audioElements[0]!
@@ -167,7 +167,7 @@ describe('rawBibleToSummary — audioElements', () => {
   it('defaults missing/unknown kind to narration and tolerates absent audioElements', () => {
     expect(rawBibleToSummary(makeBible()).audioElements).toEqual([])
     const el = rawBibleToSummary(
-      makeBible({ audioElements: [{ id: 'x', kind: 'bogus' }] } as Partial<OpenimagoStoryBible>),
+      makeBible({ audioElements: [{ id: 'x', kind: 'bogus' }] }),
     ).audioElements[0]!
     expect(el.kind).toBe('narration')
     expect(el.displayName).toBe('未命名音频')

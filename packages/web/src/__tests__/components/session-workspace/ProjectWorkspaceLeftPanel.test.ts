@@ -2,8 +2,13 @@ import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { type Plugin } from 'vue'
 import { QPage, QBtn, QIcon } from 'quasar'
-import ProjectWorkspaceLeftPanel, { type StoryboardScene } from '../../../components/session-workspace/ProjectWorkspaceLeftPanel.vue'
+import ProjectWorkspaceLeftPanel from '../../../components/session-workspace/ProjectWorkspaceLeftPanel.vue'
 import OiIcon from '../../../components/ui/OiIcon.vue'
+import type {
+  ElementCardVM,
+  ShotCardVM,
+  AudioCardVM,
+} from '../../../components/session-workspace/left-panel/types'
 
 // ── Quasar plugin stub ──────────────────────────────────────────────────────────
 
@@ -19,84 +24,95 @@ const mockQuasarPlugin: Plugin = {
 
 // ── Test data ───────────────────────────────────────────────────────────────────
 
-function makeScene(overrides: Partial<StoryboardScene> = {}): StoryboardScene {
+function element(over: Partial<ElementCardVM> = {}): ElementCardVM {
   return {
-    id: overrides.id ?? 'scene-1',
-    title: overrides.title ?? '场景 01',
-    description: overrides.description ?? '戴黑框眼镜，性格内向',
-    thumbnails: overrides.thumbnails ?? [],
+    id: 'el-1',
+    kind: 'character',
+    title: '凯',
+    description: '街头赛车手',
+    thumbnails: [],
+    ...over,
   }
+}
+
+function shot(over: Partial<ShotCardVM> = {}): ShotCardVM {
+  return {
+    id: 'shot-1',
+    title: '镜头 01',
+    characters: [],
+    description: '开场镜头',
+    media: [],
+    ...over,
+  }
+}
+
+function track(over: Partial<AudioCardVM> = {}): AudioCardVM {
+  return {
+    id: 'audio-1',
+    title: '主题 BGM',
+    description: '合成器音床',
+    thumbnails: [],
+    ...over,
+  }
+}
+
+function mountPanel(props: Record<string, unknown> = {}) {
+  return mount(ProjectWorkspaceLeftPanel, {
+    global: { plugins: [mockQuasarPlugin] },
+    props: { elements: [], shots: [], audio: [], ...props },
+  })
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
-describe('ProjectWorkspaceLeftPanel — storyboard', () => {
-  it('renders scene list when scenes prop is provided', () => {
-    const scenes: StoryboardScene[] = [
-      makeScene({ id: 's1', title: '场景 01', description: '描述一' }),
-      makeScene({ id: 's2', title: '场景 02', description: '描述二' }),
-    ]
-
-    const wrapper = mount(ProjectWorkspaceLeftPanel, {
-      global: { plugins: [mockQuasarPlugin] },
-      props: { scenes },
+describe('ProjectWorkspaceLeftPanel — 3-section accordion', () => {
+  it('renders cards for each of the three sections', () => {
+    const wrapper = mountPanel({
+      elements: [element({ id: 'e1', title: '凯' })],
+      shots: [shot({ id: 's1', title: '镜头 01' })],
+      audio: [track({ id: 'a1', title: '主题 BGM' })],
     })
-
-    const sceneCards = wrapper.findAll('.scene-card')
-    expect(sceneCards.length).toBe(2)
-    expect(sceneCards[0]!.find('.scene-card__title').text()).toBe('场景 01')
-    expect(sceneCards[1]!.find('.scene-card__title').text()).toBe('场景 02')
+    const titles = wrapper.findAll('.card__title').map((n) => n.text())
+    expect(titles).toContain('凯')
+    expect(titles).toContain('镜头 01')
+    expect(titles).toContain('主题 BGM')
   })
 
-  it('highlights active scene card', () => {
-    const scenes: StoryboardScene[] = [
-      makeScene({ id: 's1', title: '场景 01' }),
-      makeScene({ id: 's2', title: '场景 02' }),
-    ]
-
-    const wrapper = mount(ProjectWorkspaceLeftPanel, {
-      global: { plugins: [mockQuasarPlugin] },
-      props: { scenes, selectedId: 's2' },
-    })
-
-    const sceneCards = wrapper.findAll('.scene-card')
-    expect(sceneCards[1]!.classes()).toContain('scene-card--active')
-    expect(sceneCards[0]!.classes()).not.toContain('scene-card--active')
+  it('shows the per-section empty states when all sections are empty', () => {
+    const wrapper = mountPanel()
+    const empties = wrapper.findAll('.accordion__empty').map((n) => n.text())
+    expect(empties).toEqual(['暂无关键元素', '暂无分镜', '暂无旁白与音乐'])
   })
 
-  it('emits scene-select when a scene card head is clicked', async () => {
-    const scenes: StoryboardScene[] = [
-      makeScene({ id: 's1', title: '场景 01' }),
-    ]
-
-    const wrapper = mount(ProjectWorkspaceLeftPanel, {
-      global: { plugins: [mockQuasarPlugin] },
-      props: { scenes },
+  it('highlights the active card by selectedId', () => {
+    const wrapper = mountPanel({
+      shots: [shot({ id: 's1' }), shot({ id: 's2', title: '镜头 02' })],
+      selectedId: 's2',
     })
-
-    await wrapper.find('.scene-card__head').trigger('click')
-    expect(wrapper.emitted('scene-select')).toBeTruthy()
-    expect(wrapper.emitted('scene-select')![0]).toEqual(['s1'])
+    const cards = wrapper.findAll('.card')
+    const active = cards.filter((c) => c.classes().includes('card--active'))
+    expect(active).toHaveLength(1)
+    expect(active[0]!.find('.card__title').text()).toBe('镜头 02')
   })
 
-  it('emits add-scene when the footer add button is clicked', async () => {
-    const wrapper = mount(ProjectWorkspaceLeftPanel, {
-      global: { plugins: [mockQuasarPlugin] },
-      props: { scenes: [] },
-    })
+  it('emits item-select when a card title is clicked', async () => {
+    const wrapper = mountPanel({ shots: [shot({ id: 's1' })] })
+    await wrapper.find('.card__title-btn').trigger('click')
+    expect(wrapper.emitted('item-select')).toBeTruthy()
+    expect(wrapper.emitted('item-select')![0]).toEqual(['s1'])
+  })
 
+  it('emits add when the footer add button is clicked', async () => {
+    const wrapper = mountPanel({ editable: true })
     await wrapper.find('.left-panel__add-scene').trigger('click')
-    expect(wrapper.emitted('add-scene')).toBeTruthy()
+    expect(wrapper.emitted('add')).toBeTruthy()
   })
 
-  it('shows empty state when no scenes exist', () => {
-    const wrapper = mount(ProjectWorkspaceLeftPanel, {
-      global: { plugins: [mockQuasarPlugin] },
-      props: { scenes: [] },
-    })
-
-    expect(wrapper.find('.left-panel__empty').exists()).toBe(true)
-    expect(wrapper.find('.left-panel__empty').text()).toContain('暂无场景')
+  it('emits section-toggle when a section header is toggled', async () => {
+    const wrapper = mountPanel()
+    await wrapper.findAll('.accordion__toggle')[0]!.trigger('click')
+    expect(wrapper.emitted('section-toggle')).toBeTruthy()
+    expect(wrapper.emitted('section-toggle')![0]).toEqual(['elements'])
   })
 })
 

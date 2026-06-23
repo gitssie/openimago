@@ -65,24 +65,19 @@
         @update:model-value="leftPanelOpen = $event"
       >
         <ProjectWorkspaceLeftPanel
-          :scenes="storyboardShots"
+          :elements="leftPanelElements"
+          :shots="leftPanelShots"
+          :audio="leftPanelAudio"
           :selected-id="selectedSceneId"
           :view-density="storyboardDensity"
           :read-only="true"
-          :can-add-shot="canAddShot"
-          :can-generate="canAddShot"
-          :generating-ids="generatingShotIds"
           :editable="canAddShot"
-          :mutating-ids="mutatingShotIds"
-          @scene-select="onSceneSelect"
-          @scene-add="onSceneAdd"
-          @scene-add-image="onSceneAddImage"
-          @scene-image-type="onSceneImageType"
-          @scene-generate="onShotGenerate"
-          @shot-delete="onShotDelete"
-          @shot-update="onShotUpdate"
-          @shot-move="onShotMove"
-          @add-scene="onAddScene"
+          @item-select="onSceneSelect"
+          @add="onAddScene"
+          @section-toggle="onSectionToggle"
+          @item-add-media="onItemAddMedia"
+          @item-select-type="onItemSelectType"
+          @comment-generate="onCommentGenerate"
           @view-change="(d) => { storyboardDensity = d }"
         />
       </UILayoutDrawer>
@@ -292,7 +287,18 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import SessionChatView from 'src/components/session-workspace/SessionChatView.vue'
 import ProjectWorkspaceGrid from 'src/components/session-workspace/ProjectWorkspaceGrid.vue'
-import ProjectWorkspaceLeftPanel, { type StoryboardScene } from 'src/components/session-workspace/ProjectWorkspaceLeftPanel.vue'
+import ProjectWorkspaceLeftPanel from 'src/components/session-workspace/ProjectWorkspaceLeftPanel.vue'
+import type {
+  ElementCardVM,
+  ShotCardVM,
+  AudioCardVM,
+  LeftPanelSection,
+} from 'src/components/session-workspace/left-panel/types'
+import {
+  mapElementCards,
+  mapShotCards,
+  mapAudioCards,
+} from 'src/components/session-workspace/left-panel/mapper'
 import ProjectWorkspaceRightPanel from 'src/components/session-workspace/ProjectWorkspaceRightPanel.vue'
 import AgentQuestion from 'src/components/AgentQuestion.vue'
 import AgentPermission from 'src/components/AgentPermission.vue'
@@ -551,41 +557,40 @@ const storyElements = computed<StoryElement[]>(() => {
   return items
 })
 
-// ── Storyboard shots (left drawer) ──────────────────────────────────────────
+// ── Left-panel 3-section accordion datasets (openimago-1omg) ─────────────────
+//
+// The redesigned ProjectWorkspaceLeftPanel renders three card sections. Each is
+// a pure projection of the story summaries (bible / shots / runs) via the
+// left-panel mapper. Thumbnails come from the runs' inlined result.access (the
+// authoritative source; run.kind splits video vs audio).
 
-const storyboardShots = computed<StoryboardScene[]>(() => {
-  // Each card is a Shot (镜头) of the current episode. Thumbnails come from the
-  // shot's own completed runs (run.result.access.thumbnail, inlined in the run
-  // — the authoritative source; no join against projectOutputs). Concept-art
-  // runs have shotId === null, so they never match a shot here.
-  const thumbsByShot = new Map<string, string[]>()
-  for (const run of currentStoryRuns.value) {
-    if (run.status !== 'completed' || !run.shotId || !run.thumbnailUrl) continue
-    const list = thumbsByShot.get(run.shotId) ?? []
-    list.push(run.thumbnailUrl)
-    thumbsByShot.set(run.shotId, list)
-  }
-  return currentStoryShots.value.map((shot) => ({
-    id: shot.id,
-    title: `镜头 ${String(shot.shotNumber).padStart(2, '0')}`,
-    description: shot.description,
-    thumbnails: thumbsByShot.get(shot.id) ?? [],
-  }))
-})
+const leftPanelElements = computed<ElementCardVM[]>(() =>
+  storyBibleSummary.value ? mapElementCards(storyBibleSummary.value, currentStoryRuns.value) : [],
+)
+
+const leftPanelShots = computed<ShotCardVM[]>(() =>
+  storyBibleSummary.value
+    ? mapShotCards(currentStoryShots.value, storyBibleSummary.value, currentStoryRuns.value)
+    : [],
+)
+
+const leftPanelAudio = computed<AudioCardVM[]>(() =>
+  storyBibleSummary.value ? mapAudioCards(storyBibleSummary.value, currentStoryRuns.value) : [],
+)
 
 // ── Storyboard context strip (above the chat) ───────────────────────────────
 
 const contextStrip = computed(() => {
-  // Prefer the selected scene; fall back to the selected output.
-  const scene = selectedSceneId.value
-    ? storyboardShots.value.find((s) => s.id === selectedSceneId.value)
+  // Prefer the selected shot card; fall back to the selected output.
+  const shot = selectedSceneId.value
+    ? leftPanelShots.value.find((s) => s.id === selectedSceneId.value)
     : null
-  if (scene) {
+  if (shot) {
     return {
-      title: scene.title,
-      subtitle: scene.description ?? '',
+      title: shot.title,
+      subtitle: shot.description ?? '',
       meta: null,
-      thumbnailUrl: scene.thumbnails[0] ?? null,
+      thumbnailUrl: shot.media[0]?.url ?? null,
       kind: 'scene' as const,
     }
   }
@@ -960,20 +965,51 @@ function onOutputViewAll() {
   $q.notify({ color: 'info', message: '全部结果视图即将上线', icon: 'list', timeout: 1200 })
 }
 
+/**
+ * A card was selected in any of the three accordion sections (item-select).
+ * `selectedSceneId` drives the active-card highlight + the context strip. When
+ * the selected id is a shot, also track it as the current story shot so the
+ * timeline / generate affordances target it.
+ */
 function onSceneSelect(id: string) {
   selectedSceneId.value = id
+  if (leftPanelShots.value.some((s) => s.id === id)) {
+    currentStoryShotId.value = id
+  }
 }
 
-function onSceneAdd(id: string) {
-  $q.notify({ color: 'info', message: `向场景 ${id} 添加元素（待接入）`, icon: 'info', timeout: 1200 })
+/** A section header was collapsed/expanded. Collapse state is owned in-memory by
+ *  the panel; the page has nothing to persist, so this is intentionally a no-op
+ *  seam (kept for a future analytics/sync hook). */
+function onSectionToggle(_section: LeftPanelSection) {
+  // no-op — panel owns the collapse state
 }
 
-function onSceneAddImage(id: string) {
-  $q.notify({ color: 'info', message: `为场景 ${id} 上传图片（待接入）`, icon: 'image', timeout: 1200 })
+/** "+" add-media pressed on a card footer (待接入 — real upload is a follow-up). */
+function onItemAddMedia(section: LeftPanelSection, id: string) {
+  $q.notify({ color: 'info', message: `为${sectionLabel(section)} ${id} 添加素材（待接入）`, icon: 'add_photo_alternate', timeout: 1200 })
 }
 
-function onSceneImageType(id: string) {
-  $q.notify({ color: 'info', message: `切换场景 ${id} 的素材类型（待接入）`, icon: 'category', timeout: 1200 })
+/** Type-selector pressed on a card footer (待接入). */
+function onItemSelectType(section: LeftPanelSection, id: string) {
+  $q.notify({ color: 'info', message: `切换${sectionLabel(section)} ${id} 的素材类型（待接入）`, icon: 'category', timeout: 1200 })
+}
+
+/** "评论生成" pressed on a card footer. For shots, reuse the mock generate
+ *  command; other sections are 待接入 stubs for now. */
+function onCommentGenerate(section: LeftPanelSection, id: string) {
+  if (section === 'shots') {
+    void onShotGenerate(id)
+    return
+  }
+  $q.notify({ color: 'info', message: `${sectionLabel(section)} ${id} 评论生成（待接入）`, icon: 'auto_awesome', timeout: 1200 })
+}
+
+/** Human-readable label for a left-panel section (notification copy). */
+function sectionLabel(section: LeftPanelSection): string {
+  if (section === 'elements') return '关键元素'
+  if (section === 'shots') return '分镜'
+  return '旁白与音乐'
 }
 
 /** Replace one episode in storyEpisodes with the latest from the backend. When
@@ -1104,16 +1140,6 @@ async function runShotMutation(
   }
 }
 
-function onShotDelete(shotId: string) {
-  const episodeId = currentStoryEpisodeId.value
-  if (!episodeId) return
-  void runShotMutation(
-    shotId,
-    (expected) => api.deleteShot(projectId.value, episodeId, shotId, expected),
-    '已删除镜头',
-  )
-}
-
 function onShotUpdate(shotId: string, patch: { description: string }) {
   const episodeId = currentStoryEpisodeId.value
   if (!episodeId) return
@@ -1121,25 +1147,6 @@ function onShotUpdate(shotId: string, patch: { description: string }) {
     shotId,
     (expected) => api.updateShot(projectId.value, episodeId, shotId, patch, expected),
     '已更新镜头',
-  )
-}
-
-/** MVP reorder: move one shot up/down by one, then persist the full order. */
-function onShotMove(shotId: string, direction: 'up' | 'down') {
-  const episodeId = currentStoryEpisodeId.value
-  if (!episodeId) return
-  const ids = currentStoryShots.value.map((s) => s.id)
-  const from = ids.indexOf(shotId)
-  if (from < 0) return
-  const to = direction === 'up' ? from - 1 : from + 1
-  if (to < 0 || to >= ids.length) return
-  const reordered = [...ids]
-  const [moved] = reordered.splice(from, 1)
-  reordered.splice(to, 0, moved!)
-  void runShotMutation(
-    shotId,
-    (expected) => api.reorderShots(projectId.value, episodeId, reordered, expected),
-    '已调整顺序',
   )
 }
 
