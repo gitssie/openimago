@@ -293,6 +293,26 @@ export async function migrate() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `)
+
+  // ── Per-project user skills (openimago-wjcp) ──────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS user_skills (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      project_id TEXT NOT NULL REFERENCES projects(id),
+      name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      content TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS user_skills_project_name_idx
+    ON user_skills (project_id, name)
+  `)
 }
 
 export async function truncate() {
@@ -326,6 +346,7 @@ export async function truncate() {
     END$$
   `)
 
+  await db.execute(sql`DELETE FROM user_skills`)
   await db.execute(sql`DELETE FROM projects`)
   await db.execute(sql`DELETE FROM user_auths`)
   await db.execute(sql`DELETE FROM users`)

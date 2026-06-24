@@ -9,3 +9,4 @@ export const dirId = () => `dir_${nanoId()}`
 export const authId = () => `auth_${nanoId()}`
 export const workspaceFileId = () => `wsf_${nanoId()}`
 export const galleryWorkId = () => `glw_${nanoId()}`
+export const skillId = () => `skl_${nanoId()}`

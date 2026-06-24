@@ -191,3 +191,20 @@ export const tempAttachments = pgTable("temp_attachments", {
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 })
+
+// Per-project, user-authored skills. DB row is the source of truth; the
+// SKILL.md file at ${projectDir}/.opencode/skills/<name>/SKILL.md is materialized
+// from it so opencode discovers it natively (openimago-wjcp).
+export const userSkills = pgTable("user_skills", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id),
+  projectId: text("project_id").notNull().references(() => projects.id),
+  name: text("name").notNull(), // 1-64 chars, lowercase alphanumeric + hyphen
+  description: text("description").notNull(), // <= 1024 chars
+  content: text("content").notNull(), // SKILL.md body, instructions-only
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  projectNameIdx: uniqueIndex("user_skills_project_name_idx").on(table.projectId, table.name),
+}))
