@@ -64,14 +64,36 @@ function applyCoverFit(compositor: any, fabricVideo: any, element: HTMLVideoElem
   // the dimensions coverScaleRect was computed against.
   element.width = videoW
   element.height = videoH
-  fabricVideo.set({ scaleX, scaleY, left, top })
+
+  // coverScaleRect returns left/top in TOP-LEFT-origin coordinates, but omniclip's
+  // FabricImages use fabric 7's default CENTER origin (openimago-u8d1): there
+  // left/top address the object's CENTER. Passing top-left coords straight in
+  // puts the video CENTER at (0,0) → it sits in the top-left quadrant. Convert
+  // per-axis using the general formula `center = edge + (scaledDim / 2)` (NOT the
+  // canvasW/2 shortcut, which only holds when the scaled video fills the axis
+  // exactly — false for non-square sources). Only offset an axis whose origin is
+  // actually 'center', so the conversion stays correct for 'left'/'top' origins.
+  const originX = (fabricVideo as { originX?: string }).originX
+  const originY = (fabricVideo as { originY?: string }).originY
+  const placedLeft = originX === 'center' ? left + (videoW * scaleX) / 2 : left
+  const placedTop = originY === 'center' ? top + (videoH * scaleY) / 2 : top
+
+  fabricVideo.set({ scaleX, scaleY, left: placedLeft, top: placedTop })
   fabricVideo.setCoords?.()
   // Persist onto the stored effect so a later compose/recreate keeps the fit.
+  // CRITICAL (openimago-u8d1): omniclip's update_canvas_objects (run by
+  // compose_effects) re-applies object.left/top = position_on_canvas.x/y VERBATIM
+  // to the same center-origin object — it does NOT re-run cover-fit. So the
+  // write-back MUST store the origin-resolved (center) values we set above;
+  // storing the raw top-left geometry would let the next compose reset the center
+  // back to (0,0) and re-strand the video in the corner. On recreate, super
+  // rebuilds the FabricImage from these values and applyCoverFit recomputes from
+  // intrinsic dims, so there is no double-offset.
   const effect = (fabricVideo as { effect?: { rect?: Record<string, unknown> } }).effect
   if (effect?.rect) {
     effect.rect.scaleX = scaleX
     effect.rect.scaleY = scaleY
-    effect.rect.position_on_canvas = { x: left, y: top }
+    effect.rect.position_on_canvas = { x: placedLeft, y: placedTop }
   }
   compositor?.canvas?.requestRenderAll?.()
 }
