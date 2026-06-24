@@ -31,6 +31,13 @@ const imagoOverrides = css`
     min-height: 0;
     max-height: 100%;
     max-width: 100%;
+    /* The player's .flex parent is column flex; the default align-self:stretch
+       blows figure to the full panel width (~733px), and aspect-ratio can't
+       constrain the stretched axis — so its width no longer follows 9/16 and the
+       9:16 .canvas-container sits centered with wide dark side-gaps that read as a
+       second canvas (openimago-axrz). Centering stops the stretch → width is
+       derived from height × 9/16 = the canvas width, gaps gone. */
+    align-self: center;
   }
   .canvas-container {
     aspect-ratio: 9/16;
