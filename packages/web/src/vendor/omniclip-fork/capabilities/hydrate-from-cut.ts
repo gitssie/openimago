@@ -121,33 +121,37 @@ export async function hydrateFromCut(
     return durationMs
   }
 
-  // EARLY FIRST FRAME (openimago-ah1j): import + place clip 0 BY ITSELF first, then
-  // paint its first frame immediately — so the on-screen frame no longer waits on
-  // the whole serial import of all N clips (previously sum(import); now ≈ clip 0's
-  // own import). Kick off the remaining imports in PARALLEL before awaiting clip 0
-  // so they overlap clip 0's import and each other (wall time → ≈max(import)).
+  // EARLY FIRST FRAME, decode-contention-free (openimago-ah1j → ac52). e2e showed
+  // that importing the 4 rest clips in parallel WITH clip 0 floods Chrome's media
+  // pipeline: each rest import spawns 2 decoding <video> elements (thumbnail seek +
+  // duration metadata), ~8 concurrent decodes that starve clip 0's preview <video>
+  // for ~2.8s. So we now strictly SEQUENCE: import + place + compose clip 0, AWAIT
+  // its first paint (its preview <video> reaching readyState ≥ 2), and only THEN
+  // start the rest-clip imports — giving clip 0's decode an uncontended slot. The
+  // rest still import in parallel among themselves; total hydrate rises modestly
+  // (rest starts after clip 0 paints) — an accepted trade for a fast first frame.
   const [firstClip, ...restClips] = clips
-  // Start clip 0's import FIRST so it enters the serialized ffprobe queue ahead of
-  // the rest — otherwise clip 0's frame-probe could wait behind the others and
-  // defeat the early-paint. Then start the remaining imports so they run in
-  // parallel with clip 0 and each other.
-  const firstImport = importFromUrl(firstClip.url, { name: firstClip.name })
+
+  // Import + place the on-screen clip's media (fetch → File → omniclip hash/IDB).
+  const firstImported = await importFromUrl(firstClip.url, { name: firstClip.name })
+  let cursorMs = placeClip(firstClip, firstImported, 0)
+  // Paint clip 0's first frame and WAIT for it to actually become drawable before
+  // unleashing the rest imports' <video> decodes. composePlacedClips resolves when
+  // nudgeFirstFrame's drawable signal fires (capped by FIRST_PAINT_WAIT_TIMEOUT_MS
+  // so a stuck decode can't hang hydrate).
+  await composePlacedClips([{ id: firstClip.id, fileHash: firstImported.fileHash }])
+
+  // NOW start the remaining imports in parallel (among themselves). They run after
+  // clip 0 has painted, so their thumbnail/duration <video> decodes no longer
+  // contend with clip 0's preview decode.
   const restImports = restClips.map((clip) =>
     importFromUrl(clip.url, { name: clip.name }),
   )
-  // Observe rest-import rejections eagerly so that if clip 0's import throws below
-  // (before we await Promise.all), the in-flight rest promises don't surface as
-  // unhandled rejections. The real value is still awaited via restAll, which keeps
-  // the original "any import failure fails hydrate" semantics.
+  // Observe rejections eagerly so an early failure doesn't surface as an unhandled
+  // rejection before we await; restAll still rethrows the first failure (preserving
+  // "any import failure fails hydrate" that StoryCutPanel relies on).
   const restAll = Promise.all(restImports)
   restAll.catch(() => {})
-
-  // Await + place the on-screen clip's media (fetch → File → omniclip hash/IDB).
-  const firstImported = await firstImport
-  let cursorMs = placeClip(firstClip, firstImported, 0)
-  // Paint clip 0's first frame as soon as it is placed + drawable, without waiting
-  // for the rest of the batch or transitions.
-  composePlacedClips([{ id: firstClip.id, fileHash: firstImported.fileHash }])
 
   // Place the remaining clips in ORIGINAL order once their parallel imports resolve,
   // accumulating cursorMs exactly. Promise.all preserves array order regardless of
@@ -175,7 +179,8 @@ export async function hydrateFromCut(
   // sprite filmstrip (78m9) this no longer drives any thumbnail drawing — it ONLY
   // ensures playback composition; the timeline strip renders from the precomputed
   // sprite with no events. Fire-and-forget (no on_media_change await; per 1mcb).
-  composePlacedClips(placed)
+  // (Its TTFP log is a no-op here — firstPaintLogged was already set by clip 0.)
+  void composePlacedClips(placed)
 
   if (import.meta.env.DEV) console.timeEnd('[omniclip-fork] hydrateFromCut total')
 }
@@ -195,39 +200,52 @@ export async function hydrateFromCut(
  * for the on-screen clip's <video> to become drawable, then re-compose so the
  * first frame paints on open.
  */
-function composePlacedClips(placed: { id: string; fileHash: string }[]): void {
-  if (placed.length === 0) return
+function composePlacedClips(placed: { id: string; fileHash: string }[]): Promise<void> {
+  if (placed.length === 0) return Promise.resolve()
   const ctx = omnislate.context
   const media = ctx.controllers.media
   const videoManager = ctx.controllers.compositor.managers.videoManager
-  // Two rAFs: the first lets the state-driven slate render commit, the second
-  // ensures the VideoEffect use.mount() listeners are attached before we publish.
-  requestAnimationFrame(() => {
+  // Resolves once the on-screen clip's first frame has painted (via nudgeFirstFrame)
+  // so the caller can sequence the rest-clip imports after it (openimago-ac52).
+  return new Promise<void>((resolve) => {
+    // Two rAFs: the first lets the state-driven slate render commit, the second
+    // ensures the VideoEffect use.mount() listeners are attached before we publish.
     requestAnimationFrame(() => {
-      // Clear composed entries so every view's !is_effect_already_composed passes.
-      for (const { id } of placed) {
-        videoManager.delete(id)
-      }
-      // Re-announce each unique source hash → listeners re-compose for playback.
-      const seen = new Set<string>()
-      for (const { fileHash } of placed) {
-        if (seen.has(fileHash)) continue
-        seen.add(fileHash)
-        const file = media.get(fileHash)
-        if (!file) continue
-        media.on_media_change.publish({ files: [{ hash: fileHash, file, kind: 'video' }], action: 'added' })
-      }
-      // The video-effect listener calls compositor.recreate() (async: it awaits
-      // media.are_files_ready() before building each <video> + composing), so the
-      // <video> elements don't exist in videoManager synchronously after publish.
-      // Defer the first-frame nudge one more frame so recreate has built them.
-      requestAnimationFrame(() => nudgeFirstFrame())
+      requestAnimationFrame(() => {
+        // Clear composed entries so every view's !is_effect_already_composed passes.
+        for (const { id } of placed) {
+          videoManager.delete(id)
+        }
+        // Re-announce each unique source hash → listeners re-compose for playback.
+        const seen = new Set<string>()
+        for (const { fileHash } of placed) {
+          if (seen.has(fileHash)) continue
+          seen.add(fileHash)
+          const file = media.get(fileHash)
+          if (!file) continue
+          media.on_media_change.publish({ files: [{ hash: fileHash, file, kind: 'video' }], action: 'added' })
+        }
+        // The video-effect listener calls compositor.recreate() (async: it awaits
+        // media.are_files_ready() before building each <video> + composing), so the
+        // <video> elements don't exist in videoManager synchronously after publish.
+        // Defer the first-frame nudge one more frame so recreate has built them.
+        requestAnimationFrame(() => {
+          nudgeFirstFrame().then(resolve, resolve)
+        })
+      })
     })
   })
 }
 
 /** HTMLVideoElement.readyState ≥ HAVE_CURRENT_DATA → a frame can be drawImage'd. */
 const HAVE_CURRENT_DATA = 2
+
+/**
+ * Max time the rest-clip imports wait for clip 0's first paint before proceeding
+ * anyway (openimago-ac52). Clip 0's uncontended decode is typically a few hundred
+ * ms; this cap only guards a stuck/errored decode so hydrate never hangs.
+ */
+const FIRST_PAINT_WAIT_TIMEOUT_MS = 2000
 
 /**
  * Paint the preview's FIRST frame once the on-screen clip's <video> can be drawn
@@ -240,8 +258,14 @@ const HAVE_CURRENT_DATA = 2
  * NOTE (openimago-ua5d): cover-fit is NO LONGER done here — it now happens at the
  * FabricImage creation point in the VideoManager patch (race-free, per clip, on
  * every recreate). This function only ensures the first frame PAINTS.
+ *
+ * Returns a promise that resolves once the on-screen clip's <video> is drawable
+ * (readyState ≥ HAVE_CURRENT_DATA) and its frame has been redrawn — i.e. the first
+ * paint actually happened (openimago-ac52). The caller awaits this to hold off the
+ * rest-clip imports (each spawns 2 decoding <video> elements) until clip 0's
+ * preview video has had an uncontended decode slot, killing the ~2.8s starvation.
  */
-function nudgeFirstFrame(): void {
+function nudgeFirstFrame(): Promise<void> {
   const ctx = omnislate.context
   const compositor = ctx.controllers.compositor
 
@@ -279,22 +303,40 @@ function nudgeFirstFrame(): void {
       console.log(`[omniclip-fork] time-to-first-paint: ${ms}ms`)
     }
   }
-  for (const effect of visible) {
-    if (effect.kind !== 'video') continue
-    const fabricVideo = compositor.managers.videoManager.get(effect.id)
-    const element = fabricVideo?.getElement() as HTMLVideoElement | undefined
-    if (!element) continue
-    if (element.readyState >= HAVE_CURRENT_DATA) continue // already drawable
-    const onReady = (): void => {
-      element.removeEventListener('loadeddata', onReady)
-      element.removeEventListener('seeked', onReady)
-      redraw()
-    }
-    element.addEventListener('loadeddata', onReady, { once: true })
-    element.addEventListener('seeked', onReady, { once: true })
-  }
 
-  // Always do an immediate redraw too: drawable elements paint now, and late
-  // `loadeddata`/`seeked` listeners repaint the rest as they decode.
-  redraw()
+  return new Promise<void>((resolve) => {
+    let settled = false
+    const done = (): void => {
+      if (settled) return
+      settled = true
+      resolve()
+    }
+
+    for (const effect of visible) {
+      if (effect.kind !== 'video') continue
+      const fabricVideo = compositor.managers.videoManager.get(effect.id)
+      const element = fabricVideo?.getElement() as HTMLVideoElement | undefined
+      if (!element) continue
+      if (element.readyState >= HAVE_CURRENT_DATA) continue // already drawable
+      const onReady = (): void => {
+        element.removeEventListener('loadeddata', onReady)
+        element.removeEventListener('seeked', onReady)
+        redraw()
+        done() // clip 0's frame just painted → unblock the rest-clip imports
+      }
+      element.addEventListener('loadeddata', onReady, { once: true })
+      element.addEventListener('seeked', onReady, { once: true })
+    }
+
+    // Always do an immediate redraw too: drawable elements paint now, and late
+    // `loadeddata`/`seeked` listeners repaint the rest as they decode.
+    redraw()
+    // If the on-screen clip is already drawable, the first paint is done now.
+    if (visibleClipDrawable()) done()
+
+    // Safety net: never block hydrate forever if the <video> never reaches a
+    // drawable state (decode error, no visible video clip). Proceed after a short
+    // grace period so the rest-clip imports still run (openimago-ac52).
+    setTimeout(done, FIRST_PAINT_WAIT_TIMEOUT_MS)
+  })
 }
