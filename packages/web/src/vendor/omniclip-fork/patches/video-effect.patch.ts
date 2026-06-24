@@ -29,14 +29,14 @@
 import { html, css } from '@benev/slate'
 import { Effect } from 'omniclip/x/components/omni-timeline/views/effects/parts/effect.js'
 import { shadow_view } from 'omniclip/x/context/context.js'
+import { spriteBackgroundSizeX } from './filmstrip-sprite-css'
 
-// Sprite frame natural size: 9:16 portrait, full lane height (omniclip lanes are
-// 50px). 28/50 ≈ 0.56. FRAME_W/H is the per-frame size baked into the sprite
-// sheet (matches result.filmstrip.frameW/H) and drives the background-size of the
-// first-frame crop. Cell WIDTH is NOT derived from FRAME_W or zoom — each cell is
-// `flex: 1 1 0`, so the N (= ceil(durationSeconds)) cells split the effect's real
-// rendered width equally (openimago-78m9).
-const FRAME_W = 28
+// Cell height = full omniclip lane height (lanes are 50px; the sprite frames are
+// 9:16 portrait, 28×50, matching result.filmstrip.frameW/H). Cell WIDTH is NOT a
+// constant: each cell is `flex: 1 1 0`, so the N (= ceil(durationSeconds)) cells
+// split the effect's real rendered width equally (openimago-78m9). The single
+// frame shown per cell is cropped by PERCENTAGE (filmstrip-sprite-css) so it
+// fills the cell whatever its pixel width (openimago-ugli).
 const CELL_H = 50
 // Bound the DOM cell count for very long/zoomed clips (each cell is a cheap div).
 const MAX_CELLS = 800
@@ -60,26 +60,19 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
     return () => dispose()
   })
 
-  // ── Static sprite filmstrip — one REAL frame per second, offset by inPoint ──
-  // (openimago-px5g) Each clip shows one cell per second of its TRIMMED length,
-  // and each cell shows the REAL source frame at that cell's ABSOLUTE source time
-  // — so a clip's strip is a moving window over the video, and after a split the
-  // 前 half [inPoint..t] and 后 half [t..outPoint] show visually distinct,
-  // frame-accurate ranges (the old first-frame-only render made both halves look
-  // identical). Static CSS background-position; no decode/seek.
+  // ── Static sprite filmstrip — one cell per second, each showing the FIRST frame ──
+  // (openimago-ugli) The strip is just a "which video is this" marker, so every
+  // cell shows the video's FIRST frame — no time→frame mapping (the old px5g
+  // per-second source-frame mapping is gone). One cell per second of the clip's
+  // length lets the user gauge duration; the repeated first frame identifies the
+  // source. Static CSS background; no decode/seek.
   //
-  // Mapping (the sprite is ONE horizontal strip of `frameCount` frames spanning
-  // the FULL SOURCE video):
-  //   - inPoint seconds = effect.start / 1000 (hydrate sets start = inPoint*1000).
   //   - cellCount = ceil(clip duration) — one cell per second of the trimmed clip.
-  //   - secondsPerCell = clipDuration / cellCount (≈1s; exact so the last cell
-  //     lands on outPoint).
-  //   - cell i absolute source time t = inPoint + i*secondsPerCell.
-  //   - frameIndex = clamp(round(t / SOURCE duration * (frameCount-1)), 0, N-1).
-  //     SOURCE duration (filmstrip_source_duration_seconds = result.duration) is
-  //     REQUIRED here — the sprite spans the source, NOT the trimmed clip.
-  //   - background-position-x = -(frameIndex * FRAME_W).
-  // Cell width is still the effect's REAL rendered width / cellCount, via CSS
+  //   - every cell shows frame 0, cropped to fill the cell by PERCENTAGE
+  //     (background-size-x = frameCount*100%, background-position-x = 0 —
+  //     filmstrip-sprite-css), so exactly one frame shows per cell regardless of
+  //     the cell's pixel width (a flex cell is far wider than the 28px frame).
+  // Cell width is the effect's REAL rendered width / cellCount, via CSS
   // (`.filmstrip` width:100%, each cell `flex:1 1 0`) — no 2^zoom guesswork.
   const render_filmstrip = () => {
     const get_effect = use.context.state.effects.find((e) => e.id === effect.id) ?? effect
@@ -95,32 +88,20 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
     // make ceil(NaN)=NaN, max(1,NaN)=NaN → 0 cells → an empty clip).
     const fineNum = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0)
 
-    // TRIMMED clip duration (cell count / width). Fallbacks all finite>0 so a
+    // TRIMMED clip duration drives cell count only. Fallbacks all finite>0 so a
     // sprited clip is never empty.
     const clipDurationSeconds =
       fineNum(get_effect.filmstrip_duration_seconds) || fineNum(get_effect.duration / 1000) || 1
 
-    // SOURCE video duration (frame-index mapping basis — the sprite spans the
-    // whole source). Fall back to the clip duration when absent (then the strip
-    // still moves across the clip, just mapped to its own length).
-    const sourceDurationSeconds =
-      fineNum(get_effect.filmstrip_source_duration_seconds) || clipDurationSeconds
-
-    // inPoint in seconds (effect.start is inPoint*1000; 0 when untrimmed/missing).
-    const inPointSeconds = fineNum(get_effect.start / 1000) || 0
-
     const cellCount = Math.max(1, Math.min(MAX_CELLS, Math.ceil(clipDurationSeconds)))
-    const secondsPerCell = clipDurationSeconds / cellCount
 
-    // Sprite NATURAL size → each shown frame is a crisp 9:16 FRAME_W×FRAME_H.
-    const stripPxW = frameCount * FRAME_W
-    const lastFrame = frameCount - 1
+    // PERCENTAGE crop so exactly ONE frame (the first) fills each cell regardless
+    // of the cell's pixel width (openimago-ugli). background-size-x =
+    // frameCount*100% (each frame == one cell width); background-position-x = 0
+    // (always frame 0).
+    const bgSizeX = spriteBackgroundSizeX(frameCount)
     const cells = []
     for (let i = 0; i < cellCount; i++) {
-      // Absolute source time at this cell, mapped to a sprite frame index.
-      const t = inPointSeconds + i * secondsPerCell
-      const ratio = sourceDurationSeconds > 0 ? t / sourceDurationSeconds : 0
-      const frameIdx = Math.max(0, Math.min(lastFrame, Math.round(ratio * lastFrame)))
       cells.push(html`
         <div
           class="sprite-cell"
@@ -128,8 +109,8 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
             height: ${CELL_H}px;
             background-image: url('${spriteUrl}');
             background-repeat: no-repeat;
-            background-size: ${stripPxW}px ${CELL_H}px;
-            background-position: ${-(frameIdx * FRAME_W)}px 0;
+            background-size: ${bgSizeX} ${CELL_H}px;
+            background-position: 0 0;
           "
         ></div>
       `)
