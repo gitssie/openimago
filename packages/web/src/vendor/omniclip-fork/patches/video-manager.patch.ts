@@ -46,7 +46,18 @@ function canvasSizeFrom(compositor: any): { w: number; h: number } {
 function applyCoverFit(compositor: any, fabricVideo: any, element: HTMLVideoElement): void {
   const videoW = element.videoWidth
   const videoH = element.videoHeight
-  if (!videoW || !videoH) return
+  if (!videoW || !videoH) {
+    // Should never fire after the loadedmetadata-only wiring below: loadedmetadata
+    // is the HTML-spec guarantee that videoWidth/Height are populated. A zero here
+    // means a future regression silently defeating cover-fit (openimago-jkrg).
+    if (import.meta.env.DEV) {
+      console.warn(
+        '[omniclip-fork] applyCoverFit skipped: zero video dimensions',
+        { videoW, videoH },
+      )
+    }
+    return
+  }
   const { w: canvasW, h: canvasH } = canvasSizeFrom(compositor)
   const { scaleX, scaleY, left, top } = coverScaleRect(canvasW, canvasH, videoW, videoH)
   // Unify the element box with its intrinsic size so fabric's baseline matches
@@ -76,13 +87,15 @@ export class VideoManager extends UpstreamVideoManager {
       applyCoverFit(compositor, fabricVideo, element)
     } else {
       // Intrinsic size not known yet → cover-fit once metadata loads.
+      // ONLY loadedmetadata: it is the sole HTML-spec guarantee that
+      // videoWidth/Height are populated. loadeddata can fire first with
+      // videoWidth still 0 inside omniclip's recreate()/element.load() flow,
+      // racing past the metadata event and defeating cover-fit (openimago-jkrg).
       const onMeta = (): void => {
         element.removeEventListener('loadedmetadata', onMeta)
-        element.removeEventListener('loadeddata', onMeta)
         applyCoverFit(compositor, fabricVideo, element)
       }
       element.addEventListener('loadedmetadata', onMeta, { once: true })
-      element.addEventListener('loadeddata', onMeta, { once: true })
     }
   }
 }
