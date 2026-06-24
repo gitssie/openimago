@@ -103,11 +103,12 @@ test("generateShot appends a completed run with result and marks shot generated"
   expect(body.run.result.filename).toBe(`${shotId}.mp4`)
   expect(body.run.result.artifactId).toMatch(/^mock_/)
   // Same-origin clip served from packages/web/public (openimago-lwuu): a relative
-  // /mock-clip.mp4#<seed> path — NOT an external CDN URL (the old BigBuckBunny URL
-  // 403'd here and tripped WebCodecs' cross-origin CORS). The #seed fragment keeps
-  // it deterministic per shot. Tests assert the shape only; they never fetch it.
-  expect(body.run.result.access.preview).toMatch(/^\/mock-clip\.mp4#[0-9a-z]+$/)
-  expect(body.run.result.access.thumbnail).toMatch(/^\/mock-clip\.mp4#[0-9a-z]+$/)
+  // /mock/shot-s0X.mp4 path — NOT an external CDN URL (the old BigBuckBunny URL
+  // 403'd here and tripped WebCodecs' cross-origin CORS). Per-shot mocks that
+  // actually exist on disk (openimago-0t9m), each with a committed filmstrip.
+  // Tests assert the shape only; they never fetch it.
+  expect(body.run.result.access.preview).toMatch(/^\/mock\/shot-s0[1-6]\.mp4$/)
+  expect(body.run.result.access.thumbnail).toMatch(/^\/mock\/shot-s0[1-6]\.mp4$/)
   expect(body.run.result.access.preview).not.toMatch(/^https?:\/\//)
   expect(body.run.id).toMatch(/^run_/)
 
@@ -122,6 +123,63 @@ test("generateShot appends a completed run with result and marks shot generated"
   const ep = await readJson(project.directory, "story/episodes/ep_001.json")
   const shot = ep.shots.find((s: any) => s.id === shotId)
   expect(shot.status).toBe("generated")
+})
+
+test("generateShot emits a filmstrip + real duration matching the seed fixture shape", async () => {
+  const token = await registerUser("gnfs", "gnfs@example.com")
+  const project = await createProject(token, "GenFilmstrip")
+  const shotId = await addShot(token, project.id, "ep_001")
+
+  const res = await generateReq(token, project.id, "ep_001", shotId)
+  expect(res.status).toBe(201)
+  const body = (await res.json()) as Record<string, any>
+  const result = body.run.result
+
+  // The generated run must carry the same shape as the seed fixture
+  // (docs/story-schema/runs/ep_001.runs.json) so the timeline filmstrip renders
+  // continuous distinct frames instead of an empty black strip (openimago-0t9m).
+
+  // 1. Real source duration in seconds (NOT the integer params duration).
+  expect(typeof result.duration).toBe("number")
+  expect(result.duration).toBeGreaterThan(0)
+
+  // 2. preview points at a per-shot mock that actually exists in public/mock,
+  //    NOT the missing /mock-clip.mp4. Filmstrip URL sits beside it.
+  expect(result.access.preview).toMatch(/^\/mock\/shot-s0[1-6]\.mp4$/)
+  expect(result.access.filmstrip).toMatch(/^\/mock\/shot-s0[1-6]\.filmstrip\.png$/)
+  // preview + filmstrip refer to the SAME per-shot asset.
+  const previewBase = result.access.preview.replace(/\.mp4$/, "")
+  const filmstripBase = result.access.filmstrip.replace(/\.filmstrip\.png$/, "")
+  expect(filmstripBase).toBe(previewBase)
+
+  // 3. filmstrip dims object (the contract dims used by the omniclip fork).
+  expect(result.filmstrip).toEqual({ frameCount: 24, frameW: 28, frameH: 50 })
+
+  // It is persisted to runs.json too, not just the response.
+  const runs = await readJson(project.directory, "story/runs/ep_001.runs.json")
+  const persisted = runs.runs[0]
+  expect(persisted.result.duration).toBe(result.duration)
+  expect(persisted.result.access.filmstrip).toBe(result.access.filmstrip)
+  expect(persisted.result.filmstrip).toEqual({ frameCount: 24, frameW: 28, frameH: 50 })
+})
+
+test("generateShot maps the same shot deterministically and different shots spread across mocks", async () => {
+  const token = await registerUser("gndet", "gndet@example.com")
+  const project = await createProject(token, "GenDeterministic")
+  const shotA = await addShot(token, project.id, "ep_001")
+  const shotB = await addShot(token, project.id, "ep_001")
+
+  const a1 = (await (await generateReq(token, project.id, "ep_001", shotA)).json()) as Record<string, any>
+  const a2 = (await (await generateReq(token, project.id, "ep_001", shotA)).json()) as Record<string, any>
+  const b1 = (await (await generateReq(token, project.id, "ep_001", shotB)).json()) as Record<string, any>
+
+  // Same shot → same mock clip (deterministic preview + duration).
+  expect(a2.run.result.access.preview).toBe(a1.run.result.access.preview)
+  expect(a2.run.result.duration).toBe(a1.run.result.duration)
+
+  // Different shots → different mock clips (so the timeline shows distinct
+  // footage per clip instead of every clip looking identical — defect #2).
+  expect(b1.run.result.access.preview).not.toBe(a1.run.result.access.preview)
 })
 
 test("generateShot initializes runs.json when it does not exist", async () => {

@@ -4,6 +4,7 @@ import path from "path"
 import { db } from "../db/client"
 import { projects } from "../db/schema"
 import { logger } from "../server/logger"
+import { filmstripMeta, type FilmstripMeta } from "../media/filmstrip"
 
 // ── Canonical story file names relative to project directory ──────────────────
 
@@ -57,8 +58,8 @@ function stableHash(input: string): number {
 /**
  * Same-origin placeholder image URLs committed under packages/web/public/mock/
  * (Quasar serves public/<name> at /<name>). External image hosts (picsum, CDNs)
- * are NOT reachable in the user's network, so — like the mock VIDEO
- * (MOCK_VIDEO_SAMPLE_URL) — generated mock images must be relative same-origin
+ * are NOT reachable in the user's network, so — like the mock VIDEO clips
+ * (MOCK_VIDEO_CLIPS) — generated mock images must be relative same-origin
  * URLs that need no internet. SVG renders directly in <img>.
  */
 const MOCK_IMAGE_PLACEHOLDERS = [
@@ -80,29 +81,51 @@ function mockImageUrl(seed: string): string {
 }
 
 /**
- * Same-origin sample MP4 for the mock video provider. omniclip is a video
- * editor: hydrateFromCut → importFromUrl needs a REAL, decodable video to build
- * a video effect, so a generated shot must yield an MP4, not a PNG
- * (openimago-1s27).
+ * Same-origin per-shot mock clips committed under packages/web/public/mock/
+ * (Quasar serves public/<name> at /<name>). omniclip is a video editor:
+ * hydrateFromCut → importFromUrl needs a REAL, decodable video to build a video
+ * effect, so a generated shot must yield an MP4, not a PNG (openimago-1s27).
  *
- * This is a relative path served by the web app from `packages/web/public/`
- * (Quasar serves `public/<name>` at `/<name>`). Same-origin matters twice
- * (openimago-lwuu): (1) the previous external CDN clip returned HTTP 403 in this
- * environment, breaking importFromUrl; (2) WebCodecs/importFromUrl impose CORS
- * on cross-origin video, which a relative same-origin URL sidesteps. The browser
- * resolves this against the web app's own origin.
+ * Same-origin matters twice (openimago-lwuu): (1) external CDN clips returned
+ * HTTP 403 in this environment, breaking importFromUrl; (2) WebCodecs imposes
+ * CORS on cross-origin video, which a relative same-origin URL sidesteps.
+ *
+ * Each clip ships with a committed `<name>.filmstrip.png` sprite (24 frames,
+ * 28×50) and a known real duration (ffprobe of the committed mp4), so the
+ * timeline filmstrip renders continuous distinct frames WITHOUT a runtime
+ * ffmpeg dependency (openimago-0t9m). `durationSeconds` is the actual probed
+ * length — reusing the values already baked into the seed fixture
+ * (docs/story-schema/runs/ep_001.runs.json). Different shots map to different
+ * clips so each timeline clip shows distinct footage. Replace with a real
+ * provider as a follow-up, like mockImageUrl/mockAudioUrl.
  */
-const MOCK_VIDEO_SAMPLE_URL = "/mock-clip.mp4"
+interface MockVideoClip {
+  /** Servable preview URL — the committed per-shot mp4. */
+  preview: string
+  /** Servable sprite URL — the committed per-shot filmstrip png, beside the mp4. */
+  filmstrip: string
+  /** Real source duration in seconds (ffprobe of the committed mp4). */
+  durationSeconds: number
+}
+
+const MOCK_VIDEO_CLIPS: readonly MockVideoClip[] = [
+  { preview: "/mock/shot-s01.mp4", filmstrip: "/mock/shot-s01.filmstrip.png", durationSeconds: 15.069 },
+  { preview: "/mock/shot-s02.mp4", filmstrip: "/mock/shot-s02.filmstrip.png", durationSeconds: 15.069 },
+  { preview: "/mock/shot-s03.mp4", filmstrip: "/mock/shot-s03.filmstrip.png", durationSeconds: 10.054 },
+  { preview: "/mock/shot-s04.mp4", filmstrip: "/mock/shot-s04.filmstrip.png", durationSeconds: 12.051 },
+  { preview: "/mock/shot-s05.mp4", filmstrip: "/mock/shot-s05.filmstrip.png", durationSeconds: 12.051 },
+  { preview: "/mock/shot-s06.mp4", filmstrip: "/mock/shot-s06.filmstrip.png", durationSeconds: 10.054 },
+] as const
 
 /**
- * Browser-loadable mock video URL. Deterministic: the same shot always maps to
- * the same clip (the `#seed` fragment keeps the value stable per seed without
- * changing what the browser fetches — the fragment is dropped before the HTTP
- * request). Replace with a real provider as a follow-up, like
- * mockImageUrl/mockAudioUrl.
+ * Pick a mock clip for a shot. Deterministic: a stable hash of `seed` selects
+ * one committed per-shot clip, so the same shot always maps to the same clip
+ * while different shots vary across the catalog (distinct footage per timeline
+ * clip). Mirrors mockImageUrl's selection style.
  */
-function mockVideoUrl(seed: string): string {
-  return `${MOCK_VIDEO_SAMPLE_URL}#${stableHash(seed).toString(36)}`
+function mockVideoClip(seed: string): MockVideoClip {
+  const idx = stableHash(seed) % MOCK_VIDEO_CLIPS.length
+  return MOCK_VIDEO_CLIPS[idx]!
 }
 
 /**
@@ -212,7 +235,13 @@ export interface GenerationRun {
     kind: string
     mime: string
     filename: string
-    access: { preview: string; thumbnail: string }
+    access: { preview: string; thumbnail: string; filmstrip?: string }
+    // Real source duration in seconds (video runs). The timeline derives clip
+    // width + filmstrip cell→frame mapping from this; matches the seed fixture
+    // shape (docs/story-schema/runs/ep_001.runs.json).
+    duration?: number
+    // Precomputed filmstrip sprite dims, alongside access.filmstrip.
+    filmstrip?: FilmstripMeta
   }
   startedAt: string
   completedAt: string
@@ -737,7 +766,9 @@ export class StoryService {
     const prompt = description.trim() || `shot ${shotNumber}`
 
     // ── Mock provider result (playable MP4, like opencode mockVideoProvider) ──
-    const videoUrl = mockVideoUrl(`${shotId}${prompt}`)
+    // Deterministic per-shot clip with a committed filmstrip sprite + real
+    // duration, so the timeline renders continuous distinct frames (openimago-0t9m).
+    const clip = mockVideoClip(`${shotId}${prompt}`)
     const now = new Date().toISOString()
     const run: GenerationRun = {
       id: `run_${randomSlug()}`,
@@ -750,7 +781,9 @@ export class StoryService {
         kind: "video",
         mime: "video/mp4",
         filename: `${shotId}.mp4`,
-        access: { preview: videoUrl, thumbnail: videoUrl },
+        access: { preview: clip.preview, thumbnail: clip.preview, filmstrip: clip.filmstrip },
+        duration: clip.durationSeconds,
+        filmstrip: filmstripMeta(),
       },
       startedAt: now,
       completedAt: now,

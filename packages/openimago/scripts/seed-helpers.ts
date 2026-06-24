@@ -19,7 +19,7 @@ export function withProjectId(doc: JsonObject, projectId: string): JsonObject {
 // External image hosts (picsum, cdn.example.com) are NOT reachable in the
 // user's network (China egress times out). Use RELATIVE same-origin SVG
 // placeholders committed under packages/web/public/mock/, exactly like the mock
-// VIDEO does (story-service.ts MOCK_VIDEO_SAMPLE_URL = "/mock-clip.mp4"). Quasar
+// VIDEO does (story-service.ts MOCK_VIDEO_CLIPS → /mock/shot-s0X.mp4). Quasar
 // serves public/<name> at /<name>, so the browser resolves these against its
 // own origin — no internet required. The same SVG scales in <img> for both the
 // preview and the thumbnail.

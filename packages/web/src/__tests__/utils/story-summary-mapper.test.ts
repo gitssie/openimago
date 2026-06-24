@@ -121,6 +121,38 @@ describe('rawRunsToRunSummaries — nested result parsing', () => {
     expect(running.kind).toBeNull()
     expect(running.mime).toBeNull()
   })
+
+  // Filmstrip + duration (openimago-0t9m): generateShot now emits the same shape
+  // as the seed fixture, so the timeline can render continuous distinct frames.
+  it('reads filmstrip url, dims and real duration from a video run', () => {
+    const run = mapOne(nestedCompletedRun({
+      result: {
+        artifactId: 'wf_shot01_video',
+        kind: 'video',
+        mime: 'video/mp4',
+        duration: 15.069,
+        access: {
+          preview: '/mock/shot-s01.mp4',
+          thumbnail: '/mock/placeholder-16x9.svg',
+          filmstrip: '/mock/shot-s01.filmstrip.png',
+        },
+        filmstrip: { frameCount: 24, frameW: 28, frameH: 50 },
+      },
+    }))
+    expect(run.previewUrl).toBe('/mock/shot-s01.mp4')
+    expect(run.filmstripUrl).toBe('/mock/shot-s01.filmstrip.png')
+    expect(run.filmstripFrameCount).toBe(24)
+    expect(run.filmstripFrameW).toBe(28)
+    expect(run.filmstripFrameH).toBe(50)
+    expect(run.durationSeconds).toBe(15.069)
+  })
+
+  it('leaves filmstrip fields null/undefined when a run carries no sprite (orphan)', () => {
+    const run = mapOne(nestedCompletedRun())
+    expect(run.filmstripUrl).toBeNull()
+    expect(run.filmstripFrameCount).toBeNull()
+    expect(run.durationSeconds).toBeNull()
+  })
 })
 
 // ── Bible audioElements ───────────────────────────────────────────────────────
