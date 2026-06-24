@@ -104,6 +104,13 @@ const PORTRAIT_H = 1920
 omnislate.context.actions.set_project_resolution(PORTRAIT_W, PORTRAIT_H)
 omnislate.context.controllers.compositor.set_canvas_resolution(PORTRAIT_W, PORTRAIT_H)
 
+// TEMPORARY DIAGNOSTIC (openimago-qsb5): re-expose the slate on window.__omni so
+// the fabric video objects can be inspected live (geometry/overflow hypothesis for
+// the blank preview). DEV-gated; remove once the root cause is confirmed and fixed.
+if (import.meta.env.DEV) {
+  ;(window as unknown as { __omni?: unknown }).__omni = omnislate
+}
+
 // Install the document-level clip context-menu listener once at boot
 // (openimago-1mcb) — the Effect view is sealed, so the menu is driven from a
 // composedPath() contextmenu handler rather than a patched lit render.

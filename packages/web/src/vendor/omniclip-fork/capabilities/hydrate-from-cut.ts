@@ -230,11 +230,93 @@ function nudgeFirstFrame(): void {
       return !!el && el.readyState >= HAVE_CURRENT_DATA
     })
 
+  // TEMPORARY DIAGNOSTIC (openimago-qsb5): dump the on-screen video FabricImage's
+  // geometry after a redraw so we can tell whether the first frame is drawn but
+  // positioned OFF the visible canvas (overflow hypothesis) vs not drawn at all.
+  // Logging ONLY — does not affect paint/positioning. Remove once root-caused.
+  const logDiag = (): void => {
+    const effect = visible.find((e) => e.kind === 'video')
+    if (!effect) {
+      console.log('[omni-diag] no visible video effect at timecode', compositor.timecode)
+      return
+    }
+    const fabricVideo = compositor.managers.videoManager.get(effect.id) as
+      | (Record<string, unknown> & { getElement?: () => HTMLVideoElement })
+      | undefined
+    const canvas = compositor.canvas as unknown as {
+      width?: number
+      height?: number
+      viewportTransform?: number[]
+      lowerCanvasEl?: HTMLCanvasElement
+    }
+    if (!fabricVideo) {
+      console.log('[omni-diag] effect', effect.id, 'has no FabricImage in videoManager', {
+        canvasW: canvas.width,
+        canvasH: canvas.height,
+      })
+      return
+    }
+
+    const left = Number(fabricVideo.left)
+    const top = Number(fabricVideo.top)
+    const scaleX = Number(fabricVideo.scaleX)
+    const scaleY = Number(fabricVideo.scaleY)
+    const width = Number(fabricVideo.width)
+    const height = Number(fabricVideo.height)
+    const originX = String(fabricVideo.originX)
+    const originY = String(fabricVideo.originY)
+    const scaledW = width * scaleX
+    const scaledH = height * scaleY
+    // Origin-aware bounding box: center origin → left/top is the CENTER; otherwise
+    // (left/top origin) left/top is the top-left edge.
+    const boundingLeft = originX === 'center' ? left - scaledW / 2 : left
+    const boundingTop = originY === 'center' ? top - scaledH / 2 : top
+    const boundingRight = boundingLeft + scaledW
+    const boundingBottom = boundingTop + scaledH
+
+    const el = fabricVideo.getElement?.()
+    let centerRGBA: number[] | string = 'n/a'
+    try {
+      const lower = canvas.lowerCanvasEl
+      const cw = Number(canvas.width) || 0
+      const ch = Number(canvas.height) || 0
+      const lctx = lower?.getContext('2d', { willReadFrequently: true })
+      if (lctx && cw > 0 && ch > 0) {
+        const px = lctx.getImageData(Math.floor(cw / 2), Math.floor(ch / 2), 1, 1).data
+        centerRGBA = [px[0]!, px[1]!, px[2]!, px[3]!]
+      }
+    } catch (err) {
+      centerRGBA = `getImageData failed: ${String(err)}`
+    }
+
+    console.log('[omni-diag] first-frame geometry', {
+      effectId: effect.id,
+      canvas: {
+        width: canvas.width,
+        height: canvas.height,
+        viewportTransform: canvas.viewportTransform,
+      },
+      object: { left, top, scaleX, scaleY, width, height, originX, originY,
+        visible: fabricVideo.visible, opacity: fabricVideo.opacity },
+      derivedBoundingBox: { boundingLeft, boundingTop, boundingRight, boundingBottom, scaledW, scaledH },
+      withinCanvas:
+        boundingLeft >= 0 &&
+        boundingTop >= 0 &&
+        boundingRight <= (Number(canvas.width) || 0) &&
+        boundingBottom <= (Number(canvas.height) || 0),
+      element: el
+        ? { readyState: el.readyState, videoWidth: el.videoWidth, videoHeight: el.videoHeight, currentTime: el.currentTime }
+        : 'no element',
+      codeSideCenterRGBA: centerRGBA,
+    })
+  }
+
   const redraw = (): void => {
     const effects = ctx.state.effects
     compositor.compose_effects(effects, compositor.timecode)
     compositor.set_current_time_of_audio_or_video_and_redraw(true, compositor.timecode)
     compositor.canvas.requestRenderAll()
+    if (import.meta.env.DEV) logDiag()
     // Log time-to-first-paint exactly once, when this redraw actually puts clip 0's
     // decoded frame on the canvas (not the earlier black/loading redraws).
     if (
