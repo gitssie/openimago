@@ -29,7 +29,12 @@
 import { html, css } from '@benev/slate'
 import { Effect } from 'omniclip/x/components/omni-timeline/views/effects/parts/effect.js'
 import { shadow_view } from 'omniclip/x/context/context.js'
-import { spriteBackgroundSizeX } from './filmstrip-sprite-css'
+import {
+  spriteBackgroundSizeX,
+  effectWidthPx,
+  filmstripTileCount,
+  FILMSTRIP_TILE_W,
+} from './filmstrip-sprite-css'
 
 // Cell height = full omniclip lane height (lanes are 50px; the sprite frames are
 // 9:16 portrait, 28×50, matching result.filmstrip.frameW/H). Cell WIDTH is NOT a
@@ -60,20 +65,24 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
     return () => dispose()
   })
 
-  // ── Static sprite filmstrip — one cell per second, each showing the FIRST frame ──
-  // (openimago-ugli) The strip is just a "which video is this" marker, so every
-  // cell shows the video's FIRST frame — no time→frame mapping (the old px5g
-  // per-second source-frame mapping is gone). One cell per second of the clip's
-  // length lets the user gauge duration; the repeated first frame identifies the
-  // source. Static CSS background; no decode/seek.
+  // ── Static sprite filmstrip — fixed-width 9:16 FIRST-frame tiles, tiled across ──
+  // (openimago-u3qq) The strip is just a "which video is this" marker: every tile
+  // shows the video's FIRST frame at NATIVE 9:16 aspect (no time→frame mapping).
+  // Earlier we stretched one frame across a wide `flex:1` cell, which distorted
+  // the portrait frame into a horizontal bar; instead we lay down FIXED 28×50
+  // (9:16) tiles and clip the overflow, so the frame never stretches and the lane
+  // is seamlessly filled. The top SECONDS come from omniclip's own TimeRuler (same
+  // 2^zoom scale + scroll origin) — we add NO per-cell labels. Static CSS
+  // background; no decode/seek.
   //
-  //   - cellCount = ceil(clip duration) — one cell per second of the trimmed clip.
-  //   - every cell shows frame 0, cropped to fill the cell by PERCENTAGE
+  //   - tileWidth = FILMSTRIP_TILE_W (28px = 50*9/16) — native portrait aspect.
+  //   - tileCount = ceil(effectWidthPx / tileWidth), clamped to MAX_CELLS; the
+  //     lane (`overflow:hidden`) clips the trailing overflow tile.
+  //   - effectWidthPx = (end - start) * 2^zoom — the upstream calculate_effect_width
+  //     formula. Read state.zoom directly; NEVER subscribe the editor here.
+  //   - every tile shows frame 0, cropped to fill the tile by PERCENTAGE
   //     (background-size-x = frameCount*100%, background-position-x = 0 —
-  //     filmstrip-sprite-css), so exactly one frame shows per cell regardless of
-  //     the cell's pixel width (a flex cell is far wider than the 28px frame).
-  // Cell width is the effect's REAL rendered width / cellCount, via CSS
-  // (`.filmstrip` width:100%, each cell `flex:1 1 0`) — no 2^zoom guesswork.
+  //     filmstrip-sprite-css). Tile is 9:16 and the frame is 9:16 → no distortion.
   const render_filmstrip = () => {
     const get_effect = use.context.state.effects.find((e) => e.id === effect.id) ?? effect
 
@@ -84,28 +93,24 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
       return html`<div class="filmstrip"></div>`
     }
 
-    // GUARD: typeof NaN === 'number', so use Number.isFinite (a NaN duration would
-    // make ceil(NaN)=NaN, max(1,NaN)=NaN → 0 cells → an empty clip).
-    const fineNum = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0)
+    // Effect's real rendered width via the upstream zoom formula, then how many
+    // fixed-width tiles cover it. 0 width → empty lane (never NaN tiles).
+    const widthPx = effectWidthPx(get_effect.start, get_effect.end, use.context.state.zoom)
+    const tileCount = filmstripTileCount(widthPx, FILMSTRIP_TILE_W, MAX_CELLS)
+    if (tileCount < 1) {
+      return html`<div class="filmstrip"></div>`
+    }
 
-    // TRIMMED clip duration drives cell count only. Fallbacks all finite>0 so a
-    // sprited clip is never empty.
-    const clipDurationSeconds =
-      fineNum(get_effect.filmstrip_duration_seconds) || fineNum(get_effect.duration / 1000) || 1
-
-    const cellCount = Math.max(1, Math.min(MAX_CELLS, Math.ceil(clipDurationSeconds)))
-
-    // PERCENTAGE crop so exactly ONE frame (the first) fills each cell regardless
-    // of the cell's pixel width (openimago-ugli). background-size-x =
-    // frameCount*100% (each frame == one cell width); background-position-x = 0
-    // (always frame 0).
+    // PERCENTAGE crop so the FIRST frame fills each fixed tile (background-size-x =
+    // frameCount*100%, background-position-x = 0). Tile and frame are both 9:16.
     const bgSizeX = spriteBackgroundSizeX(frameCount)
-    const cells = []
-    for (let i = 0; i < cellCount; i++) {
-      cells.push(html`
+    const tiles = []
+    for (let i = 0; i < tileCount; i++) {
+      tiles.push(html`
         <div
           class="sprite-cell"
           style="
+            width: ${FILMSTRIP_TILE_W}px;
             height: ${CELL_H}px;
             background-image: url('${spriteUrl}');
             background-repeat: no-repeat;
@@ -115,7 +120,7 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
         ></div>
       `)
     }
-    return html`<div class="filmstrip">${cells}</div>`
+    return html`<div class="filmstrip">${tiles}</div>`
   }
 
   return html`${Effect([
@@ -134,12 +139,12 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
         width: 100%;
         pointer-events: none;
       }
-      /* Each cell splits the effect's REAL rendered width equally → one second
-         per cell at the true on-screen scale (no 2^zoom guesswork). min-width:0
-         lets flex shrink them below content size for short clips. */
+      /* FIXED-width 9:16 tiles (openimago-u3qq): each tile is exactly
+         FILMSTRIP_TILE_W×CELL_H so the portrait first frame shows at native
+         aspect — NOT stretched across a flex cell. flex:0 0 auto keeps the
+         inline width; the lane's overflow:hidden clips the trailing tile. */
       .sprite-cell {
-        flex: 1 1 0;
-        min-width: 0;
+        flex: 0 0 auto;
         image-rendering: auto;
       }
     `,
