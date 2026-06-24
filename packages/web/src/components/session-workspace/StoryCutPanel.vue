@@ -518,6 +518,18 @@ defineExpose({ persistEdit })
   --omni-orphan: var(--imago-neon-pink);
 }
 
+// The editor now hosts a vertical two-pane layout (preview player above,
+// timeline below — openimago-h8v6), so the <construct-editor> custom element
+// must FILL the editor host for the panes to split its height. A custom element
+// defaults to display:inline, so its :host{height:100%} would not take effect
+// without an explicit block + full height here.
+.story-cut__construct {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
 .story-cut__loading {
   position: absolute;
   inset: 0;
