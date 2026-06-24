@@ -17,11 +17,12 @@ import type { HydrateClip, OmniTransition } from 'src/utils/cut/fork-contract'
 
 const MS_PER_S = 1000
 
-/** Default rect — clips fill the frame; trimming is via start/end. */
+/** Default rect — clips fill the portrait 9:16 frame (openimago-vm5v); trimming
+ * is via start/end. Matches the 1080×1920 project resolution set at boot. */
 function fullFrameRect() {
   return {
-    width: 1920,
-    height: 1080,
+    width: 1080,
+    height: 1920,
     scaleX: 1,
     scaleY: 1,
     position_on_canvas: { x: 0, y: 0 },

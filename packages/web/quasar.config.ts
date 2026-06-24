@@ -176,6 +176,41 @@ function omniclipPlayheadStylesPatch() {
   };
 }
 
+/**
+ * Vite plugin: swap omniclip's media-player shadow-DOM styles for the fork's
+ * portrait 9:16 override (openimago-vm5v). omniclip hardcodes `aspect-ratio:16/9`
+ * on figure/.canvas-container in .../views/media-player/styles.js, so a portrait
+ * project letterboxes. media-player/view.js imports them as a RELATIVE
+ * `import { styles } from "./styles.js"`, so GATE on the importer being
+ * views/media-player/view.js — distinct from the effect-styles gate
+ * (effects/parts/effect.js) and the playhead gate (views/playhead/view.js), so
+ * the three styles.js patches never cross-fire. isOmniclipPackageImporter keeps
+ * the fork's own upstream re-import (importer = src/) from being redirected.
+ */
+function omniclipMediaPlayerStylesPatch() {
+  const FORK_MEDIA_PLAYER_STYLES = fileURLToPath(
+    new URL(
+      './src/vendor/omniclip-fork/patches/media-player-styles.patch.ts',
+      import.meta.url,
+    ),
+  );
+  return {
+    name: 'omniclip-media-player-styles-patch',
+    enforce: 'pre' as const,
+    resolveId(source: string, importer?: string) {
+      if (
+        importer &&
+        isOmniclipPackageImporter(importer) &&
+        /(^|\/)(views\/media-player\/)?styles\.js$/.test(source) &&
+        /views\/media-player\/view\.js/.test(importer)
+      ) {
+        return FORK_MEDIA_PLAYER_STYLES;
+      }
+      return undefined;
+    },
+  };
+}
+
 export default defineConfig((ctx) => {
   return {
     // https://v2.quasar.dev/quasar-cli-vite/prefetch-feature
@@ -295,6 +330,10 @@ export default defineConfig((ctx) => {
         // (openimago-h9pt). Gated on the playhead view.js importer so it does
         // NOT collide with omniclipEffectStylesPatch's effect.js gate.
         viteConf.plugins.unshift(omniclipPlayheadStylesPatch())
+        // Portrait 9:16 preview canvas instead of omniclip's hardcoded 16:9
+        // (openimago-vm5v). Gated on the media-player view.js importer so it does
+        // NOT collide with the effect-styles or playhead styles.js gates.
+        viteConf.plugins.unshift(omniclipMediaPlayerStylesPatch())
       },
 
       vitePlugins: [

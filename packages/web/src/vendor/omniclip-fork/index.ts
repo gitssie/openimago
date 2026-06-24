@@ -82,6 +82,18 @@ omnislate.context = new OmniContext({
 // reset_to_default() forces our two-pane default, discarding any stale stored tree.
 omnislate.context.layout.reset_to_default()
 
+// ── Portrait 9:16 project resolution (openimago-vm5v) ─────────────────────────
+// omniclip defaults to 1920×1080 (16:9, state.js non_historical_state.settings),
+// so our 9:16 clips render letterboxed in a landscape canvas, exposing the dark
+// .lower-canvas. Set the project to portrait 1080×1920 the same way omniclip's
+// project-settings view does: the action updates state.settings, and
+// set_canvas_resolution rebuilds the fabric canvas buffer at the new size. The
+// media-player CSS aspect-ratio is overridden to 9/16 by media-player-styles.patch.
+const PORTRAIT_W = 1080
+const PORTRAIT_H = 1920
+omnislate.context.actions.set_project_resolution(PORTRAIT_W, PORTRAIT_H)
+omnislate.context.controllers.compositor.set_canvas_resolution(PORTRAIT_W, PORTRAIT_H)
+
 // Install the document-level clip context-menu listener once at boot
 // (openimago-1mcb) — the Effect view is sealed, so the menu is driven from a
 // composedPath() contextmenu handler rather than a patched lit render.
