@@ -13,6 +13,7 @@
 import { omnislate } from 'omniclip/x/context/context.js'
 import { importFromUrl } from './import-from-url'
 import { setTransition, resetTransitions } from './transitions'
+import { coverScaleRect } from 'src/utils/cut/cover-scale'
 import type { HydrateClip, OmniTransition } from 'src/utils/cut/fork-contract'
 
 const MS_PER_S = 1000
@@ -172,13 +173,52 @@ function composePlacedClips(placed: { id: string; fileHash: string }[]): void {
 /** HTMLVideoElement.readyState ≥ HAVE_CURRENT_DATA → a frame can be drawImage'd. */
 const HAVE_CURRENT_DATA = 2
 
+/** Canvas (project) size — source of truth is state.settings, else the fabric canvas. */
+function canvasSize(): { w: number; h: number } {
+  const ctx = omnislate.context
+  const settings = ctx.state?.settings as { width?: number; height?: number } | undefined
+  const canvas = ctx.controllers.compositor.canvas
+  const w = settings?.width || canvas.getWidth?.() || canvas.width || 0
+  const h = settings?.height || canvas.getHeight?.() || canvas.height || 0
+  return { w, h }
+}
+
+/**
+ * Cover-fit one clip's FabricImage to the canvas (openimago-kzb3): fabric draws
+ * the <video> at its INTRINSIC size × scale at (left, top), so a 720×1280 video
+ * sits small in the top-left of the 1080×1920 canvas. Scale it up to COVER the
+ * canvas (uniform, crop overflow) and center it, then write the transform back to
+ * effect.rect so state stays consistent. Needs the element's videoWidth/Height,
+ * available once metadata has loaded; a 0-dimension element is skipped.
+ */
+function coverFitEffect(effect: { id: string; rect?: Record<string, unknown> }): void {
+  const compositor = omnislate.context.controllers.compositor
+  const fabricVideo = compositor.managers.videoManager.get(effect.id)
+  const element = fabricVideo?.getElement() as HTMLVideoElement | undefined
+  if (!fabricVideo || !element) return
+  const videoW = element.videoWidth
+  const videoH = element.videoHeight
+  if (!videoW || !videoH) return
+  const { w: canvasW, h: canvasH } = canvasSize()
+  const { scaleX, scaleY, left, top } = coverScaleRect(canvasW, canvasH, videoW, videoH)
+  fabricVideo.set({ scaleX, scaleY, left, top })
+  fabricVideo.setCoords?.()
+  // Keep state's rect in sync so undo/redo + re-compose preserve the fit.
+  if (effect.rect) {
+    effect.rect.scaleX = scaleX
+    effect.rect.scaleY = scaleY
+    effect.rect.position_on_canvas = { x: left, y: top }
+  }
+}
+
 /**
  * Paint the preview's FIRST frame once the on-screen clip's <video> can be drawn
- * (openimago-rgtw). recreate() composed the canvas while the <video> was still
- * loading (black). We re-run compose_effects + redraw after the element reaches
- * a drawable readyState (or its first `seeked`/`loadeddata`), so the frame at the
- * current timecode actually paints — without this the canvas stays black until
- * the user presses play. Best-effort: any missing element is simply skipped.
+ * (openimago-rgtw), scaled to COVER the portrait canvas (openimago-kzb3).
+ * recreate() composed the canvas while the <video> was still loading (black) AND
+ * at intrinsic size in the top-left. We cover-fit each clip then re-run
+ * compose_effects + redraw once the element reaches a drawable readyState (or its
+ * first `seeked`/`loadeddata`), so the frame paints, filled and centered, without
+ * waiting for the user to press play. Best-effort: missing elements are skipped.
  */
 function nudgeFirstFrame(): void {
   const ctx = omnislate.context
@@ -186,6 +226,10 @@ function nudgeFirstFrame(): void {
 
   const redraw = (): void => {
     const effects = ctx.state.effects
+    // Cover-fit every visible clip BEFORE composing so the scaled frame paints.
+    for (const effect of compositor.get_effects_relative_to_timecode(effects, compositor.timecode)) {
+      if (effect.kind === 'video') coverFitEffect(effect)
+    }
     // Re-run the compose pass (adds the now-decoded <video> frame to the canvas),
     // then seek each visible element to its in-point and request a render.
     compositor.compose_effects(effects, compositor.timecode)
@@ -218,7 +262,7 @@ function nudgeFirstFrame(): void {
     element.addEventListener('seeked', onReady, { once: true })
   }
 
-  // Always do an immediate redraw too: elements already drawable paint now, and
-  // late `loadeddata`/`seeked` listeners repaint the rest as they decode.
+  // Always do an immediate redraw too: elements already drawable cover-fit + paint
+  // now, and late `loadeddata`/`seeked` listeners repaint the rest as they decode.
   redraw()
 }
