@@ -209,7 +209,26 @@ const HAVE_CURRENT_DATA = 2
  * NOTE (openimago-ua5d): cover-fit is NO LONGER done here — it now happens at the
  * FabricImage creation point in the VideoManager patch (race-free, per clip, on
  * every recreate). This function only ensures the first frame PAINTS.
+ *
+ * DETERMINISTIC CONVERGENCE (openimago-sjqt): the first frame previously painted
+ * only intermittently. Two races:
+ *  1. recreate() is async — it adds the rebuilt FabricImage to the canvas AFTER
+ *     this function's single immediate redraw ran, so that redraw composed nothing.
+ *  2. omniclip's compose_effects only (re)adds effects in the `add` delta =
+ *     (relative effects) − (currently_played_effects). After the fork's
+ *     videoManager.delete(id) + recreate rebuilds the FabricImage, the effect id
+ *     is STILL in currently_played_effects, so the delta is empty and
+ *     #add_effects_to_canvas → add_video_to_canvas is never called → the rebuilt
+ *     image is never put on the canvas (only the 2 transparent guideline rects are).
+ * Fix: a BOUNDED rAF loop that, each tick, forces the visible video FabricImage
+ * onto the canvas (by evicting its id from currently_played_effects when missing,
+ * so the next compose_effects re-adds it exactly once — fabric's add does NOT
+ * dedupe, so we only evict when actually off-canvas), redraws idempotently, and
+ * stops once every visible video is BOTH on the canvas AND drawable (readyState≥2),
+ * or after a frame cap so it can never spin forever.
  */
+const MAX_NUDGE_FRAMES = 180 // ~3s at 60fps — hard cap so the loop can't spin forever
+
 function nudgeFirstFrame(): void {
   const ctx = omnislate.context
   const compositor = ctx.controllers.compositor
@@ -311,7 +330,33 @@ function nudgeFirstFrame(): void {
     })
   }
 
+  // The video effects visible at timecode 0 — the ones that must be on the canvas.
+  const visibleVideos = visible.filter((e) => e.kind === 'video')
+
+  // True iff the effect's CURRENT FabricImage (from videoManager) is on the canvas.
+  const isOnCanvas = (effectId: string): boolean => {
+    const fabricVideo = compositor.managers.videoManager.get(effectId)
+    if (!fabricVideo) return false
+    return compositor.canvas.getObjects().includes(fabricVideo)
+  }
+
+  // Force-add the visible video's FabricImage to the canvas when it's missing.
+  // omniclip's compose_effects only re-adds effects in its `add` delta =
+  // relative − currently_played_effects; after the fork's delete+recreate the id
+  // lingers in currently_played_effects so the delta is empty and the rebuilt
+  // image is never added. Evicting the id (ONLY when off-canvas) puts it back in
+  // the delta so the next compose_effects calls add_video_to_canvas exactly once.
+  // Guarded on off-canvas because fabric's canvas.add does not dedupe.
+  const ensureOnCanvas = (): void => {
+    for (const effect of visibleVideos) {
+      if (!isOnCanvas(effect.id)) {
+        compositor.currently_played_effects.delete(effect.id)
+      }
+    }
+  }
+
   const redraw = (): void => {
+    ensureOnCanvas()
     const effects = ctx.state.effects
     compositor.compose_effects(effects, compositor.timecode)
     compositor.set_current_time_of_audio_or_video_and_redraw(true, compositor.timecode)
@@ -331,8 +376,19 @@ function nudgeFirstFrame(): void {
     }
   }
 
-  for (const effect of visible) {
-    if (effect.kind !== 'video') continue
+  // Converged once EVERY visible video is on the canvas AND its element is drawable.
+  // If there are no visible videos, there is nothing to paint → treat as converged.
+  const converged = (): boolean =>
+    visibleVideos.every((effect) => {
+      if (!isOnCanvas(effect.id)) return false
+      const fv = compositor.managers.videoManager.get(effect.id)
+      const el = fv?.getElement() as HTMLVideoElement | undefined
+      return !!el && el.readyState >= HAVE_CURRENT_DATA
+    })
+
+  // Keep the one-shot loadeddata/seeked listeners as an extra redraw trigger; the
+  // bounded rAF loop below is what GUARANTEES convergence (redraw is idempotent).
+  for (const effect of visibleVideos) {
     const fabricVideo = compositor.managers.videoManager.get(effect.id)
     const element = fabricVideo?.getElement() as HTMLVideoElement | undefined
     if (!element) continue
@@ -346,7 +402,31 @@ function nudgeFirstFrame(): void {
     element.addEventListener('seeked', onReady, { once: true })
   }
 
-  // Always do an immediate redraw too: drawable elements paint now, and late
-  // `loadeddata`/`seeked` listeners repaint the rest as they decode.
-  redraw()
+  // Bounded rAF retry: redraw (force-adding the image when off-canvas) each frame
+  // until convergence, then stop. The frame cap guarantees termination even if a
+  // <video> never decodes (e.g. Orca's embedded browser, which can't rasterize
+  // video — there the structural "image on canvas" invariant still converges).
+  let frame = 0
+  const tick = (): void => {
+    redraw()
+    frame++
+    if (converged()) {
+      if (import.meta.env.DEV) {
+        console.log(`[omni-diag] nudgeFirstFrame converged after ${frame} frame(s)`)
+      }
+      return
+    }
+    if (frame >= MAX_NUDGE_FRAMES) {
+      if (import.meta.env.DEV) {
+        const onCanvas = visibleVideos.filter((e) => isOnCanvas(e.id)).length
+        console.log(
+          `[omni-diag] nudgeFirstFrame timed out after ${frame} frames`,
+          { visibleVideos: visibleVideos.length, onCanvas },
+        )
+      }
+      return
+    }
+    requestAnimationFrame(tick)
+  }
+  tick()
 }
