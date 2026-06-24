@@ -31,19 +31,17 @@ import { Effect } from 'omniclip/x/components/omni-timeline/views/effects/parts/
 import { shadow_view } from 'omniclip/x/context/context.js'
 import {
   spriteBackgroundSizeX,
-  effectWidthPx,
-  filmstripTileCount,
+  filmstripCellCount,
   FILMSTRIP_TILE_W,
 } from './filmstrip-sprite-css'
 
-// Cell height = full omniclip lane height (lanes are 50px; the sprite frames are
-// 9:16 portrait, 28×50, matching result.filmstrip.frameW/H). Cell WIDTH is NOT a
-// constant: each cell is `flex: 1 1 0`, so the N (= ceil(durationSeconds)) cells
-// split the effect's real rendered width equally (openimago-78m9). The single
-// frame shown per cell is cropped by PERCENTAGE (filmstrip-sprite-css) so it
-// fills the cell whatever its pixel width (openimago-ugli).
+// Cell height = full omniclip lane height (lanes are 50px). The sprite frames are
+// 9:16 portrait, 28×50 (matching result.filmstrip.frameW/H). Each cell spans ONE
+// second of the clip (`flex: 1 1 0`, so the N = ceil(durationSeconds) cells split
+// the effect's real rendered width equally — no 2^zoom guesswork) and holds a
+// FIXED 28×50 thumbnail box left-aligned at the second's start (openimago-7vrd).
 const CELL_H = 50
-// Bound the DOM cell count for very long/zoomed clips (each cell is a cheap div).
+// Bound the DOM cell count for very long clips (each cell is a cheap div).
 const MAX_CELLS = 800
 
 export const VideoEffect = shadow_view((use) => (effect, timeline) => {
@@ -65,24 +63,22 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
     return () => dispose()
   })
 
-  // ── Static sprite filmstrip — fixed-width 9:16 FIRST-frame tiles, tiled across ──
-  // (openimago-u3qq) The strip is just a "which video is this" marker: every tile
-  // shows the video's FIRST frame at NATIVE 9:16 aspect (no time→frame mapping).
-  // Earlier we stretched one frame across a wide `flex:1` cell, which distorted
-  // the portrait frame into a horizontal bar; instead we lay down FIXED 28×50
-  // (9:16) tiles and clip the overflow, so the frame never stretches and the lane
-  // is seamlessly filled. The top SECONDS come from omniclip's own TimeRuler (same
+  // ── Static sprite filmstrip — ONE 9:16 FIRST-frame thumbnail per second ──
+  // (openimago-7vrd) The strip is a "which video is this" marker: exactly one
+  // thumbnail of the video's FIRST frame per second of the clip, shown at NATIVE
+  // 9:16 aspect (no time→frame mapping). Each cell spans one second (flex:1 1 0,
+  // so the cells split the effect's real width at the true on-screen scale) and
+  // holds a FIXED 28×50 thumbnail box left-aligned at the second's start. The box
+  // is NOT stretched to fill the wider cell — that distorted the portrait frame
+  // into a horizontal bar (openimago-ugli/u3qq). The lane background shows between
+  // thumbnails by design. The top SECONDS come from omniclip's own TimeRuler (same
   // 2^zoom scale + scroll origin) — we add NO per-cell labels. Static CSS
   // background; no decode/seek.
   //
-  //   - tileWidth = FILMSTRIP_TILE_W (28px = 50*9/16) — native portrait aspect.
-  //   - tileCount = ceil(effectWidthPx / tileWidth), clamped to MAX_CELLS; the
-  //     lane (`overflow:hidden`) clips the trailing overflow tile.
-  //   - effectWidthPx = (end - start) * 2^zoom — the upstream calculate_effect_width
-  //     formula. Read state.zoom directly; NEVER subscribe the editor here.
-  //   - every tile shows frame 0, cropped to fill the tile by PERCENTAGE
+  //   - cellCount = ceil(clip duration) — one thumbnail per second (≥1, clamped).
+  //   - each box shows frame 0, cropped to fill the FIXED 28px box by PERCENTAGE
   //     (background-size-x = frameCount*100%, background-position-x = 0 —
-  //     filmstrip-sprite-css). Tile is 9:16 and the frame is 9:16 → no distortion.
+  //     filmstrip-sprite-css). Box is 9:16 and the frame is 9:16 → no distortion.
   const render_filmstrip = () => {
     const get_effect = use.context.state.effects.find((e) => e.id === effect.id) ?? effect
 
@@ -93,34 +89,42 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
       return html`<div class="filmstrip"></div>`
     }
 
-    // Effect's real rendered width via the upstream zoom formula, then how many
-    // fixed-width tiles cover it. 0 width → empty lane (never NaN tiles).
-    const widthPx = effectWidthPx(get_effect.start, get_effect.end, use.context.state.zoom)
-    const tileCount = filmstripTileCount(widthPx, FILMSTRIP_TILE_W, MAX_CELLS)
-    if (tileCount < 1) {
+    // GUARD: typeof NaN === 'number', so use Number.isFinite (a NaN duration would
+    // make ceil(NaN)=NaN → 0 cells → an empty clip).
+    const fineNum = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0)
+
+    // TRIMMED clip duration → one cell per second. Fallbacks all finite>0 so a
+    // sprited clip is never empty (clip<1s still shows ≥1 thumbnail).
+    const clipDurationSeconds =
+      fineNum(get_effect.filmstrip_duration_seconds) || fineNum(get_effect.duration / 1000) || 1
+
+    const cellCount = filmstripCellCount(clipDurationSeconds, MAX_CELLS)
+    if (cellCount < 1) {
       return html`<div class="filmstrip"></div>`
     }
 
-    // PERCENTAGE crop so the FIRST frame fills each fixed tile (background-size-x =
-    // frameCount*100%, background-position-x = 0). Tile and frame are both 9:16.
+    // PERCENTAGE crop so the FIRST frame fills the FIXED 28px box (background-size-x
+    // = frameCount*100%, background-position-x = 0). Box and frame are both 9:16.
     const bgSizeX = spriteBackgroundSizeX(frameCount)
-    const tiles = []
-    for (let i = 0; i < tileCount; i++) {
-      tiles.push(html`
-        <div
-          class="sprite-cell"
-          style="
-            width: ${FILMSTRIP_TILE_W}px;
-            height: ${CELL_H}px;
-            background-image: url('${spriteUrl}');
-            background-repeat: no-repeat;
-            background-size: ${bgSizeX} ${CELL_H}px;
-            background-position: 0 0;
-          "
-        ></div>
+    const cells = []
+    for (let i = 0; i < cellCount; i++) {
+      cells.push(html`
+        <div class="sprite-cell">
+          <div
+            class="sprite-thumb"
+            style="
+              width: ${FILMSTRIP_TILE_W}px;
+              height: ${CELL_H}px;
+              background-image: url('${spriteUrl}');
+              background-repeat: no-repeat;
+              background-size: ${bgSizeX} ${CELL_H}px;
+              background-position: 0 0;
+            "
+          ></div>
+        </div>
       `)
     }
-    return html`<div class="filmstrip">${tiles}</div>`
+    return html`<div class="filmstrip">${cells}</div>`
   }
 
   return html`${Effect([
@@ -139,12 +143,19 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
         width: 100%;
         pointer-events: none;
       }
-      /* FIXED-width 9:16 tiles (openimago-u3qq): each tile is exactly
-         FILMSTRIP_TILE_W×CELL_H so the portrait first frame shows at native
-         aspect — NOT stretched across a flex cell. flex:0 0 auto keeps the
-         inline width; the lane's overflow:hidden clips the trailing tile. */
+      /* Each cell spans ONE second of the clip (openimago-7vrd): flex:1 1 0 so
+         the N cells split the effect's real rendered width equally → one cell
+         per second at the true on-screen scale (no 2^zoom guesswork). min-width:0
+         lets flex shrink them for short clips. */
       .sprite-cell {
-        flex: 0 0 auto;
+        flex: 1 1 0;
+        min-width: 0;
+      }
+      /* The thumbnail box is a FIXED 9:16 28×CELL_H, left-aligned at the
+         second's start; the rest of the (wider) cell shows the lane background.
+         Fixing the box keeps the portrait first frame at native aspect — NOT
+         stretched to fill the cell (the openimago-ugli/u3qq distortion). */
+      .sprite-thumb {
         image-rendering: auto;
       }
     `,
