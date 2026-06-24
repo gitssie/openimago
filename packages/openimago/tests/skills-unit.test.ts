@@ -24,12 +24,34 @@ describe("serializeSkillMd", () => {
     const md = serializeSkillMd("k", 'Say "hi": now', "body")
     expect(md).toContain('description: "Say \\"hi\\": now"')
   })
+
+  test("quotes a value containing '#' so a YAML inline comment can't truncate it", () => {
+    // In YAML 1.1, ` # ` starts an inline comment. The description must be quoted
+    // so it round-trips to the FULL string, not just "do".
+    const description = "do # things"
+    const md = serializeSkillMd("k", description, "body\n")
+    expect(md).toContain(`description: "${description}"`)
+
+    // Round-trip: a quoted scalar parses back to the whole value (comment-safe).
+    const line = md.split("\n").find((l) => l.startsWith("description:"))!
+    const parsed = line.slice("description:".length).trim().replace(/^"|"$/g, "")
+    expect(parsed).toBe(description)
+  })
 })
 
 describe("validateSkillName", () => {
-  test("accepts lowercase alphanumeric + hyphen", () => {
+  test("accepts slug names (lowercase alphanumeric + internal hyphens)", () => {
     expect(validateSkillName("my-skill")).toBe(true)
     expect(validateSkillName("skill1")).toBe(true)
+    expect(validateSkillName("a")).toBe(true) // single char
+    expect(validateSkillName("a-b-c")).toBe(true)
+  })
+
+  test("rejects leading/trailing hyphens (slug convention)", () => {
+    expect(validateSkillName("-skill")).toBe(false)
+    expect(validateSkillName("skill-")).toBe(false)
+    expect(validateSkillName("-")).toBe(false)
+    expect(validateSkillName("--")).toBe(false)
   })
 
   test("rejects uppercase / underscores", () => {

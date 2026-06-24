@@ -15,15 +15,18 @@ import { projects, userSkills } from "../db/schema"
 import { skillId } from "../utils/ids"
 import { logger } from "../server/logger"
 
-const SKILL_NAME_RE = /^[a-z0-9-]+$/
+// Slug convention: lowercase alphanumeric + internal hyphens only.
+// Disallows leading/trailing hyphens since the name becomes a directory name.
+const SKILL_NAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
 const MAX_NAME_LEN = 64
 const MAX_DESCRIPTION_LEN = 1024
 
 // ── Pure helpers (unit-testable, no DB / no fs) ───────────────────────────────
 
 /**
- * Validate a skill name: 1-64 chars, lowercase alphanumeric + hyphen only.
- * The character class already rejects `.`, `..`, `/` and any traversal.
+ * Validate a skill name: 1-64 chars, slug convention (lowercase alphanumeric
+ * with internal hyphens, no leading/trailing hyphen). The pattern rejects
+ * `.`, `..`, `/` and any traversal, and keeps the on-disk directory name clean.
  */
 export function validateSkillName(name: string): boolean {
   if (!name || name.length === 0 || name.length > MAX_NAME_LEN) return false
