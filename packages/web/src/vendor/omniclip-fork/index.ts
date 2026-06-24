@@ -10,6 +10,12 @@
 // validated by the user locally (see LOCAL_VALIDATION.md). The pure logic it
 // composes is unit-tested in src/utils/cut/.
 
+// MUST be first: clears omniclip's persisted state (omniclip_effects/tracks +
+// construct_layout) BEFORE omniclip's import side-effect constructs its context
+// and restores them — otherwise ghost clips from a prior session show before our
+// cut hydration (openimago-mb66). Import order = execution order for side-effects;
+// `cleared` is referenced below so Rollup can't tree-shake this import away.
+import { cleared as omniPersistenceCleared } from './clear-omni-persistence'
 import 'omniclip' // side-effect: register_to_dom + setupContext() (global)
 import { omnislate, OmniContext } from 'omniclip/x/context/context.js'
 import { TimelinePanel } from 'omniclip/x/components/omni-timeline/panel.js'
@@ -70,6 +76,10 @@ function twoPanelLayout() {
     ],
   })
 }
+
+// Reference the persistence-clear marker (openimago-mb66) so its module is
+// retained and runs before omniclip restored state above; no-op at runtime.
+void omniPersistenceCleared
 
 // Rebuild the global context with the player+timeline layout. Only the two panels
 // we use are registered (no MediaPanel/ExportPanel — openimago-h8v6 scope).
