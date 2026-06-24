@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "seed": "bun run scripts/seed.ts"
+    "seed": "bun run scripts/seed.ts",
+    "provision-skills": "bun run scripts/provision-skills.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
