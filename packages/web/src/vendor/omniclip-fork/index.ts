@@ -104,6 +104,12 @@ const PORTRAIT_H = 1920
 omnislate.context.actions.set_project_resolution(PORTRAIT_W, PORTRAIT_H)
 omnislate.context.controllers.compositor.set_canvas_resolution(PORTRAIT_W, PORTRAIT_H)
 
+// Verification hook (openimago-ua5d): expose the slate so the cover-fit transform
+// can be inspected without rendering frames —
+// window.__omni.context.controllers.compositor.managers.videoManager → each
+// FabricImage's scaleX/left should be the cover values (e.g. 1.5), not 1/0.
+;(window as unknown as { __omni?: unknown }).__omni = omnislate
+
 // Install the document-level clip context-menu listener once at boot
 // (openimago-1mcb) — the Effect view is sealed, so the menu is driven from a
 // composedPath() contextmenu handler rather than a patched lit render.

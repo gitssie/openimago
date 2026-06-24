@@ -13,7 +13,6 @@
 import { omnislate } from 'omniclip/x/context/context.js'
 import { importFromUrl } from './import-from-url'
 import { setTransition, resetTransitions } from './transitions'
-import { coverScaleRect } from 'src/utils/cut/cover-scale'
 import type { HydrateClip, OmniTransition } from 'src/utils/cut/fork-contract'
 
 const MS_PER_S = 1000
@@ -173,91 +172,17 @@ function composePlacedClips(placed: { id: string; fileHash: string }[]): void {
 /** HTMLVideoElement.readyState ≥ HAVE_CURRENT_DATA → a frame can be drawImage'd. */
 const HAVE_CURRENT_DATA = 2
 
-/** Canvas (project) size — source of truth is state.settings, else the fabric canvas. */
-function canvasSize(): { w: number; h: number } {
-  const ctx = omnislate.context
-  const settings = ctx.state?.settings as { width?: number; height?: number } | undefined
-  const canvas = ctx.controllers.compositor.canvas
-  const w = settings?.width || canvas.getWidth?.() || canvas.width || 0
-  const h = settings?.height || canvas.getHeight?.() || canvas.height || 0
-  return { w, h }
-}
-
-/**
- * Cover-fit one clip's FabricImage to the canvas (openimago-kzb3): fabric draws
- * the <video> at its INTRINSIC size × scale at (left, top), so a 720×1280 video
- * sits small in the top-left of the 1080×1920 canvas. Scale it up to COVER the
- * canvas (uniform, crop overflow) and center it, then write the transform back to
- * effect.rect so state stays consistent. CRITICAL (openimago-y3na): omniclip's
- * add_video_effect builds the FabricImage FROM effect.rect.{scaleX,scaleY,
- * position_on_canvas}, so writing the cover values back to effect.rect makes the
- * fit PERSIST across every later recreate() — without it, only the first clip
- * (cover-fit live) shows filled and later clips snap back to intrinsic top-left.
- * Needs the element's videoWidth/Height, available once metadata has loaded; a
- * 0-dimension element is skipped (the caller re-tries on loadedmetadata).
- * Returns true if the fit was applied.
- */
-function coverFitEffect(effect: { id: string; rect?: Record<string, unknown> }): boolean {
-  const compositor = omnislate.context.controllers.compositor
-  const fabricVideo = compositor.managers.videoManager.get(effect.id)
-  const element = fabricVideo?.getElement() as HTMLVideoElement | undefined
-  if (!fabricVideo || !element) return false
-  const videoW = element.videoWidth
-  const videoH = element.videoHeight
-  if (!videoW || !videoH) return false
-  const { w: canvasW, h: canvasH } = canvasSize()
-  const { scaleX, scaleY, left, top } = coverScaleRect(canvasW, canvasH, videoW, videoH)
-  fabricVideo.set({ scaleX, scaleY, left, top })
-  fabricVideo.setCoords?.()
-  // Keep state's rect in sync so undo/redo + every later recreate() rebuild the
-  // FabricImage WITH the cover transform (add_video_effect reads effect.rect).
-  if (effect.rect) {
-    effect.rect.scaleX = scaleX
-    effect.rect.scaleY = scaleY
-    effect.rect.position_on_canvas = { x: left, y: top }
-  }
-  return true
-}
-
-/**
- * Cover-fit EVERY video clip's FabricImage — not just the one visible at timecode
- * 0 (openimago-y3na). Each clip's <video> is lazy: if it's already drawable, fit
- * now; otherwise attach a one-shot loadedmetadata/loadeddata listener and fit
- * once its videoWidth/Height resolve, then redraw (so a clip that finishes
- * loading while it is the visible one repaints filled). Writing the fit back to
- * effect.rect makes it survive subsequent recreate()s, so seeking/playing into
- * any clip shows it covered + centered, never snapped to intrinsic top-left.
- */
-function coverFitAllClips(redraw: () => void): void {
-  const ctx = omnislate.context
-  const compositor = ctx.controllers.compositor
-  for (const effect of ctx.state.effects) {
-    if (effect.kind !== 'video') continue
-    if (coverFitEffect(effect)) continue // already drawable → fitted now
-    const fabricVideo = compositor.managers.videoManager.get(effect.id)
-    const element = fabricVideo?.getElement() as HTMLVideoElement | undefined
-    if (!element) continue
-    const onReady = (): void => {
-      element.removeEventListener('loadedmetadata', onReady)
-      element.removeEventListener('loadeddata', onReady)
-      coverFitEffect(effect)
-      redraw()
-    }
-    element.addEventListener('loadedmetadata', onReady, { once: true })
-    element.addEventListener('loadeddata', onReady, { once: true })
-  }
-}
-
 /**
  * Paint the preview's FIRST frame once the on-screen clip's <video> can be drawn
- * (openimago-rgtw), with EVERY clip scaled to COVER the portrait canvas
- * (openimago-kzb3/y3na). recreate() composed the canvas while the <video> was
- * still loading (black) AND at intrinsic size in the top-left. We cover-fit all
- * clips (persisting via effect.rect so later clips stay filled), then re-run
- * compose_effects + redraw once the visible element reaches a drawable readyState
- * (or its first `seeked`/`loadeddata`), so the frame paints, filled and centered,
- * without waiting for the user to press play. Best-effort: missing elements are
- * skipped (re-fitted on their own loadedmetadata).
+ * (openimago-rgtw). recreate() composed the canvas while the <video> was still
+ * loading, so fabric drew BLACK and nothing redraws (the media-player only
+ * composes on playhead/playing changes). We re-run compose_effects + redraw once
+ * the visible element reaches a drawable readyState (or its first
+ * `seeked`/`loadeddata`), so the frame paints on open without pressing play.
+ *
+ * NOTE (openimago-ua5d): cover-fit is NO LONGER done here — it now happens at the
+ * FabricImage creation point in the VideoManager patch (race-free, per clip, on
+ * every recreate). This function only ensures the first frame PAINTS.
  */
 function nudgeFirstFrame(): void {
   const ctx = omnislate.context
@@ -265,21 +190,10 @@ function nudgeFirstFrame(): void {
 
   const redraw = (): void => {
     const effects = ctx.state.effects
-    // Cover-fit every clip's FabricImage BEFORE composing so each scaled frame
-    // paints when it becomes visible — not just the timecode-0 clip.
-    for (const effect of effects) {
-      if (effect.kind === 'video') coverFitEffect(effect)
-    }
-    // Re-run the compose pass (adds the now-decoded <video> frame to the canvas),
-    // then seek each visible element to its in-point and request a render.
     compositor.compose_effects(effects, compositor.timecode)
     compositor.set_current_time_of_audio_or_video_and_redraw(true, compositor.timecode)
     compositor.canvas.requestRenderAll()
   }
-
-  // Cover-fit ALL clips up front (deferring the lazy ones to their metadata load)
-  // so seeking/playing into any clip finds it already covered.
-  coverFitAllClips(redraw)
 
   // Ensure the on-screen clip's first frame paints once its <video> is drawable.
   const visible = compositor.get_effects_relative_to_timecode(
@@ -301,7 +215,7 @@ function nudgeFirstFrame(): void {
     element.addEventListener('seeked', onReady, { once: true })
   }
 
-  // Always do an immediate redraw too: elements already drawable cover-fit + paint
-  // now, and late `loadeddata`/`seeked` listeners repaint the rest as they decode.
+  // Always do an immediate redraw too: drawable elements paint now, and late
+  // `loadeddata`/`seeked` listeners repaint the rest as they decode.
   redraw()
 }

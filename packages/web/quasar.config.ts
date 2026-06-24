@@ -211,6 +211,40 @@ function omniclipMediaPlayerStylesPatch() {
   };
 }
 
+/**
+ * Vite plugin: swap omniclip's VideoManager for the fork's cover-fit subclass
+ * (openimago-ua5d). compositor/controller.js imports it as a RELATIVE
+ * `import { VideoManager } from "./parts/video-manager.js"`, so GATE on the
+ * importer being compositor/controller.js + the `video-manager.js` source tail —
+ * distinct from the four styles/view patches, so no cross-fire. The fork patch
+ * subclasses the upstream VideoManager imported from a src/ importer (not
+ * redirected by isOmniclipPackageImporter) → no loop. add_video_effect is the
+ * single FabricImage creation point, so cover-fit applied there is race-free.
+ */
+function omniclipVideoManagerPatch() {
+  const FORK_VIDEO_MANAGER = fileURLToPath(
+    new URL(
+      './src/vendor/omniclip-fork/patches/video-manager.patch.ts',
+      import.meta.url,
+    ),
+  );
+  return {
+    name: 'omniclip-video-manager-patch',
+    enforce: 'pre' as const,
+    resolveId(source: string, importer?: string) {
+      if (
+        importer &&
+        isOmniclipPackageImporter(importer) &&
+        /(^|\/)(parts\/)?video-manager\.js$/.test(source) &&
+        /compositor\/controller\.js/.test(importer)
+      ) {
+        return FORK_VIDEO_MANAGER;
+      }
+      return undefined;
+    },
+  };
+}
+
 export default defineConfig((ctx) => {
   return {
     // https://v2.quasar.dev/quasar-cli-vite/prefetch-feature
@@ -334,6 +368,10 @@ export default defineConfig((ctx) => {
         // (openimago-vm5v). Gated on the media-player view.js importer so it does
         // NOT collide with the effect-styles or playhead styles.js gates.
         viteConf.plugins.unshift(omniclipMediaPlayerStylesPatch())
+        // Cover-fit each preview video at its FabricImage creation point
+        // (openimago-ua5d). Gated on the compositor/controller.js importer +
+        // video-manager.js source, distinct from the styles/view-effect gates.
+        viteConf.plugins.unshift(omniclipVideoManagerPatch())
       },
 
       vitePlugins: [
