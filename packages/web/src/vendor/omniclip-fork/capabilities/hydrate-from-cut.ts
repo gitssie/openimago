@@ -13,9 +13,15 @@
 import { omnislate } from 'omniclip/x/context/context.js'
 import { importFromUrl } from './import-from-url'
 import { setTransition, resetTransitions } from './transitions'
-import type { HydrateClip, OmniTransition } from 'src/utils/cut/fork-contract'
+import type { HydrateClip, ImportedMedia, OmniTransition } from 'src/utils/cut/fork-contract'
 
 const MS_PER_S = 1000
+
+// Time-to-first-paint instrumentation (DEV-only, openimago-ah1j). Set when a
+// hydrate begins; consumed once by the first nudgeFirstFrame redraw so we can
+// measure the open → clip-0-frame-painted latency the parallelization targets.
+let firstPaintStart: number | null = null
+let firstPaintLogged = false
 
 /** Default rect — clips fill the portrait 9:16 frame (openimago-vm5v); trimming
  * is via start/end. Matches the 1080×1920 project resolution set at boot. */
@@ -41,14 +47,27 @@ export async function hydrateFromCut(
   const ctx = omnislate.context
   ctx.actions.remove_all_effects()
 
+  if (import.meta.env.DEV) {
+    console.time('[omniclip-fork] hydrateFromCut total')
+    firstPaintStart = performance.now()
+    firstPaintLogged = false
+  }
+
   // (effectId, fileHash) per placed clip — the filmstrip refresh needs both: the
   // effect id to clear from the compositor's videoManager, the hash to re-announce.
   const placed: { id: string; fileHash: string }[] = []
 
-  let cursorMs = 0
-  for (const clip of clips) {
-    // Import the clip's media (fetch → File → omniclip content-hash/IndexedDB).
-    const imported = await importFromUrl(clip.url, { name: clip.name })
+  if (clips.length === 0) {
+    resetTransitions()
+    if (import.meta.env.DEV) console.timeEnd('[omniclip-fork] hydrateFromCut total')
+    return
+  }
+
+  // Place a single already-imported clip at the given cursor and record it.
+  // Returns the clip's duration (ms) so the caller can advance the cursor — clip
+  // placement order + cursorMs must stay EXACT (transitions key off the clip they
+  // follow, openimago-ah1j).
+  const placeClip = (clip: HydrateClip, imported: ImportedMedia, cursorMs: number): number => {
     placed.push({ id: clip.id, fileHash: imported.fileHash })
 
     const startMs = clip.inPointSeconds * MS_PER_S
@@ -99,8 +118,44 @@ export async function hydrateFromCut(
       // halves visually distinct (openimago-px5g). null → falls back to clip dur.
       filmstrip_source_duration_seconds: clip.filmstripSourceDurationSeconds ?? null,
     })
-    cursorMs += durationMs
+    return durationMs
   }
+
+  // EARLY FIRST FRAME (openimago-ah1j): import + place clip 0 BY ITSELF first, then
+  // paint its first frame immediately — so the on-screen frame no longer waits on
+  // the whole serial import of all N clips (previously sum(import); now ≈ clip 0's
+  // own import). Kick off the remaining imports in PARALLEL before awaiting clip 0
+  // so they overlap clip 0's import and each other (wall time → ≈max(import)).
+  const [firstClip, ...restClips] = clips
+  // Start clip 0's import FIRST so it enters the serialized ffprobe queue ahead of
+  // the rest — otherwise clip 0's frame-probe could wait behind the others and
+  // defeat the early-paint. Then start the remaining imports so they run in
+  // parallel with clip 0 and each other.
+  const firstImport = importFromUrl(firstClip.url, { name: firstClip.name })
+  const restImports = restClips.map((clip) =>
+    importFromUrl(clip.url, { name: clip.name }),
+  )
+  // Observe rest-import rejections eagerly so that if clip 0's import throws below
+  // (before we await Promise.all), the in-flight rest promises don't surface as
+  // unhandled rejections. The real value is still awaited via restAll, which keeps
+  // the original "any import failure fails hydrate" semantics.
+  const restAll = Promise.all(restImports)
+  restAll.catch(() => {})
+
+  // Await + place the on-screen clip's media (fetch → File → omniclip hash/IDB).
+  const firstImported = await firstImport
+  let cursorMs = placeClip(firstClip, firstImported, 0)
+  // Paint clip 0's first frame as soon as it is placed + drawable, without waiting
+  // for the rest of the batch or transitions.
+  composePlacedClips([{ id: firstClip.id, fileHash: firstImported.fileHash }])
+
+  // Place the remaining clips in ORIGINAL order once their parallel imports resolve,
+  // accumulating cursorMs exactly. Promise.all preserves array order regardless of
+  // which import finishes first, and rethrows the first failure (fails hydrate).
+  const restImported = await restAll
+  restClips.forEach((clip, i) => {
+    cursorMs += placeClip(clip, restImported[i]!, cursorMs)
+  })
 
   // Apply transitions after all clips exist (each keyed by the clip it follows).
   // setTransition owns the fork's transition store + clamps; reset first so a
@@ -121,6 +176,8 @@ export async function hydrateFromCut(
   // ensures playback composition; the timeline strip renders from the precomputed
   // sprite with no events. Fire-and-forget (no on_media_change await; per 1mcb).
   composePlacedClips(placed)
+
+  if (import.meta.env.DEV) console.timeEnd('[omniclip-fork] hydrateFromCut total')
 }
 
 /**
@@ -188,18 +245,40 @@ function nudgeFirstFrame(): void {
   const ctx = omnislate.context
   const compositor = ctx.controllers.compositor
 
-  const redraw = (): void => {
-    const effects = ctx.state.effects
-    compositor.compose_effects(effects, compositor.timecode)
-    compositor.set_current_time_of_audio_or_video_and_redraw(true, compositor.timecode)
-    compositor.canvas.requestRenderAll()
-  }
-
   // Ensure the on-screen clip's first frame paints once its <video> is drawable.
   const visible = compositor.get_effects_relative_to_timecode(
     ctx.state.effects,
     compositor.timecode,
   )
+
+  // True once the on-screen video actually has a decoded frame to draw — the point
+  // at which a redraw produces a real (non-black) first frame (openimago-ah1j).
+  const visibleClipDrawable = (): boolean =>
+    visible.some((effect) => {
+      if (effect.kind !== 'video') return false
+      const fv = compositor.managers.videoManager.get(effect.id)
+      const el = fv?.getElement() as HTMLVideoElement | undefined
+      return !!el && el.readyState >= HAVE_CURRENT_DATA
+    })
+
+  const redraw = (): void => {
+    const effects = ctx.state.effects
+    compositor.compose_effects(effects, compositor.timecode)
+    compositor.set_current_time_of_audio_or_video_and_redraw(true, compositor.timecode)
+    compositor.canvas.requestRenderAll()
+    // Log time-to-first-paint exactly once, when this redraw actually puts clip 0's
+    // decoded frame on the canvas (not the earlier black/loading redraws).
+    if (
+      import.meta.env.DEV &&
+      !firstPaintLogged &&
+      firstPaintStart !== null &&
+      visibleClipDrawable()
+    ) {
+      firstPaintLogged = true
+      const ms = Math.round(performance.now() - firstPaintStart)
+      console.log(`[omniclip-fork] time-to-first-paint: ${ms}ms`)
+    }
+  }
   for (const effect of visible) {
     if (effect.kind !== 'video') continue
     const fabricVideo = compositor.managers.videoManager.get(effect.id)
