@@ -128,6 +128,14 @@ export async function hydrateFromCut(
  * but is gated by `!is_effect_already_composed`; clear the effect from the
  * videoManager first so the guard passes, then re-announce the media. Deduped
  * publish per source hash (multiple clips can share one source file).
+ *
+ * After compositing, nudge a first-frame redraw (openimago-rgtw): omniclip's
+ * preview is HTMLVideoElement-based — recreate() builds each <video> and calls
+ * compose_effects synchronously, but the <video> has not decoded a frame yet
+ * (only element.load() was called), so fabric draws BLACK and nothing ever
+ * redraws (the media-player only composes on playhead/playing changes). We wait
+ * for the on-screen clip's <video> to become drawable, then re-compose so the
+ * first frame paints on open.
  */
 function composePlacedClips(placed: { id: string; fileHash: string }[]): void {
   if (placed.length === 0) return
@@ -151,6 +159,65 @@ function composePlacedClips(placed: { id: string; fileHash: string }[]): void {
         if (!file) continue
         media.on_media_change.publish({ files: [{ hash: fileHash, file, kind: 'video' }], action: 'added' })
       }
+      // The video-effect listener calls compositor.recreate() (async: it awaits
+      // media.are_files_ready() before building each <video> + composing), so the
+      // <video> elements don't exist in videoManager synchronously after publish.
+      // Defer the first-frame nudge one more frame so recreate has built them.
+      requestAnimationFrame(() => nudgeFirstFrame())
     })
   })
+}
+
+/** HTMLVideoElement.readyState ≥ HAVE_CURRENT_DATA → a frame can be drawImage'd. */
+const HAVE_CURRENT_DATA = 2
+
+/**
+ * Paint the preview's FIRST frame once the on-screen clip's <video> can be drawn
+ * (openimago-rgtw). recreate() composed the canvas while the <video> was still
+ * loading (black). We re-run compose_effects + redraw after the element reaches
+ * a drawable readyState (or its first `seeked`/`loadeddata`), so the frame at the
+ * current timecode actually paints — without this the canvas stays black until
+ * the user presses play. Best-effort: any missing element is simply skipped.
+ */
+function nudgeFirstFrame(): void {
+  const ctx = omnislate.context
+  const compositor = ctx.controllers.compositor
+
+  const redraw = (): void => {
+    const effects = ctx.state.effects
+    // Re-run the compose pass (adds the now-decoded <video> frame to the canvas),
+    // then seek each visible element to its in-point and request a render.
+    compositor.compose_effects(effects, compositor.timecode)
+    compositor.set_current_time_of_audio_or_video_and_redraw(true, compositor.timecode)
+    compositor.canvas.requestRenderAll()
+  }
+
+  // The effects relative to the current timecode are the ones drawn on canvas.
+  const visible = compositor.get_effects_relative_to_timecode(
+    ctx.state.effects,
+    compositor.timecode,
+  )
+  if (visible.length === 0) {
+    redraw()
+    return
+  }
+
+  for (const effect of visible) {
+    if (effect.kind !== 'video') continue
+    const fabricVideo = compositor.managers.videoManager.get(effect.id)
+    const element = fabricVideo?.getElement() as HTMLVideoElement | undefined
+    if (!element) continue
+    if (element.readyState >= HAVE_CURRENT_DATA) continue // already drawable
+    const onReady = (): void => {
+      element.removeEventListener('loadeddata', onReady)
+      element.removeEventListener('seeked', onReady)
+      redraw()
+    }
+    element.addEventListener('loadeddata', onReady, { once: true })
+    element.addEventListener('seeked', onReady, { once: true })
+  }
+
+  // Always do an immediate redraw too: elements already drawable paint now, and
+  // late `loadeddata`/`seeked` listeners repaint the rest as they decode.
+  redraw()
 }
