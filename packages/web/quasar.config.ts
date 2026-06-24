@@ -141,6 +141,41 @@ function omniclipEffectStylesPatch() {
   };
 }
 
+/**
+ * Vite plugin: swap omniclip's playhead shadow-DOM styles for the fork's
+ * white-playhead override (openimago-h9pt). omniclip hardcodes `background:
+ * yellow` / `color: yellow` as CSS literals in
+ * .../views/playhead/styles.js, so theme vars cannot reach them. playhead/view.js
+ * imports them as a RELATIVE `import { styles } from "./styles.js"`, so Vite
+ * passes raw "./styles.js" here — GATE on the importer being views/playhead/view.js
+ * so this does NOT collide with omniclipEffectStylesPatch (whose importer is
+ * effects/parts/effect.js). isOmniclipPackageImporter keeps the fork's own
+ * upstream re-import (importer = src/) from being redirected → no loop.
+ */
+function omniclipPlayheadStylesPatch() {
+  const FORK_PLAYHEAD_STYLES = fileURLToPath(
+    new URL(
+      './src/vendor/omniclip-fork/patches/playhead-styles.patch.ts',
+      import.meta.url,
+    ),
+  );
+  return {
+    name: 'omniclip-playhead-styles-patch',
+    enforce: 'pre' as const,
+    resolveId(source: string, importer?: string) {
+      if (
+        importer &&
+        isOmniclipPackageImporter(importer) &&
+        /(^|\/)(views\/playhead\/)?styles\.js$/.test(source) &&
+        /views\/playhead\/view\.js/.test(importer)
+      ) {
+        return FORK_PLAYHEAD_STYLES;
+      }
+      return undefined;
+    },
+  };
+}
+
 export default defineConfig((ctx) => {
   return {
     // https://v2.quasar.dev/quasar-cli-vite/prefetch-feature
@@ -256,6 +291,10 @@ export default defineConfig((ctx) => {
         // before the subpath resolver touches omniclip's own deep imports.
         viteConf.plugins.unshift(omniclipVideoEffectPatch())
         viteConf.plugins.unshift(omniclipEffectStylesPatch())
+        // White timeline playhead instead of omniclip's hardcoded yellow
+        // (openimago-h9pt). Gated on the playhead view.js importer so it does
+        // NOT collide with omniclipEffectStylesPatch's effect.js gate.
+        viteConf.plugins.unshift(omniclipPlayheadStylesPatch())
       },
 
       vitePlugins: [
