@@ -60,23 +60,50 @@ function applyCoverFit(compositor: any, fabricVideo: any, element: HTMLVideoElem
   }
   const { w: canvasW, h: canvasH } = canvasSizeFrom(compositor)
   const { scaleX, scaleY, left, top } = coverScaleRect(canvasW, canvasH, videoW, videoH)
-  // Unify the element box with its intrinsic size so fabric's baseline matches
-  // the dimensions coverScaleRect was computed against.
+
+  // ── Why three "width"s must collapse to one (openimago-xyli) ────────────────
+  // Fabric's FabricImage._renderFill (fabric 7, traced from
+  // node_modules/fabric/dist/index.mjs:19651) draws with, for our no-crop /
+  // no-filter case (cropX=cropY=0, _filterScalingX/Y=1):
+  //     w = this.width                          // the FabricImage's OWN width
+  //     elWidth = element.naturalWidth || element.width   // <video> has no
+  //                                              //   naturalWidth → element.width
+  //     sW       = min(w, elWidth)              // source-copy width
+  //     maxDestW = min(w, elWidth)              // dest draw width (filterScale=1)
+  //     x = -w / 2                              // dest origin (CENTER origin)
+  //     ctx.drawImage(el, 0,0, sW,sH, x,y, maxDestW,maxDestH)
+  // then the object transform applies scaleX/scaleY around (left, top).
+  //
+  // omniclip builds the FabricImage from effect.rect (canvas-sized 1080×1920), so
+  // this.width=1080 while the decoded video is 720. If we leave this.width=1080
+  // but set element.width=720, fabric centers on w=1080 (x=-540) yet copies only
+  // sW=min(1080,720)=720 → the box is [-540, 180], which after scaleX=1.5 lands at
+  // [-270, 810] instead of [0, 1080] (the residual bug). Conversely keeping
+  // element.width=1080 makes fabric read a 1080-wide source rect from a 720-wide
+  // bitmap (out-of-range source) — also wrong.
+  //
+  // The coherent fix: collapse ALL THREE width concepts to the intrinsic size
+  // (this.width = element.width = videoW), so w == elWidth == videoW → sW ==
+  // maxDestW == videoW with no clamp asymmetry, and the object's own scaleX does
+  // 100% of the scaling. The drawn box is then [-videoW/2, +videoW/2] in local
+  // space; the center-origin placement below puts that box's center at the canvas
+  // center for an exact edge-to-edge cover fill.
   element.width = videoW
   element.height = videoH
+  fabricVideo.width = videoW
+  fabricVideo.height = videoH
 
   // coverScaleRect returns left/top in TOP-LEFT-origin coordinates, but omniclip's
-  // FabricImages use fabric 7's default CENTER origin (openimago-u8d1): there
-  // left/top address the object's CENTER. Passing top-left coords straight in
-  // puts the video CENTER at (0,0) → it sits in the top-left quadrant. Convert
-  // per-axis using the general formula `center = edge + (scaledDim / 2)` (NOT the
-  // canvasW/2 shortcut, which only holds when the scaled video fills the axis
-  // exactly — false for non-square sources). Only offset an axis whose origin is
+  // FabricImages use fabric 7's default CENTER origin: left/top address the
+  // object's CENTER. Convert per-axis with the general formula
+  // `center = edge + (this.width * scaleX) / 2`, using the FabricImage's OWN
+  // width/height (now == videoW/H, the same dimension fabric centers on via
+  // x = -w/2) — NOT a canvasW/2 shortcut. Only offset an axis whose origin is
   // actually 'center', so the conversion stays correct for 'left'/'top' origins.
   const originX = (fabricVideo as { originX?: string }).originX
   const originY = (fabricVideo as { originY?: string }).originY
-  const placedLeft = originX === 'center' ? left + (videoW * scaleX) / 2 : left
-  const placedTop = originY === 'center' ? top + (videoH * scaleY) / 2 : top
+  const placedLeft = originX === 'center' ? left + (fabricVideo.width * scaleX) / 2 : left
+  const placedTop = originY === 'center' ? top + (fabricVideo.height * scaleY) / 2 : top
 
   fabricVideo.set({ scaleX, scaleY, left: placedLeft, top: placedTop })
   fabricVideo.setCoords?.()
