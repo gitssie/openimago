@@ -3,7 +3,7 @@
 
 import { defineConfig } from '#q-app/wrappers';
 import { fileURLToPath } from 'node:url';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync, readdirSync } from 'node:fs';
 
 // ── omniclip vendor dependency set (ADR 0007, openimago-ulkx/y90v/g015) ──────
 // The vendored omniclip fork pulls these. They ship pre-built bundles + sibling
@@ -18,6 +18,11 @@ const OMNICLIP_VENDOR_PKGS = [
   'fabric',
   '@ffmpeg/ffmpeg',
   '@ffmpeg/util',
+  // wavesurfer.js is an omniclip transitive dep (the BGM waveform). The fork's
+  // waveform patch imports it from a src/ importer, so it must be excluded from
+  // the dep optimizer + resolved via the subpath resolver like the rest of the
+  // omniclip vendor set (openimago-r7to).
+  'wavesurfer.js',
 ] as const;
 
 /**
@@ -46,13 +51,33 @@ function omniclipSubpathResolver() {
         (p) => source.startsWith(`${p}/`) && source.length > p.length + 1,
       );
       if (!pkg) return undefined;
-      const physical = fileURLToPath(
-        new URL(`./node_modules/${source}`, import.meta.url),
-      );
-      if (!existsSync(physical)) return undefined;
-      // Resolve symlinks → real store path (outside the Vite root) so Vite
-      // serves it via /@fs/ instead of a /node_modules/ URL.
-      return realpathSync(physical);
+      // Prefer the web-local node_modules. For deps hoisted out of the package
+      // (e.g. wavesurfer.js lives ONLY in the workspace-root bun store, not under
+      // packages/web/node_modules and not node-resolvable from web — omniclip only
+      // reaches it via its runtime importmap; openimago-r7to), fall back to the
+      // bun store: node_modules/.bun/<pkg>@<version>/node_modules/<source>. Either
+      // way realpathSync to the store path (outside the Vite root) → /@fs/.
+      const local = fileURLToPath(new URL(`./node_modules/${source}`, import.meta.url));
+      if (existsSync(local)) return realpathSync(local);
+      // The bun store lives at the MONOREPO ROOT (../../node_modules/.bun/), not
+      // per-package. Match `<pkg>@<version>` dirs (bun flattens scoped names, e.g.
+      // '@ffmpeg/util' → '@ffmpeg+util@x'); take the newest, then the subpath.
+      const bunStore = fileURLToPath(new URL('../../node_modules/.bun/', import.meta.url));
+      if (existsSync(bunStore)) {
+        const flat = pkg.replace('/', '+');
+        const prefix = `${flat}@`;
+        const match = readdirSync(bunStore)
+          .filter((d) => d.startsWith(prefix))
+          .sort()
+          .pop();
+        if (match) {
+          const storePath = fileURLToPath(
+            new URL(`../../node_modules/.bun/${match}/node_modules/${source}`, import.meta.url),
+          );
+          if (existsSync(storePath)) return realpathSync(storePath);
+        }
+      }
+      return undefined;
     },
   };
 }
@@ -254,6 +279,41 @@ function omniclipMediaPlayerStylesPatch() {
 }
 
 /**
+ * Vite plugin: swap omniclip's BGM waveform (WaveSurfer) for the fork's green
+ * version (openimago-r7to). omniclip's Waveform set no waveColor, so the lane
+ * rendered in WaveSurfer's near-invisible default gray on the dark navy lane and
+ * read as blank. The audio-effect view imports it as a RELATIVE
+ * `import { Waveform } from "../../../../context/controllers/timeline/parts/waveform.js"`,
+ * so Vite passes that path here — GATE on the importer being the audio-effect view
+ * + the `controllers/timeline/parts/waveform.js` source tail, distinct from every
+ * other patch's gate so none cross-fire. isOmniclipPackageImporter keeps the
+ * fork's own upstream re-imports (importer = src/) from being redirected.
+ */
+function omniclipWaveformPatch() {
+  const FORK_WAVEFORM = fileURLToPath(
+    new URL(
+      './src/vendor/omniclip-fork/patches/waveform.patch.ts',
+      import.meta.url,
+    ),
+  );
+  return {
+    name: 'omniclip-waveform-patch',
+    enforce: 'pre' as const,
+    resolveId(source: string, importer?: string) {
+      if (
+        importer &&
+        isOmniclipPackageImporter(importer) &&
+        /(^|\/)controllers\/timeline\/parts\/waveform\.js$/.test(source) &&
+        /views\/effects\/audio-effect\.js/.test(importer)
+      ) {
+        return FORK_WAVEFORM;
+      }
+      return undefined;
+    },
+  };
+}
+
+/**
  * Vite plugin: swap omniclip's VideoManager for the fork's cover-fit subclass
  * (openimago-ua5d). compositor/controller.js imports it as a RELATIVE
  * `import { VideoManager } from "./parts/video-manager.js"`, so GATE on the
@@ -419,6 +479,11 @@ export default defineConfig((ctx) => {
         // (openimago-ua5d). Gated on the compositor/controller.js importer +
         // video-manager.js source, distinct from the styles/view-effect gates.
         viteConf.plugins.unshift(omniclipVideoManagerPatch())
+        // Green BGM waveform instead of omniclip's color-less (invisible) one
+        // (openimago-r7to). Gated on the audio-effect.js importer +
+        // controllers/timeline/parts/waveform.js source, distinct from the other
+        // gates so none cross-fire.
+        viteConf.plugins.unshift(omniclipWaveformPatch())
       },
 
       vitePlugins: [

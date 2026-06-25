@@ -116,6 +116,24 @@ export const IMAGO_TO_OMNI_THEME: Record<OmniThemeVar, string> = {
 export const ORPHAN_CLIP_ATTRIBUTE = 'data-no-file'
 
 /**
+ * BGM waveform colors (openimago-r7to). omniclip's WaveSurfer (`Waveform`) sets
+ * NO waveColor, so it rendered in WaveSurfer's near-invisible default gray against
+ * the dark navy lane → the lane read as blank, not green. These are the source of
+ * truth for the green waveform in docs/images/cut_panel.png; the fork's waveform
+ * patch passes them to WaveSurfer.create. A soft CapCut-style green (the canonical
+ * waveform samples ~#7CC392) that reads clearly on the dark lane, with a slightly
+ * deeper progress shade. NOT a CSS var: WaveSurfer renders into its OWN shadow
+ * root (a <canvas>), so --imago-* would not inherit in — the color must be passed
+ * as a JS option, hence concrete hex here.
+ */
+export const BGM_WAVEFORM_COLORS = {
+  /** unplayed portion of the waveform. */
+  wave: '#4ec273',
+  /** played (progress) portion — a touch deeper so the playhead reads. */
+  progress: '#2f9d57',
+} as const
+
+/**
  * Build the inline-style object the panel applies to the editor wrapper to push
  * the dark-neon tokens into omniclip's shadow DOM. Pure — unit-tested.
  */
