@@ -53,32 +53,10 @@ import zoomInSvg from 'omniclip/x/icons/material-design-icons/zoom-in.svg.js'
 import zoomOutSvg from 'omniclip/x/icons/material-design-icons/zoom-out.svg.js'
 import { convert_ms_to_hmsms } from 'omniclip/x/components/omni-timeline/views/time-ruler/utils/convert_ms_to_hmsms.js'
 import { combinedToolbarStyles } from './toolbar-styles'
-
-/** Total project length in ms = furthest (start_at_position + duration) over all effects. */
-function totalDurationMs(effects: ReadonlyArray<{ start_at_position: number; duration: number }>): number {
-  let max = 0
-  for (const e of effects) {
-    const end = e.start_at_position + e.duration
-    if (end > max) max = end
-  }
-  return max
-}
-
-/**
- * The clip-boundary timecodes (start + end of every effect), sorted ascending and
- * de-duplicated — the seek targets for prev/next. The current timecode is
- * excluded so prev/next always move to a DIFFERENT boundary.
- */
-function boundaryTimecodes(
-  effects: ReadonlyArray<{ start_at_position: number; duration: number }>,
-): number[] {
-  const set = new Set<number>([0])
-  for (const e of effects) {
-    set.add(e.start_at_position)
-    set.add(e.start_at_position + e.duration)
-  }
-  return [...set].sort((a, b) => a - b)
-}
+// Pure timecode math (total length + prev/next boundary seek) lives in the
+// tested cut utils — ONE source of truth; the patch stays a thin view.
+// (openimago-4qwj) src/utils/cut/toolbar-timecode.ts has its own unit spec.
+import { totalDurationMs, nextBoundaryTimecode } from 'src/utils/cut/toolbar-timecode'
 
 export const Toolbar = shadow_view((use) => (timeline: HTMLElement) => {
   use.styles(combinedToolbarStyles)
@@ -99,13 +77,8 @@ export const Toolbar = shadow_view((use) => (timeline: HTMLElement) => {
 
   /** Seek to the nearest clip boundary before / after the current timecode. */
   const seek = (direction: -1 | 1) => {
-    const boundaries = boundaryTimecodes(state.effects)
-    const now = state.timecode
-    const target =
-      direction < 0
-        ? [...boundaries].reverse().find((t) => t < now - 1)
-        : boundaries.find((t) => t > now + 1)
-    if (target === undefined) return
+    const target = nextBoundaryTimecode(state.effects, state.timecode, direction)
+    if (target === null) return
     // Pause while scrubbing so the seek sticks, then redraw at the new time.
     if (state.is_playing) compositor.set_video_playing(false)
     actions.set_timecode(target)
