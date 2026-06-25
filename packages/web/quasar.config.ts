@@ -142,6 +142,48 @@ function omniclipEffectStylesPatch() {
 }
 
 /**
+ * Vite plugin: swap omniclip's timeline TOOLBAR view for the fork's single
+ * combined control bar (openimago-4qwj). The approved design merges the playback
+ * transport (in the media-player pane's shadow root) with the timeline toolbar
+ * (zoom/time) into ONE bar; since those are separate shadow roots, CSS can't
+ * relocate nodes, so the fork toolbar view re-renders the transport from the
+ * shared omnislate context. omni-timeline's component.js imports the toolbar as a
+ * RELATIVE `import { Toolbar } from "./views/toolbar/view.js"`, so Vite passes raw
+ * "./views/toolbar/view.js" here — GATE on the importer being
+ * omni-timeline/component.js so this does NOT collide with the styles/view-effect
+ * patches (whose importers are the per-view view.js / effect.js files).
+ * isOmniclipPackageImporter keeps the fork's own upstream re-imports (importer =
+ * src/) from being redirected → no loop.
+ */
+function omniclipToolbarPatch() {
+  const FORK_TOOLBAR = fileURLToPath(
+    new URL(
+      './src/vendor/omniclip-fork/patches/toolbar.patch.ts',
+      import.meta.url,
+    ),
+  );
+  return {
+    name: 'omniclip-toolbar-patch',
+    enforce: 'pre' as const,
+    resolveId(source: string, importer?: string) {
+      // component.js imports each view by its FULL relative subpath
+      // (`./views/toolbar/view.js`), so REQUIRE the `views/toolbar/` segment —
+      // a bare `view\.js$` would also match the sibling track/playhead/time-ruler
+      // view imports from the same component.js and mis-redirect them.
+      if (
+        importer &&
+        isOmniclipPackageImporter(importer) &&
+        /(^|\/)views\/toolbar\/view\.js$/.test(source) &&
+        /omni-timeline\/component\.js/.test(importer)
+      ) {
+        return FORK_TOOLBAR;
+      }
+      return undefined;
+    },
+  };
+}
+
+/**
  * Vite plugin: swap omniclip's playhead shadow-DOM styles for the fork's
  * white-playhead override (openimago-h9pt). omniclip hardcodes `background:
  * yellow` / `color: yellow` as CSS literals in
@@ -360,6 +402,11 @@ export default defineConfig((ctx) => {
         // before the subpath resolver touches omniclip's own deep imports.
         viteConf.plugins.unshift(omniclipVideoEffectPatch())
         viteConf.plugins.unshift(omniclipEffectStylesPatch())
+        // Single combined control bar instead of omniclip's split transport +
+        // toolbar (openimago-4qwj). Gated on the omni-timeline/component.js
+        // importer + the views/toolbar/view.js source, distinct from the other
+        // styles/view-effect gates, so the patches never cross-fire.
+        viteConf.plugins.unshift(omniclipToolbarPatch())
         // White timeline playhead instead of omniclip's hardcoded yellow
         // (openimago-h9pt). Gated on the playhead view.js importer so it does
         // NOT collide with omniclipEffectStylesPatch's effect.js gate.
@@ -421,7 +468,7 @@ export default defineConfig((ctx) => {
     devServer: {
       port: 7000,
       // https: true,
-      open: true, // opens browser window automatically
+      open: false, // do not auto-open browser window
       proxy: {
         '/api': {
           target: 'http://localhost:5467',

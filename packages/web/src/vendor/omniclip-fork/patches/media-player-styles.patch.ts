@@ -25,6 +25,13 @@ import { styles as upstreamStyles } from 'omniclip/x/components/omni-timeline/vi
 // canvas fills; min-height:0 lets the figure shrink within the pane so the 9:16
 // box is bounded by the available height and stays centered (the .flex parent is
 // already justify/align center). The surrounding dark area is acceptable (= #19).
+//
+// COMBINED-BAR override (openimago-4qwj): the playback transport (play/pause +
+// fullscreen) now lives in the single combined control bar (toolbar.patch.ts), so
+// the player's own in-figure `.controls` overlay would DUPLICATE it. Hide that
+// overlay here. We keep upstream's `.controls[data-state]` rules intact above; a
+// blanket `.controls { display:none }` (last → wins the equal-specificity cascade)
+// removes the floating play/fullscreen buttons drawn over the preview canvas.
 const imagoOverrides = css`
   figure {
     aspect-ratio: 9/16;
@@ -41,6 +48,12 @@ const imagoOverrides = css`
   }
   .canvas-container {
     aspect-ratio: 9/16;
+  }
+  /* Transport moved to the combined control bar (openimago-4qwj) — hide the
+     in-figure overlay so play/fullscreen are not rendered twice. */
+  #video-controls.controls,
+  .controls {
+    display: none !important;
   }
 `
 
