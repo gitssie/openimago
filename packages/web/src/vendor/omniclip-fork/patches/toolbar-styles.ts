@@ -30,6 +30,11 @@ export const combinedToolbarStyles = css`
     display: flex;
     min-height: 46px;
     --transition: 0.2s;
+    /* Scoped amber accent for the CURRENT timecode (reference cut_panel_v2:
+       playhead time reads warm amber, total time stays muted grey). Defined here
+       as a token rather than a hardcoded literal; falls back to the imago warning
+       amber hue family. No global token matched, so it is scoped to this bar. */
+    --cut-time-current: #f3a338;
   }
 
   .toolbar {
@@ -136,19 +141,22 @@ export const combinedToolbarStyles = css`
     height: 18px;
   }
 
-  /* The play/pause is the single cyan affordance (flat, no glow). */
+  /* Play/pause: NEUTRAL white glyph in a thin neutral ring (reference
+     cut_panel_v2 — the play control is white, not cyan; cyan is reserved for the
+     selected-clip border only). Flat, no glow. */
   .transport .playpause {
-    color: var(--imago-neon-cyan, #00e0ff);
+    color: var(--imago-text-primary, #fff);
     width: 34px;
     height: 34px;
     border-radius: 999px;
-    background: var(--imago-cyan-08, color-mix(in srgb, #00e0ff 8%, transparent));
-    border: 1px solid var(--imago-border-cyan-active, rgba(0, 224, 255, 0.4));
+    background: transparent;
+    border: 1px solid var(--imago-border-dim, rgba(255, 255, 255, 0.12));
   }
 
   .transport .playpause:hover:not([disabled]) {
-    color: var(--imago-neon-cyan, #00e0ff);
-    background: var(--imago-cyan-06, color-mix(in srgb, #00e0ff 12%, transparent));
+    color: var(--imago-text-primary, #fff);
+    background: color-mix(in srgb, var(--imago-text-primary, #fff) 8%, transparent);
+    border-color: var(--imago-border-soft, rgba(255, 255, 255, 0.18));
   }
 
   .timecode {
@@ -158,8 +166,13 @@ export const combinedToolbarStyles = css`
     margin-left: 0.6em;
     font-size: 12px;
     font-variant-numeric: tabular-nums;
-    color: var(--imago-text-primary, #fff);
+    color: var(--imago-text-faint, #888);
     white-space: nowrap;
+  }
+
+  /* Current time reads warm amber; separator + total stay muted grey. */
+  .timecode .current {
+    color: var(--cut-time-current, #f3a338);
   }
 
   .timecode .sep,

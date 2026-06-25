@@ -94,7 +94,12 @@ export type OmniThemeVar = (typeof OMNI_THEME_VARS)[keyof typeof OMNI_THEME_VARS
  * Centralised here so token drift is caught in one place.
  */
 export const IMAGO_TO_OMNI_THEME: Record<OmniThemeVar, string> = {
-  [OMNI_THEME_VARS.background]: 'var(--imago-bg-void)',
+  // Transparent so the embedded timeline/player panes do NOT repaint solid void
+  // over StoryCutPanel's ambient glow (reference cut_panel_v2). The dark base now
+  // lives on the editor HOST background (.story-cut__editor), and the glow shows
+  // in the margins around the 9:16 media-player pane. applyImagoTheme writes this
+  // inline on the host, so it must be transparent here too (not just in scoped CSS).
+  [OMNI_THEME_VARS.background]: 'transparent',
   [OMNI_THEME_VARS.clipFill]: 'var(--imago-bg-surface)',
   [OMNI_THEME_VARS.clipBorder]: 'var(--imago-border-soft)',
   [OMNI_THEME_VARS.accent]: 'var(--imago-neon-cyan)',

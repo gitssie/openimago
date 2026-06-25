@@ -580,12 +580,31 @@ defineExpose({ persistEdit })
   position: relative;
   // Map the imago tokens into omniclip's shadow DOM (applyImagoTheme also sets
   // these at runtime; declared here so an un-themed mount still reads them).
-  // Tuned for the approved flat look: pure-black bg, a WHITE 1px playhead, and a
-  // thin SOLID cyan selected-clip accent with NO halo. Clip fill/border stay
-  // muted so unselected frames recede; orphans quiet pink. (The green audio
-  // waveform is rendered by omniclip itself and is not host-controllable, so
-  // there is intentionally no --omni-audio override here.)
-  --omni-bg: var(--imago-bg-void);
+  // Tuned for the approved flat look: a WHITE 1px playhead, and a thin SOLID cyan
+  // selected-clip accent with NO halo. Clip fill/border stay muted so unselected
+  // frames recede; orphans quiet pink. (The green audio waveform is rendered by
+  // omniclip itself and is not host-controllable, so no --omni-audio override.)
+  //
+  // AMBIENT GLOW (reference cut_panel_v2): a SUBTLE warm wash toward the top-left
+  // and a cool wash toward the top-right, fading into near-black. Painted on the
+  // editor HOST background so it shows in the dark margins around omniclip's 9:16
+  // media-player pane. --omni-bg is set transparent so the embedded panes do NOT
+  // repaint solid void over this glow; the void base lives on the host instead.
+  // Alphas are deliberately tiny (~3-6%) — measured from the reference, the wash
+  // is only a few RGB points above #08080f. Keep it dark and tasteful.
+  background:
+    radial-gradient(
+      55% 60% at 24% 20%,
+      color-mix(in srgb, var(--imago-neon-pink) 7%, transparent),
+      transparent 58%
+    ),
+    radial-gradient(
+      55% 60% at 78% 22%,
+      color-mix(in srgb, var(--imago-neon-cyan) 6%, transparent),
+      transparent 58%
+    ),
+    var(--imago-bg-void);
+  --omni-bg: transparent;
   --omni-clip-fill: var(--imago-bg-surface);
   --omni-clip-border: var(--imago-border-soft);
   --omni-accent: var(--imago-neon-cyan);
@@ -604,6 +623,11 @@ defineExpose({ persistEdit })
   width: 100%;
   height: 100%;
   min-height: 0;
+  // The <construct-editor> element paints an opaque grey (~#111) by default,
+  // which would cover the editor host's ambient glow. Make it transparent so the
+  // warm/cool wash on .story-cut__editor shows through the panes' dark margins
+  // (the timeline/player panes themselves are transparent via --omni-bg).
+  background: transparent;
 }
 
 .story-cut__loading {
