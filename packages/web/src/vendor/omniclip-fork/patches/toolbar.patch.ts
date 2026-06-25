@@ -21,10 +21,11 @@
 // The player's own in-figure `.controls` overlay is hidden via the media-player
 // styles patch so the transport is not duplicated.
 //
-// Importing upstream omniclip modules (shadow_view, icons, convert_ms_to_hmsms)
-// from HERE does NOT loop: the resolveId guard (isOmniclipPackageImporter) only
-// redirects imports whose importer is inside the omniclip package; this file
-// lives in src/, so these resolve to the real upstream.
+// Importing upstream omniclip modules (shadow_view, icons) from HERE does NOT
+// loop: the resolveId guard (isOmniclipPackageImporter) only redirects imports
+// whose importer is inside the omniclip package; this file lives in src/, so
+// these resolve to the real upstream. (The time readout uses our own MM:SS
+// formatTimecodeMs, not omniclip's convert_ms_to_hmsms — openimago-ypxq.)
 //
 // PRESERVED from upstream (do not regress): the history (undo/redo), split,
 // remove-selected and clear-project actions, with the SAME control structure and
@@ -51,12 +52,17 @@ import pauseSvg from 'omniclip/x/icons/gravity-ui/pause.svg.js'
 import fullscreenSvg from 'omniclip/x/icons/gravity-ui/fullscreen.svg.js'
 import zoomInSvg from 'omniclip/x/icons/material-design-icons/zoom-in.svg.js'
 import zoomOutSvg from 'omniclip/x/icons/material-design-icons/zoom-out.svg.js'
-import { convert_ms_to_hmsms } from 'omniclip/x/components/omni-timeline/views/time-ruler/utils/convert_ms_to_hmsms.js'
 import { combinedToolbarStyles } from './toolbar-styles'
-// Pure timecode math (total length + prev/next boundary seek) lives in the
-// tested cut utils — ONE source of truth; the patch stays a thin view.
-// (openimago-4qwj) src/utils/cut/toolbar-timecode.ts has its own unit spec.
-import { totalDurationMs, nextBoundaryTimecode } from 'src/utils/cut/toolbar-timecode'
+// Pure timecode math (total length, prev/next boundary seek, MM:SS formatting)
+// lives in the tested cut utils — ONE source of truth; the patch stays a thin
+// view. (openimago-4qwj/ypxq) src/utils/cut/toolbar-timecode.ts has its own spec.
+// formatTimecodeMs renders MM:SS to match docs/images/cut_panel.png ("00:04 /
+// 01:04"), replacing omniclip's convert_ms_to_hmsms (HH:MM:SS:FF).
+import {
+  totalDurationMs,
+  nextBoundaryTimecode,
+  formatTimecodeMs,
+} from 'src/utils/cut/toolbar-timecode'
 
 export const Toolbar = shadow_view((use) => (timeline: HTMLElement) => {
   use.styles(combinedToolbarStyles)
@@ -136,9 +142,9 @@ export const Toolbar = shadow_view((use) => (timeline: HTMLElement) => {
             </svg>
           </button>
           <div class="timecode" aria-label="当前时间 / 总时长">
-            <span class="current">${convert_ms_to_hmsms(state.timecode)}</span>
+            <span class="current">${formatTimecodeMs(state.timecode)}</span>
             <span class="sep">/</span>
-            <span class="total">${convert_ms_to_hmsms(total)}</span>
+            <span class="total">${formatTimecodeMs(total)}</span>
           </div>
         </div>
 

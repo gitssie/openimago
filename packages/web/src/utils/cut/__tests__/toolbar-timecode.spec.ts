@@ -3,6 +3,7 @@ import {
   totalDurationMs,
   boundaryTimecodes,
   nextBoundaryTimecode,
+  formatTimecodeMs,
   type TimelinePlacement,
 } from '../toolbar-timecode'
 
@@ -100,5 +101,42 @@ describe('nextBoundaryTimecode', () => {
   it('seeks from a time in the middle of a clip to its bounding boundaries', () => {
     expect(nextBoundaryTimecode(effects, 1500, 1)).toBe(3000)
     expect(nextBoundaryTimecode(effects, 1500, -1)).toBe(0)
+  })
+})
+
+describe('formatTimecodeMs', () => {
+  it('formats zero as MM:SS (matches docs/images/cut_panel.png)', () => {
+    expect(formatTimecodeMs(0)).toBe('00:00')
+  })
+
+  it('zero-pads both minutes and seconds (the image shows 00:04 / 01:04)', () => {
+    expect(formatTimecodeMs(4000)).toBe('00:04')
+    expect(formatTimecodeMs(64_000)).toBe('01:04')
+  })
+
+  it('floors sub-second remainders to whole seconds (no frames/ms shown)', () => {
+    expect(formatTimecodeMs(4999)).toBe('00:04')
+    expect(formatTimecodeMs(999)).toBe('00:00')
+  })
+
+  it('rolls seconds into minutes at the boundary', () => {
+    expect(formatTimecodeMs(59_000)).toBe('00:59')
+    expect(formatTimecodeMs(60_000)).toBe('01:00')
+    expect(formatTimecodeMs(125_000)).toBe('02:05')
+  })
+
+  it('uses MM:SS right up to the last second before one hour (59:59)', () => {
+    expect(formatTimecodeMs(59 * 60_000 + 59_000)).toBe('59:59')
+  })
+
+  it('switches to H:MM:SS at one hour so minutes never overflow to 3 digits', () => {
+    expect(formatTimecodeMs(3_600_000)).toBe('1:00:00')
+    expect(formatTimecodeMs(3_600_000 + 64_000)).toBe('1:01:04')
+  })
+
+  it('treats negative / non-finite input as 00:00', () => {
+    expect(formatTimecodeMs(-1)).toBe('00:00')
+    expect(formatTimecodeMs(Number.NaN)).toBe('00:00')
+    expect(formatTimecodeMs(Number.POSITIVE_INFINITY)).toBe('00:00')
   })
 })

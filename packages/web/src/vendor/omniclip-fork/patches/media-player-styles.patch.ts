@@ -45,6 +45,11 @@ const imagoOverrides = css`
        second canvas (openimago-axrz). Centering stops the stretch → width is
        derived from height × 9/16 = the canvas width, gaps gone. */
     align-self: center;
+    /* Trim upstream's 1em figure margin (openimago-ypxq): since the preview is
+       bound by the leaf HEIGHT, ~32px of vertical margin shrank the 9:16 width. A
+       small symmetric margin reclaims that height so the preview reads larger,
+       paired with the raised PLAYER_PANE_PERCENT in index.ts. */
+    margin: 4px auto;
   }
   .canvas-container {
     aspect-ratio: 9/16;

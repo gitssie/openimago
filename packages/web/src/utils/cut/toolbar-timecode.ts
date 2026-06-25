@@ -44,6 +44,30 @@ export function boundaryTimecodes(effects: ReadonlyArray<TimelinePlacement>): nu
   return [...set].sort((a, b) => a - b)
 }
 
+const MS_PER_SECOND = 1000
+const SECONDS_PER_MINUTE = 60
+const SECONDS_PER_HOUR = 3600
+const pad2 = (n: number): string => String(n).padStart(2, '0')
+
+/**
+ * Format a millisecond timecode for the combined control bar's "current / total"
+ * readout. Matches docs/images/cut_panel.png: zero-padded MM:SS (e.g. 0 → "00:00",
+ * 4s → "00:04", 64s → "01:04"). Sub-second remainders floor to whole seconds (no
+ * frames/ms). At/above one hour it rolls up to H:MM:SS so minutes never overflow
+ * to three digits. Negative / non-finite input is treated as 0 ("00:00").
+ */
+export function formatTimecodeMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '00:00'
+  const totalSeconds = Math.floor(ms / MS_PER_SECOND)
+  const hours = Math.floor(totalSeconds / SECONDS_PER_HOUR)
+  const minutes = Math.floor((totalSeconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE)
+  const seconds = totalSeconds % SECONDS_PER_MINUTE
+  if (hours > 0) {
+    return `${hours}:${pad2(minutes)}:${pad2(seconds)}`
+  }
+  return `${pad2(minutes)}:${pad2(seconds)}`
+}
+
 /**
  * The seek target for one press of the prev (-1) / next (1) transport button:
  * the nearest boundary strictly before / after the current timecode. A small

@@ -49,8 +49,18 @@ import { onEdit } from './capabilities/on-edit'
 // Layout tree shape matches @benev/construct's single_panel_layout (cell
 // vertical:true → pane → leaf) but with TWO panes. `size` is a flex-basis percent
 // (sizing_styles: `flex:0 0 <size>%`); a null size on the last pane → `flex:1 1
-// auto` fills the remainder. Player ~62%, timeline fills the rest (~38%).
-const PLAYER_PANE_PERCENT = 62
+// auto` fills the remainder.
+//
+// PLAYER SHARE (openimago-ypxq): the preview is a portrait 9:16 figure, so its
+// WIDTH is bound by the player leaf HEIGHT (width = height × 9/16). At the old
+// 62% the preview read far narrower than the canonical (docs/images/cut_panel.png,
+// where the preview is ~26% of the editor width). Raising the player pane's
+// vertical share to 74% grows the leaf height → the 9:16 preview widens to ~24% of
+// the editor, matching the image, while the timeline pane keeps ~26% — enough for
+// the filmstrip + BGM lane. This is the construct split lever (a flex-basis %),
+// not a deep upstream rewrite. Tuned with the figure-margin trim in
+// media-player-styles.patch.ts.
+const PLAYER_PANE_PERCENT = 74
 
 function twoPanelLayout() {
   return () => ({
