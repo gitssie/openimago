@@ -40,6 +40,21 @@ assetsRoutes.get("/", async (c) => {
   return c.json({ items: result.items, cursor: result.cursor })
 })
 
+assetsRoutes.get("/:id/download", async (c) => {
+  const userId = c.get("userId") as string
+  const assetId = c.req.param("id")
+  const result = await assetsService.download(userId, assetId)
+
+  if ("error" in result) {
+    return c.json({ error: result.error }, result.status as any)
+  }
+
+  return new Response(new Blob([result.bytes], { type: result.mimeType }), {
+    status: 200,
+    headers: { "content-type": result.mimeType },
+  })
+})
+
 assetsRoutes.get("/:id", async (c) => {
   const userId = c.get("userId") as string
   const assetId = c.req.param("id")

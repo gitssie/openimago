@@ -56,4 +56,37 @@ describe('buildHydrationPayload', () => {
     // c-a still live so its transition survives
     expect(transitions).toEqual([{ afterEffectId: 'c-a', kind: 'dissolve', durationMs: 500 }])
   })
+
+  it('omits bgm when the cut has none', () => {
+    const { bgm } = buildHydrationPayload(cut, (id) => source(id))
+    expect(bgm).toBeUndefined()
+  })
+
+  it('resolves cut.bgm into a HydrateBgm via the bgm resolver', () => {
+    const withBgm: EpisodeCut = {
+      ...cut,
+      bgm: { artifactId: 'ast_bed', gainDb: -6 },
+    }
+    const { bgm } = buildHydrationPayload(
+      withBgm,
+      (id) => source(id),
+      (artifactId) =>
+        artifactId === 'ast_bed'
+          ? { url: 'https://cdn/bed.mp3', name: 'bed.mp3' }
+          : null,
+    )
+    expect(bgm).toEqual({ id: 'ast_bed', url: 'https://cdn/bed.mp3', name: 'bed.mp3' })
+  })
+
+  it('omits bgm when the resolver cannot resolve the artifact', () => {
+    const withBgm: EpisodeCut = { ...cut, bgm: { artifactId: 'ast_gone' } }
+    const { bgm } = buildHydrationPayload(withBgm, (id) => source(id), () => null)
+    expect(bgm).toBeUndefined()
+  })
+
+  it('omits bgm when set but no resolver is supplied', () => {
+    const withBgm: EpisodeCut = { ...cut, bgm: { artifactId: 'ast_bed' } }
+    const { bgm } = buildHydrationPayload(withBgm, (id) => source(id))
+    expect(bgm).toBeUndefined()
+  })
 })

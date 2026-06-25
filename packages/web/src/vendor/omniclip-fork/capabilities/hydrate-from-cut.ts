@@ -22,7 +22,7 @@
 import { omnislate } from 'omniclip/x/context/context.js'
 import { importFromUrl } from './import-from-url'
 import { setTransition, resetTransitions } from './transitions'
-import type { HydrateClip, OmniTransition } from 'src/utils/cut/fork-contract'
+import type { HydrateBgm, HydrateClip, OmniTransition } from 'src/utils/cut/fork-contract'
 
 const MS_PER_S = 1000
 
@@ -53,6 +53,7 @@ function fullFrameRect() {
 export async function hydrateFromCut(
   clips: HydrateClip[],
   transitions: OmniTransition[],
+  bgm?: HydrateBgm,
 ): Promise<void> {
   const ctx = omnislate.context
   ctx.actions.remove_all_effects()
@@ -132,6 +133,15 @@ export async function hydrateFromCut(
     setTransition(transition)
   }
 
+  // Place the Cut's BGM bed on its OWN audio track → the green waveform lane
+  // under the video track (openimago-w5bu, docs/images/cut_panel.png). omniclip
+  // boots with several empty tracks, so track 1 is the lane directly below the
+  // video clips (track 0); no add_track needed. Imported via the same media path
+  // as clips (importFromUrl handles audio kind), then re-announced so the
+  // AudioEffect view's waveform composes (its on_media_change("added") listener
+  // misses the import-time publish — same mount-after-publish race as clips).
+  await placeBgm(bgm)
+
   // Compose the placed clips into the WebCodecs PREVIEW compositor (openimago-vwjl,
   // refined for 78m9). The patched VideoEffect view composes a clip in its
   // on_media_change("added") listener, but we publish "added" INSIDE importFromUrl
@@ -147,6 +157,55 @@ export async function hydrateFromCut(
   composePlacedClips(placed)
 
   if (import.meta.env.DEV) console.timeEnd('[omniclip-fork] hydrateFromCut total')
+}
+
+/** The audio lane sits directly below the video clips (track 0). omniclip boots
+ *  with several empty tracks, so this index already exists. */
+const BGM_TRACK = 1
+
+/**
+ * Import + place the Cut's BGM bed as an audio effect on its own track (the
+ * green waveform lane, openimago-w5bu). No-op when there is no bgm. Spans the
+ * full imported audio length from position 0. After adding the effect, re-announce
+ * the media so the AudioEffect view's waveform composes: importFromUrl publishes
+ * on_media_change("added") BEFORE add_audio_effect mounts the view, so the
+ * mounted listener (gated by !is_effect_already_composed) misses it — clear the
+ * audioManager entry, then re-publish so the gate passes and the waveform draws.
+ */
+async function placeBgm(bgm: HydrateBgm | undefined): Promise<void> {
+  if (!bgm) return
+  const ctx = omnislate.context
+
+  const imported = await importFromUrl(bgm.url, { name: bgm.name })
+  const durationMs = imported.rawDurationSeconds * MS_PER_S
+
+  ctx.actions.add_audio_effect({
+    kind: 'audio',
+    id: bgm.id, // reuse the bgm artifactId so edits map back 1:1
+    start_at_position: 0,
+    duration: durationMs,
+    start: 0,
+    end: durationMs,
+    track: BGM_TRACK,
+    raw_duration: durationMs,
+    file_hash: imported.fileHash,
+    name: imported.name,
+  })
+
+  // Re-announce so the (now-mounted) AudioEffect view composes its waveform.
+  const media = ctx.controllers.media
+  const audioManager = ctx.controllers.compositor.managers.audioManager
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      audioManager.delete(bgm.id)
+      const file = media.get(imported.fileHash)
+      if (!file) return
+      media.on_media_change.publish({
+        files: [{ hash: imported.fileHash, file, kind: 'audio' }],
+        action: 'added',
+      })
+    })
+  })
 }
 
 /**

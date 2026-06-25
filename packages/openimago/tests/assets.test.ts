@@ -294,6 +294,94 @@ test("GET /assets/:id returns asset", async () => {
 })
 
 // ---------------------------------------------------------------------------
+// 9a. list/get expose a same-origin servable url (openimago-w5bu)
+// ---------------------------------------------------------------------------
+test("GET /assets and /assets/:id expose a same-origin download url", async () => {
+  const token = await registerUser("asturl", "asturl@example.com")
+  const app = await buildAssetsApp()
+
+  const create = await app.fetch(
+    new Request("http://localhost/api/platform/assets/upload", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: makeAssetFormData("tune.mp3", "fake-audio", "audio/mpeg"),
+    }),
+  )
+  const { asset } = await create.json() as Record<string, any>
+
+  // get
+  const getRes = await app.fetch(
+    new Request(`http://localhost/api/platform/assets/${asset.id}`, {
+      headers: { authorization: `Bearer ${token}` },
+    }),
+  )
+  const getBody = await getRes.json() as Record<string, any>
+  expect(getBody.asset.url).toBe(`/api/platform/assets/${asset.id}/download`)
+
+  // list
+  const listRes = await app.fetch(
+    new Request("http://localhost/api/platform/assets?type=audio", {
+      headers: { authorization: `Bearer ${token}` },
+    }),
+  )
+  const listBody = await listRes.json() as Record<string, any>
+  const listed = listBody.items.find((i: any) => i.id === asset.id)
+  expect(listed.url).toBe(`/api/platform/assets/${asset.id}/download`)
+})
+
+// ---------------------------------------------------------------------------
+// 9b. download streams the stored bytes (openimago-w5bu)
+// ---------------------------------------------------------------------------
+test("GET /assets/:id/download streams the stored bytes", async () => {
+  const token = await registerUser("astdl", "astdl@example.com")
+  const app = await buildAssetsApp()
+
+  const create = await app.fetch(
+    new Request("http://localhost/api/platform/assets/upload", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: makeAssetFormData("beat.mp3", "hello-bgm-bytes", "audio/mpeg"),
+    }),
+  )
+  const { asset } = await create.json() as Record<string, any>
+
+  const res = await app.fetch(
+    new Request(`http://localhost/api/platform/assets/${asset.id}/download`, {
+      headers: { authorization: `Bearer ${token}` },
+    }),
+  )
+  expect(res.status).toBe(200)
+  expect(res.headers.get("content-type")).toBe("audio/mpeg")
+  const text = await res.text()
+  expect(text).toBe("hello-bgm-bytes")
+})
+
+// ---------------------------------------------------------------------------
+// 9c. download of another user's asset → 404 (openimago-w5bu)
+// ---------------------------------------------------------------------------
+test("GET /assets/:id/download for other user returns 404", async () => {
+  const tokenA = await registerUser("astdla", "astdla@example.com")
+  const tokenB = await registerUser("astdlb", "astdlb@example.com")
+  const app = await buildAssetsApp()
+
+  const create = await app.fetch(
+    new Request("http://localhost/api/platform/assets/upload", {
+      method: "POST",
+      headers: { authorization: `Bearer ${tokenA}` },
+      body: makeAssetFormData("mine.mp3", "secret", "audio/mpeg"),
+    }),
+  )
+  const { asset } = await create.json() as Record<string, any>
+
+  const res = await app.fetch(
+    new Request(`http://localhost/api/platform/assets/${asset.id}/download`, {
+      headers: { authorization: `Bearer ${tokenB}` },
+    }),
+  )
+  expect(res.status).toBe(404)
+})
+
+// ---------------------------------------------------------------------------
 // 10. Get non-existent → 404
 // ---------------------------------------------------------------------------
 test("GET /assets/:id non-existent returns 404", async () => {

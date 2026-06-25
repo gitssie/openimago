@@ -90,7 +90,11 @@ export const IMAGO_TO_OMNI_THEME: Record<OmniThemeVar, string> = {
   [OMNI_THEME_VARS.clipFill]: 'var(--imago-bg-surface)',
   [OMNI_THEME_VARS.clipBorder]: 'var(--imago-border-soft)',
   [OMNI_THEME_VARS.accent]: 'var(--imago-neon-cyan)',
-  [OMNI_THEME_VARS.playhead]: 'var(--imago-neon-cyan)',
+  // Approved minimal look (docs/images/cut_panel.png): the playhead is a thin
+  // WHITE vertical line, NOT cyan. applyImagoTheme writes these as inline styles
+  // on the editor host, so this map — not StoryCutPanel's scoped CSS — is the
+  // source of truth for the live editor's playhead colour.
+  [OMNI_THEME_VARS.playhead]: 'var(--imago-text-primary)',
   [OMNI_THEME_VARS.text]: 'var(--imago-text-primary)',
   [OMNI_THEME_VARS.orphan]: 'var(--imago-neon-pink)',
 }
@@ -131,10 +135,32 @@ export interface HydrateClip {
   filmstripSourceDurationSeconds?: number | null
 }
 
+/**
+ * The Cut's single BGM bed to lay onto its own audio track during hydration
+ * (openimago-w5bu). `url` is the resolved, fetchable artifact URL (host-resolved
+ * the same way clip media is); `id` is the bgm artifactId, reused as the audio
+ * effect id so edits map back. The fork imports the url (importFromUrl) and
+ * places it as an audio effect on a NEW track → the green waveform lane under
+ * the video track (docs/images/cut_panel.png).
+ */
+export interface HydrateBgm {
+  id: string
+  url: string
+  name: string
+}
+
 export interface OmniclipForkApi {
   importFromUrl: (url: string, options?: ImportFromUrlOptions) => Promise<ImportedMedia>
-  /** Replace the timeline with these ordered clips + transitions (hydration). */
-  hydrateFromCut: (clips: HydrateClip[], transitions: OmniTransition[]) => Promise<void>
+  /**
+   * Replace the timeline with these ordered clips + transitions (hydration).
+   * An optional bgm bed is placed on its own audio track (the green waveform
+   * lane under the video track).
+   */
+  hydrateFromCut: (
+    clips: HydrateClip[],
+    transitions: OmniTransition[],
+    bgm?: HydrateBgm,
+  ) => Promise<void>
   registerClipMenuItems: (items: ClipMenuItem[]) => () => void
   /** Map a clicked effect id → its sourceShotId for the menu (orphan-gating). */
   setClipContextResolver: (fn: (effectId: string) => string | undefined) => void

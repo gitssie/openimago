@@ -7,7 +7,7 @@
 //
 // Implementations: LocalStorageAdapter (disk), future S3/COS adapters.
 
-import { mkdir, writeFile, copyFile, access as fsAccess } from "node:fs/promises"
+import { mkdir, writeFile, copyFile, readFile, access as fsAccess } from "node:fs/promises"
 import { join, dirname } from "node:path"
 
 // ── Interface ─────────────────────────────────────────────────────────────────
@@ -33,6 +33,9 @@ export interface StorageAdapter {
   /** Copy a file from source to dest. */
   readonly copy: (opts: CopyOptions) => Promise<void>
 
+  /** Read a file's full contents. Rejects if the path is missing/unreadable. */
+  readonly read: (path: string) => Promise<Uint8Array>
+
   /** Check if a path exists (resolves true/false, does NOT throw). */
   readonly exists: (path: string) => Promise<boolean>
 }
@@ -56,6 +59,10 @@ export class LocalStorageAdapter implements StorageAdapter {
       await mkdir(dirname(opts.destPath), { recursive: true })
     }
     await copyFile(opts.sourcePath, opts.destPath)
+  }
+
+  async read(path: string): Promise<Uint8Array> {
+    return readFile(path)
   }
 
   async exists(path: string): Promise<boolean> {

@@ -17,9 +17,11 @@ import { readFile, mkdir, writeFile, rm } from "node:fs/promises"
 import path from "node:path"
 import { eq } from "drizzle-orm"
 import { db } from "../src/db/client"
-import { projects, users, userAuths, workspaceGeneratedFiles } from "../src/db/schema"
+import { assets, projects, users, userAuths, workspaceGeneratedFiles } from "../src/db/schema"
 import { WorkspaceTable } from "../src/db/workspace-schema"
 import { projectService } from "../src/project/service"
+import { storyService } from "../src/project/story-service"
+import { statSync } from "node:fs"
 import { authId } from "../src/utils/ids"
 import { logger } from "../src/server/logger"
 import {
@@ -44,6 +46,22 @@ const SEED_USERNAME = "default_user"
 const SEED_PROJECT_NAME = "Neon Drift (seed)"
 
 const COS_BASE_PATH = process.env.COS_BASE_PATH ?? "/opt/work"
+
+// Stable BGM bed asset so the seed cut shows the green audio lane out-of-the-box
+// (openimago-w5bu). Points at the committed mock mp3 (served same-origin by the
+// web dev server at /mock/bgm-demo.mp3, and streamed by the asset download route
+// from this on-disk path). Stable id → idempotent re-seed.
+const SEED_BGM_ASSET_ID = "ast_seed00000000000bgm"
+const SEED_BGM_FILE = path.resolve(
+  import.meta.dir,
+  "..",
+  "..",
+  "web",
+  "public",
+  "mock",
+  "bgm-demo.mp3",
+)
+const SEED_EPISODE_ID = "ep_001"
 
 // Repo fixtures live at <repo>/docs/story-schema relative to this script
 // (packages/openimago/scripts → ../../.. → repo root).
@@ -224,10 +242,62 @@ async function seedProject(userId: string, workspaceId: string): Promise<void> {
     )
   }
 
+  // Register a stable BGM audio asset + assemble a cut with that bgm so the
+  // timeline shows the green audio lane out-of-the-box (openimago-w5bu).
+  await seedBgmCut(userId)
+
   logger.info(
     { projectId: SEED_PROJECT_ID, directory, artifacts: artifacts.length },
     "seed: project + story ready",
   )
+}
+
+/**
+ * Make the seed Cut show the green BGM lane out-of-the-box (openimago-w5bu):
+ *   1. Register a stable audio asset pointing at the committed mock mp3, so the
+ *      BGM picker lists it AND the asset download route can stream it (its url
+ *      resolves to /api/platform/assets/<id>/download).
+ *   2. Assemble ep_001's cut from the seeded shots/runs (reuses the tested
+ *      assembler), then set the cut's bgm to that asset.
+ * Idempotent: the asset is deleted-by-stable-id then re-inserted; the cut is
+ * (re)assembled + bgm re-set on every run.
+ */
+async function seedBgmCut(userId: string): Promise<void> {
+  // 1. BGM asset (delete-by-stable-id → insert).
+  const size = statSync(SEED_BGM_FILE).size
+  await db.delete(assets).where(eq(assets.id, SEED_BGM_ASSET_ID))
+  await db.insert(assets).values({
+    id: SEED_BGM_ASSET_ID,
+    userId,
+    filename: "bgm-demo.mp3",
+    storedName: "bgm-demo.mp3",
+    mimeType: "audio/mpeg",
+    size,
+    width: null,
+    height: null,
+    duration: null,
+    thumbnailPath: null,
+    storagePath: SEED_BGM_FILE,
+    status: "active",
+    createdAt: new Date(),
+  })
+
+  // 2. Assemble the cut (clips from seeded shots/runs), then set its bgm.
+  const assembled = await storyService.assembleEpisodeCut(SEED_PROJECT_ID, userId, SEED_EPISODE_ID)
+  if ("error" in assembled) {
+    logger.warn({ projectId: SEED_PROJECT_ID, error: assembled.error }, "seed: cut assemble failed")
+    return
+  }
+  const bgmSet = await storyService.setBgm(
+    SEED_PROJECT_ID,
+    userId,
+    SEED_EPISODE_ID,
+    { artifactId: SEED_BGM_ASSET_ID },
+    assembled.data.updatedAt,
+  )
+  if ("error" in bgmSet) {
+    logger.warn({ projectId: SEED_PROJECT_ID, error: bgmSet.error }, "seed: cut bgm set failed")
+  }
 }
 
 // ── Entry ───────────────────────────────────────────────────────────────────

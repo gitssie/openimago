@@ -23,6 +23,16 @@ function assetId(): string {
   return `ast_${genUserId().slice(4)}`
 }
 
+/**
+ * Same-origin servable URL for an asset's bytes (openimago-w5bu). Assets live in
+ * COS storage, which is NOT directly web-servable, so the URL points at the
+ * authenticated download route that streams the file. Centralised so list/get
+ * agree on the shape (the BGM picker + cut hydration both rely on it).
+ */
+function assetDownloadUrl(id: string): string {
+  return `/api/platform/assets/${id}/download`
+}
+
 export class AssetsService {
   private storage: StorageAdapter
 
@@ -96,6 +106,7 @@ export class AssetsService {
         height: null,
         duration: null,
         thumbnailPath,
+        url: assetDownloadUrl(id),
         createdAt: now.toISOString(),
       },
       status: 201,
@@ -130,6 +141,7 @@ export class AssetsService {
       height: r.height,
       duration: r.duration,
       thumbnailPath: r.thumbnailPath,
+      url: assetDownloadUrl(r.id),
       createdAt: r.createdAt.toISOString(),
     }))
 
@@ -164,10 +176,35 @@ export class AssetsService {
         duration: r.duration,
         thumbnailPath: r.thumbnailPath,
         storagePath: r.storagePath,
+        url: assetDownloadUrl(r.id),
         createdAt: r.createdAt.toISOString(),
       },
       status: 200,
     } as const
+  }
+
+  /**
+   * Stream an asset's stored bytes (openimago-w5bu). Ownership-scoped (same
+   * 404-for-other-users contract as get) so the same-origin download URL is
+   * safe. Returns the raw bytes + mime so the route can set Content-Type.
+   */
+  async download(userId: string, assetId: string) {
+    const rows = await db
+      .select()
+      .from(assets)
+      .where(and(eq(assets.id, assetId), eq(assets.userId, userId), eq(assets.status, "active")))
+
+    if (rows.length === 0) {
+      return { error: { code: "NOT_FOUND", message: "Asset not found" }, status: 404 } as const
+    }
+
+    const r = rows[0]!
+    try {
+      const bytes = await this.storage.read(r.storagePath)
+      return { bytes, mimeType: r.mimeType, filename: r.filename, status: 200 } as const
+    } catch {
+      return { error: { code: "NOT_FOUND", message: "Asset file missing" }, status: 404 } as const
+    }
   }
 
   async delete(userId: string, assetId: string) {

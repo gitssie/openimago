@@ -7,10 +7,17 @@
 // than feeding a urless clip to the importer. Unit-tested headless.
 
 import type { CutClip, EpisodeCut } from './cut-types'
-import type { HydrateClip, OmniTransition } from './fork-contract'
+import type { HydrateBgm, HydrateClip, OmniTransition } from './fork-contract'
 import type { ShotMediaSource } from './shot-media-resolver'
 
 const MS_PER_S = 1000
+
+/** URL-level media for the Cut's BGM artifact, before browser import. The host
+ *  resolves this from the audio asset (its servable url + a display name). */
+export interface BgmMediaSource {
+  url: string
+  name: string
+}
 
 export interface HydrationPayload {
   /** clips with resolvable media, in cut order — fed to the fork. */
@@ -19,11 +26,15 @@ export interface HydrationPayload {
   transitions: OmniTransition[]
   /** clips whose source media is gone — rendered as orphan placeholders. */
   orphans: CutClip[]
+  /** the Cut's BGM bed for its own audio track — omitted when the cut has no
+   *  bgm, or when the artifact can't be resolved to a url (openimago-w5bu). */
+  bgm?: HydrateBgm
 }
 
 export function buildHydrationPayload(
   cut: EpisodeCut,
   resolveMedia: (sourceShotId: string) => ShotMediaSource | null,
+  resolveBgm?: (artifactId: string) => BgmMediaSource | null,
 ): HydrationPayload {
   const ordered = [...cut.clips].sort((a, b) => a.order - b.order)
   const clips: HydrateClip[] = []
@@ -61,5 +72,21 @@ export function buildHydrationPayload(
       durationMs: Math.round(tr.durationSeconds * MS_PER_S),
     }))
 
-  return { clips, transitions, orphans }
+  // Resolve the Cut's single BGM bed to its own audio track (openimago-w5bu).
+  // Mirrors clip resolution: a host resolver turns the artifactId → a fetchable
+  // url; an unresolvable (or absent) bgm is simply omitted so the lane is skipped
+  // rather than fed a url-less effect.
+  const bgm = resolveBgmRef(cut, resolveBgm)
+
+  return { clips, transitions, orphans, ...(bgm ? { bgm } : {}) }
+}
+
+function resolveBgmRef(
+  cut: EpisodeCut,
+  resolveBgm: ((artifactId: string) => BgmMediaSource | null) | undefined,
+): HydrateBgm | undefined {
+  if (!cut.bgm || !resolveBgm) return undefined
+  const source = resolveBgm(cut.bgm.artifactId)
+  if (!source) return undefined
+  return { id: cut.bgm.artifactId, url: source.url, name: source.name }
 }
