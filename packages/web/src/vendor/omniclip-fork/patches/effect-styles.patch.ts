@@ -19,7 +19,9 @@
 //
 // Overrides (rest of upstream trim/drag/grab rules preserved verbatim upstream):
 //   .effect                 background → --imago-bg-surface + 1px --imago-border-soft
-//   .effect[data-selected]  cyan ring (--imago-border-cyan-active) + cyan glow
+//   .effect[data-selected]  thin 1px SOLID cyan border, NO halo (approved minimal
+//                           direction, docs/images/cut_panel.png — was a 2px ring
+//                           + inset ring + 18px cyan glow, too loud for the flat look)
 //   .effect[data-no-file]   orphan → --imago-neon-pink (was raw red)
 //
 // Height stays 50px: omniclip's track placement is hardcoded to 50px lanes
@@ -38,14 +40,15 @@ const imagoOverrides = css`
     border-radius: var(--imago-radius-md, 5px);
   }
 
-  /* Selected: cyan ring + soft cyan glow, matching the left-panel active card. */
+  /* Selected: thin 1px SOLID cyan border, NO halo (approved minimal direction). */
   .effect[data-selected]::after {
-    outline: 2px solid var(--imago-border-cyan-active, #00f0ff);
-    outline-offset: -2px;
+    content: '';
+    position: absolute;
+    inset: 0;
+    outline: 1px solid var(--imago-neon-cyan, #00f0ff);
+    outline-offset: -1px;
     border-radius: var(--imago-radius-md, 5px);
-    box-shadow:
-      inset 0 0 0 1px var(--imago-border-cyan-active, #00f0ff),
-      0 0 18px rgba(0, 240, 255, 0.18);
+    pointer-events: none;
   }
 
   /* Orphan / missing-source: theme pink instead of raw red. */
