@@ -30,11 +30,11 @@ export const combinedToolbarStyles = css`
     display: flex;
     min-height: 46px;
     --transition: 0.2s;
-    /* Scoped amber accent for the CURRENT timecode (reference cut_panel_v2:
-       playhead time reads warm amber, total time stays muted grey). Defined here
-       as a token rather than a hardcoded literal; falls back to the imago warning
-       amber hue family. No global token matched, so it is scoped to this bar. */
-    --cut-time-current: #f3a338;
+    /* CURRENT timecode reads as bright neutral off-white — the UPDATED reference
+       (docs/images/cut_panel.png) shows it brighter than the muted-grey total,
+       NOT the amber the earlier cut_panel_v2 pass used. Scoped to this bar via a
+       token (no global token is the right semantic) so a future re-tint is local. */
+    --cut-time-current: var(--imago-text-primary, #e8e8ec);
   }
 
   .toolbar {
@@ -141,22 +141,22 @@ export const combinedToolbarStyles = css`
     height: 18px;
   }
 
-  /* Play/pause: NEUTRAL white glyph in a thin neutral ring (reference
-     cut_panel_v2 — the play control is white, not cyan; cyan is reserved for the
-     selected-clip border only). Flat, no glow. */
+  /* Play/pause: NEUTRAL white glyph on a SUBTLE filled disc (the UPDATED
+     reference cut_panel.png shows a soft charcoal circle behind the glyph, not a
+     crisp 1px ring). White glyph, not cyan — cyan is reserved for the
+     selected-clip border only. Flat, no glow. */
   .transport .playpause {
     color: var(--imago-text-primary, #fff);
     width: 34px;
     height: 34px;
     border-radius: 999px;
-    background: transparent;
-    border: 1px solid var(--imago-border-dim, rgba(255, 255, 255, 0.12));
+    border: none;
+    background: color-mix(in srgb, var(--imago-text-primary, #fff) 9%, transparent);
   }
 
   .transport .playpause:hover:not([disabled]) {
     color: var(--imago-text-primary, #fff);
-    background: color-mix(in srgb, var(--imago-text-primary, #fff) 8%, transparent);
-    border-color: var(--imago-border-soft, rgba(255, 255, 255, 0.18));
+    background: color-mix(in srgb, var(--imago-text-primary, #fff) 15%, transparent);
   }
 
   .timecode {
@@ -170,9 +170,9 @@ export const combinedToolbarStyles = css`
     white-space: nowrap;
   }
 
-  /* Current time reads warm amber; separator + total stay muted grey. */
+  /* Current time reads bright neutral off-white; separator + total stay muted grey. */
   .timecode .current {
-    color: var(--cut-time-current, #f3a338);
+    color: var(--cut-time-current, #e8e8ec);
   }
 
   .timecode .sep,

@@ -585,23 +585,28 @@ defineExpose({ persistEdit })
   // frames recede; orphans quiet pink. (The green audio waveform is rendered by
   // omniclip itself and is not host-controllable, so no --omni-audio override.)
   //
-  // AMBIENT GLOW (reference cut_panel_v2): a SUBTLE warm wash toward the top-left
-  // and a cool wash toward the top-right, fading into near-black. Painted on the
-  // editor HOST background so it shows in the dark margins around omniclip's 9:16
-  // media-player pane. --omni-bg is set transparent so the embedded panes do NOT
+  // AMBIENT GLOW (UPDATED reference docs/images/cut_panel.png): MUCH subtler and
+  // cooler than the earlier cut_panel_v2 pass. Pixel-sampled from the canonical
+  // image the wash is only ~2-6 RGB points above #08080f: a faint, near-uniform
+  // COOL lift across the top (corners read ~(10,10,15) — blue +5, no cyan), plus
+  // a barely-there WARM tint on the MID-LEFT only (~(14,11,12) — red +2). There
+  // is NO strong cyan top-right and NO magenta top-left. Painted on the editor
+  // HOST background so it shows in the dark margins around omniclip's 9:16
+  // media-player pane. --omni-bg is transparent so the embedded panes do NOT
   // repaint solid void over this glow; the void base lives on the host instead.
-  // Alphas are deliberately tiny (~3-6%) — measured from the reference, the wash
-  // is only a few RGB points above #08080f. Keep it dark and tasteful.
+  // Keep it dark and tasteful — barely perceptible, never a "glow".
   background:
+    // faint cool lift across the whole top (neutral blue, very low alpha)
     radial-gradient(
-      55% 60% at 24% 20%,
-      color-mix(in srgb, var(--imago-neon-pink) 7%, transparent),
-      transparent 58%
+      90% 55% at 50% 0%,
+      color-mix(in srgb, var(--imago-neon-cyan) 3%, transparent),
+      transparent 70%
     ),
+    // barely-there warm tint on the mid-left only
     radial-gradient(
-      55% 60% at 78% 22%,
-      color-mix(in srgb, var(--imago-neon-cyan) 6%, transparent),
-      transparent 58%
+      45% 45% at 8% 42%,
+      color-mix(in srgb, var(--imago-neon-pink) 3%, transparent),
+      transparent 62%
     ),
     var(--imago-bg-void);
   --omni-bg: transparent;
@@ -737,7 +742,11 @@ defineExpose({ persistEdit })
   flex-direction: column;
   gap: 16px;
   padding: 14px 16px;
-  max-height: 38%;
+  // Cap the dock lower so the EDITOR (and its 9:16 preview) takes the larger
+  // vertical share the UPDATED reference (cut_panel.png) shows — a big floating
+  // preview above the bar + filmstrip. The dock keeps its own scroll, so no
+  // transition/BGM control is lost; it just scrolls when boundaries are many.
+  max-height: 28%;
   overflow-y: auto;
   border-top: 1px solid var(--imago-border-soft);
   background: var(--imago-bg-deep);
