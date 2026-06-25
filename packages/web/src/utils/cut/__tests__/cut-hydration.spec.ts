@@ -89,4 +89,33 @@ describe('buildHydrationPayload', () => {
     const { bgm } = buildHydrationPayload(withBgm, (id) => source(id))
     expect(bgm).toBeUndefined()
   })
+
+  it('threads the BGM auth headers through to the HydrateBgm (openimago-tc8t)', () => {
+    const withBgm: EpisodeCut = { ...cut, bgm: { artifactId: 'ast_bed' } }
+    const { bgm } = buildHydrationPayload(
+      withBgm,
+      (id) => source(id),
+      () => ({
+        url: '/api/platform/assets/ast_bed/download',
+        name: 'bed.mp3',
+        headers: { Authorization: 'Bearer tok_123' },
+      }),
+    )
+    expect(bgm).toEqual({
+      id: 'ast_bed',
+      url: '/api/platform/assets/ast_bed/download',
+      name: 'bed.mp3',
+      headers: { Authorization: 'Bearer tok_123' },
+    })
+  })
+
+  it('omits the headers key entirely when the resolver supplies none', () => {
+    const withBgm: EpisodeCut = { ...cut, bgm: { artifactId: 'ast_bed' } }
+    const { bgm } = buildHydrationPayload(
+      withBgm,
+      (id) => source(id),
+      () => ({ url: 'https://cdn/bed.mp3', name: 'bed.mp3' }),
+    )
+    expect(bgm).not.toHaveProperty('headers')
+  })
 })

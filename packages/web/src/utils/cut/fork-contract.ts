@@ -18,6 +18,14 @@ export interface ImportedMedia {
 export interface ImportFromUrlOptions {
   name?: string
   signal?: AbortSignal
+  /**
+   * Extra request headers for the media fetch (openimago-tc8t). Clip previews are
+   * static same-origin /mock files needing no auth, but the BGM bed resolves to
+   * the authed `/api/platform/assets/:id/download`, which 401s without a Bearer
+   * token. The HOST threads `Authorization: Bearer <token>` here (it owns the
+   * auth store); the fork never reaches into the web auth store itself.
+   */
+  headers?: Record<string, string>
 }
 
 /**
@@ -147,6 +155,12 @@ export interface HydrateBgm {
   id: string
   url: string
   name: string
+  /**
+   * Auth (and any other) headers for the BGM media fetch (openimago-tc8t). The
+   * BGM url is the authed `/api/platform/assets/:id/download`, so the host passes
+   * `Authorization: Bearer <token>` here; the fork forwards it to importFromUrl.
+   */
+  headers?: Record<string, string>
 }
 
 export interface OmniclipForkApi {

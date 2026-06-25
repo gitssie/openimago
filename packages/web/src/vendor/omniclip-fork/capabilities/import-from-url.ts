@@ -89,7 +89,15 @@ export const importFromUrl: ImportFromUrl = async (url, options) => {
   const timeLabel = `[omniclip-fork] importFromUrl ${name}`
   if (import.meta.env.DEV) console.time(timeLabel)
   try {
-    const res = await fetch(url, options?.signal ? { signal: options.signal } : undefined)
+    // Forward optional auth headers (openimago-tc8t). Clip /mock files pass none;
+    // the BGM authed /api/.../download gets `Authorization: Bearer <token>` from
+    // the host. Only build a RequestInit when we actually have signal or headers.
+    const init: RequestInit = {}
+    if (options?.signal) init.signal = options.signal
+    if (options?.headers && Object.keys(options.headers).length > 0) {
+      init.headers = options.headers
+    }
+    const res = await fetch(url, Object.keys(init).length > 0 ? init : undefined)
     if (!res.ok) {
       throw new Error(`importFromUrl: fetch failed for ${url} (HTTP ${res.status})`)
     }

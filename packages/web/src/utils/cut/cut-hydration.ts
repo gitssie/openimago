@@ -13,10 +13,13 @@ import type { ShotMediaSource } from './shot-media-resolver'
 const MS_PER_S = 1000
 
 /** URL-level media for the Cut's BGM artifact, before browser import. The host
- *  resolves this from the audio asset (its servable url + a display name). */
+ *  resolves this from the audio asset (its servable url + a display name). The
+ *  optional `headers` carry auth for the authed /api/.../download fetch
+ *  (openimago-tc8t) — the host supplies `Authorization: Bearer <token>`. */
 export interface BgmMediaSource {
   url: string
   name: string
+  headers?: Record<string, string>
 }
 
 export interface HydrationPayload {
@@ -88,5 +91,12 @@ function resolveBgmRef(
   if (!cut.bgm || !resolveBgm) return undefined
   const source = resolveBgm(cut.bgm.artifactId)
   if (!source) return undefined
-  return { id: cut.bgm.artifactId, url: source.url, name: source.name }
+  return {
+    id: cut.bgm.artifactId,
+    url: source.url,
+    name: source.name,
+    // Forward auth headers (openimago-tc8t) only when the host supplied them, so
+    // the omit-when-empty shape stays clean for callers/tests that don't auth.
+    ...(source.headers ? { headers: source.headers } : {}),
+  }
 }

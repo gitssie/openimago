@@ -140,7 +140,19 @@ export async function hydrateFromCut(
   // as clips (importFromUrl handles audio kind), then re-announced so the
   // AudioEffect view's waveform composes (its on_media_change("added") listener
   // misses the import-time publish — same mount-after-publish race as clips).
-  await placeBgm(bgm)
+  //
+  // NON-FATAL (openimago-tc8t): BGM is a non-essential lane. A failed import
+  // (e.g. a 401 on the authed /download, or an unreachable url) must NOT crash the
+  // whole editor — warn + skip the lane (like an orphan clip), leaving all video
+  // clips + transitions intact so the editor always renders.
+  try {
+    await placeBgm(bgm)
+  } catch (err) {
+    console.warn(
+      '[omniclip-fork] BGM import failed — skipping the audio lane; clips render normally',
+      err,
+    )
+  }
 
   // Compose the placed clips into the WebCodecs PREVIEW compositor (openimago-vwjl,
   // refined for 78m9). The patched VideoEffect view composes a clip in its
@@ -176,7 +188,9 @@ async function placeBgm(bgm: HydrateBgm | undefined): Promise<void> {
   if (!bgm) return
   const ctx = omnislate.context
 
-  const imported = await importFromUrl(bgm.url, { name: bgm.name })
+  // Forward the host's auth headers (openimago-tc8t) so the authed
+  // /api/.../download fetch carries the Bearer token; undefined for unauthed urls.
+  const imported = await importFromUrl(bgm.url, { name: bgm.name, headers: bgm.headers })
   const durationMs = imported.rawDurationSeconds * MS_PER_S
 
   ctx.actions.add_audio_effect({

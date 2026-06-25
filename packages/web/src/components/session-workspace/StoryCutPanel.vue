@@ -186,8 +186,10 @@ import { buildHydrationPayload, type BgmMediaSource } from 'src/utils/cut/cut-hy
 import { dispatchCutEdit, type CutEdit } from 'src/utils/cut/cut-edit-dispatcher'
 import { buildClipMenuItems } from 'src/utils/cut/clip-menu-items'
 import { transitionBoundaries, resolveBgmLabel } from 'src/utils/cut/cut-controls'
+import { bgmAuthHeaders } from 'src/utils/cut/bgm-auth'
 import type { LoadOmniclipFork, OmniclipForkApi } from 'src/utils/cut/fork-contract'
 import { api, ApiError, type OpenimagoAsset } from 'src/api/client'
+import { useAuthStore } from 'src/stores/auth'
 
 /** Default transition length (s) when a kind is first chosen on a boundary. */
 const DEFAULT_TRANSITION_SECONDS = 0.5
@@ -228,6 +230,11 @@ const editorHost = ref<HTMLElement | null>(null)
 const editorReady = ref(false)
 const editorError = ref<string | null>(null)
 const assembling = ref(false)
+
+// Auth store for the BGM media fetch (openimago-tc8t): the BGM resolves to the
+// authed /api/.../download, so resolveBgmSource threads Authorization: Bearer
+// <token> down to the fork. Clip /mock previews stay unauthenticated.
+const auth = useAuthStore()
 
 // Local optimistic-concurrency clock for cut writes (ADR 0008 #3). Seeded from
 // the canonical cut and advanced by each write's returned updatedAt, so the
@@ -395,14 +402,24 @@ async function resolveBgmSource(
   artifactId: string | undefined,
 ): Promise<{ id: string; source: BgmMediaSource } | null> {
   if (!artifactId) return null
+  // The BGM url is the authed /api/.../download, so carry Bearer auth on the
+  // fork's fetch (openimago-tc8t). Built from the auth store here in the host;
+  // the fork never reaches into it.
+  const headers = bgmAuthHeaders(auth.token)
   const cached = audioAssets.value.find((a) => a.id === artifactId)
   if (cached?.url) {
-    return { id: artifactId, source: { url: cached.url, name: cached.name || cached.filename || artifactId } }
+    return {
+      id: artifactId,
+      source: { url: cached.url, name: cached.name || cached.filename || artifactId, headers },
+    }
   }
   try {
     const asset = await api.getAsset(artifactId)
     if (!asset?.url) return null
-    return { id: artifactId, source: { url: asset.url, name: asset.name || asset.filename || artifactId } }
+    return {
+      id: artifactId,
+      source: { url: asset.url, name: asset.name || asset.filename || artifactId, headers },
+    }
   } catch (err) {
     console.error('StoryCutPanel: failed to resolve BGM asset for hydration', err)
     return null
