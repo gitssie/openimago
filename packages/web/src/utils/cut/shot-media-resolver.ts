@@ -30,16 +30,24 @@ export interface ShotMediaSource {
 }
 
 /**
- * Pick the run that supplies a Cut clip's media. A clip lives on the VIDEO track,
- * so its source must be the shot's VIDEO run — NOT merely the latest completed run
- * (a shot can also have image-concept and audio/narration runs that complete later
- * and carry a previewUrl but no video and no filmstrip sprite; openimago-78m9).
- * Selection priority among the shot's completed runs with a previewUrl:
- *   1. the most-recent VIDEO run (kind==='video') — the right clip source AND the
- *      one carrying the precomputed filmstrip sprite,
- *   2. else any run that has a filmstripUrl (defensive),
- *   3. else the most-recent completed run (legacy fallback; e.g. video-less shots).
- * Returns null when the shot has no usable completed run (orphan placeholder).
+ * Pick the runs that supply a Cut clip's media. A clip lives on the VIDEO track,
+ * so its PLAYBACK source must be the shot's VIDEO run — NOT merely the latest
+ * completed run (a shot can also have image-concept and audio/narration runs that
+ * complete later and carry a previewUrl but no video; openimago-78m9).
+ *
+ * The PREVIEW run and the FILMSTRIP run are resolved INDEPENDENTLY (openimago-iiab):
+ * the filmstrip sprite is re-resolved every hydration (CutClip stores no filmstrip),
+ * and coupling it to the preview/video run meant that when the NEWEST video run had
+ * no sprite yet, the clip's thumbnail went blank — even though an OLDER completed run
+ * of the same shot had a sprite. So:
+ *   • primary (preview/thumbnail/playback) = most-recent VIDEO run ?? most-recent
+ *     completed run (legacy fallback for video-less shots),
+ *   • filmstripRun (sprite + its consistent dims + source duration) = the most-recent
+ *     completed run that HAS a filmstripUrl ?? primary.
+ * The filmstrip fields are taken TOGETHER from filmstripRun so the sprite, its frame
+ * dims, and the sourceDurationSeconds that maps cell-time → frame stay self-consistent.
+ * The thumbnail therefore survives as long as ANY completed run of the shot has a
+ * sprite. Returns null when the shot has no usable completed run (orphan placeholder).
  */
 export function resolveShotMediaSource(
   sourceShotId: string,
@@ -59,21 +67,26 @@ export function resolveShotMediaSource(
     .filter((r) => r.shotId === sourceShotId && r.status === 'completed' && r.previewUrl)
     .sort(byRecency)
 
-  const run =
-    completed.find((r) => r.kind === 'video') ??
-    completed.find((r) => Boolean(r.filmstripUrl)) ??
-    completed[0]
-  if (!run || !run.previewUrl) return null
+  // PLAYBACK source: the video run (clip is on the video track), else the most-recent
+  // completed run (video-less shots).
+  const primary = completed.find((r) => r.kind === 'video') ?? completed[0]
+  if (!primary || !primary.previewUrl) return null
+
+  // FILMSTRIP source: the most-recent completed run that actually has a sprite,
+  // decoupled from `primary` so the strip survives even when primary has none yet.
+  const filmstripRun = completed.find((r) => Boolean(r.filmstripUrl)) ?? primary
 
   return {
     sourceShotId,
-    url: run.previewUrl,
-    thumbnailUrl: run.thumbnailUrl,
-    filmstripUrl: run.filmstripUrl,
-    filmstripFrameCount: run.filmstripFrameCount,
-    filmstripFrameW: run.filmstripFrameW,
-    filmstripFrameH: run.filmstripFrameH,
-    sourceDurationSeconds: run.durationSeconds,
+    url: primary.previewUrl,
+    thumbnailUrl: primary.thumbnailUrl,
+    // All filmstrip-consistent fields TOGETHER from filmstripRun (sprite + its dims +
+    // the source duration the cell-time→frame mapping needs for that sprite).
+    filmstripUrl: filmstripRun.filmstripUrl,
+    filmstripFrameCount: filmstripRun.filmstripFrameCount,
+    filmstripFrameW: filmstripRun.filmstripFrameW,
+    filmstripFrameH: filmstripRun.filmstripFrameH,
+    sourceDurationSeconds: filmstripRun.durationSeconds,
     name: `${sourceShotId}.mp4`,
   }
 }
