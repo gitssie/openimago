@@ -393,6 +393,47 @@ function omniclipTimelineStylesPatch() {
 }
 
 /**
+ * Vite plugin: swap omniclip's TIME-RULER view for the fork's version that aligns
+ * the ruler with the gutter-shifted clips (openimago-scml). The gutter padding on
+ * `.timeline` shifts the clips +GUTTER_PX, but the ruler ticks (absolute, resolving
+ * against the unpadded `:host`) and the click-to-seek (measuring from the host's
+ * left) did not follow → ticks sat GUTTER_PX left of clips and seek was off by
+ * GUTTER_PX. The fork view sets `.time-ruler{position:relative}` (so ticks resolve
+ * against the already-shifted ruler box) and subtracts GUTTER_PX from the measured
+ * x. omni-timeline's component.js imports the ruler as a RELATIVE
+ * `import { TimeRuler } from "./views/time-ruler/view.js"`, so Vite passes raw
+ * "./views/time-ruler/view.js" here — GATE on the importer being
+ * omni-timeline/component.js + REQUIRE the `views/time-ruler/` segment so this does
+ * NOT collide with the track-view gate (views/track/), the toolbar gate
+ * (views/toolbar/), the component styles gate (bare styles.js), or the per-view
+ * styles gates. isOmniclipPackageImporter keeps the fork's own upstream styles
+ * re-import (importer = src/) from being redirected → no loop.
+ */
+function omniclipTimeRulerViewPatch() {
+  const FORK_TIME_RULER_VIEW = fileURLToPath(
+    new URL(
+      './src/vendor/omniclip-fork/patches/time-ruler-view.patch.ts',
+      import.meta.url,
+    ),
+  );
+  return {
+    name: 'omniclip-time-ruler-view-patch',
+    enforce: 'pre' as const,
+    resolveId(source: string, importer?: string) {
+      if (
+        importer &&
+        isOmniclipPackageImporter(importer) &&
+        /(^|\/)views\/time-ruler\/view\.js$/.test(source) &&
+        /omni-timeline\/component\.js/.test(importer)
+      ) {
+        return FORK_TIME_RULER_VIEW;
+      }
+      return undefined;
+    },
+  };
+}
+
+/**
  * Vite plugin: swap omniclip's VideoManager for the fork's cover-fit subclass
  * (openimago-ua5d). compositor/controller.js imports it as a RELATIVE
  * `import { VideoManager } from "./parts/video-manager.js"`, so GATE on the
@@ -574,12 +615,19 @@ export default defineConfig((ctx) => {
         // Reserve the real left GUTTER: left-pad the `.timeline` flex column by
         // GUTTER_PX (openimago-scml). Coordinate-math safe — parent padding shifts
         // `.timeline-relative` (its absolute effects + the drag bounds, in lockstep)
-        // AND the ruler + toolbar by the same amount, so clip render === drag hit and
-        // ticks stay aligned. Gated on the omni-timeline/component.js importer +
-        // bare styles.js source, distinct from the per-view styles gates
-        // (views/<name>/view.js importers) and the track-view gate (views/track/
-        // source), so none cross-fire.
+        // AND the toolbar by the same amount, so clip render === drag hit. The
+        // RULER ticks need their own alignment fix (they resolve against the
+        // unpadded :host, not `.timeline`) — see omniclipTimeRulerViewPatch below.
+        // Gated on the omni-timeline/component.js importer + bare styles.js source,
+        // distinct from the per-view styles gates (views/<name>/view.js importers)
+        // and the track-view gate (views/track/ source), so none cross-fire.
         viteConf.plugins.unshift(omniclipTimelineStylesPatch())
+        // Align the TIME-RULER with the gutter-shifted clips (openimago-scml):
+        // `.time-ruler{position:relative}` so ticks resolve against the already
+        // shifted ruler box, and subtract GUTTER_PX from the seek/indicator x.
+        // Gated on the omni-timeline/component.js importer + views/time-ruler/view.js
+        // source, distinct from every other gate so none cross-fire.
+        viteConf.plugins.unshift(omniclipTimeRulerViewPatch())
       },
 
       vitePlugins: [
