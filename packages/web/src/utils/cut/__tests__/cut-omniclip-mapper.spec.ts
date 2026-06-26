@@ -77,3 +77,134 @@ describe('cut <-> omniclip mapper (production)', () => {
     expect(orphans.map((c) => c.id)).toEqual(['clip-b'])
   })
 })
+
+// ── No-gap ripple-track invariant (openimago-4rdj) ─────────────────────────────
+//
+// The video track is a NO-GAP, NO-OVERLAP ripple: a clip's on-track position is
+// DERIVED from order + the spans of the clips before it (cursorMs), never
+// persisted. A user can drag a clip in omniclip to leave a temporary gap or
+// overlap (any start_at_position); on readback we re-derive `order` from the
+// on-track position, and the next hydrate snaps every clip flush against its
+// predecessor again. These tests lock that round-trip behaviour.
+
+import type { OmniHistoricalState, OmniVideoEffect } from '../omniclip-state.types'
+
+/** A minimal video effect with an explicit on-track position + source trim. */
+function videoEffect(
+  id: string,
+  fileHash: string,
+  startAtPosition: number,
+  start: number,
+  end: number,
+): OmniVideoEffect {
+  return {
+    kind: 'video',
+    id,
+    start_at_position: startAtPosition,
+    duration: end - start,
+    start,
+    end,
+    track: 0,
+    file_hash: fileHash,
+    name: id,
+    thumbnail: '',
+    raw_duration: 10000,
+    frames: 250,
+    rect: {
+      width: 1080,
+      height: 1920,
+      scaleX: 1,
+      scaleY: 1,
+      position_on_canvas: { x: 0, y: 0 },
+      rotation: 0,
+    },
+  }
+}
+
+const prev = { schemaVersion: 2 as const, episodeId: 'ep_001', transitions: [] }
+
+describe('no-gap ripple invariant', () => {
+  it('hydrate lays clips flush end-to-end regardless of their order field (cursorMs)', () => {
+    // Three clips of spans 2000 / 3000 / 1500 ms → positions 0, 2000, 5000.
+    const cut: EpisodeCut = {
+      schemaVersion: 2,
+      episodeId: 'ep_001',
+      clips: [
+        { id: 'c0', sourceShotId: 'shot_1', inPointMs: 0, outPointMs: 2000, order: 0 },
+        { id: 'c1', sourceShotId: 'shot_2', inPointMs: 1000, outPointMs: 4000, order: 1 },
+        { id: 'c2', sourceShotId: 'shot_1', inPointMs: 500, outPointMs: 2000, order: 2 },
+      ],
+      transitions: [],
+      updatedAt: 't',
+    }
+    const { state } = cutToOmniclipState(cut, resolveMedia)
+    expect(state.effects.map((e) => e.start_at_position)).toEqual([0, 2000, 5000])
+    // each clip's position equals the running sum of prior spans (no gap/overlap).
+    let cursor = 0
+    for (const e of state.effects) {
+      expect(e.start_at_position).toBe(cursor)
+      cursor += e.duration
+    }
+  })
+
+  it('readback derives order strictly from on-track position, NOT array order', () => {
+    // omniclip array order is shuffled and positions are arbitrary (with a GAP).
+    const state: OmniHistoricalState = {
+      effects: [
+        videoEffect('b', 'hash-shot_2', 9000, 1000, 4000), // 3rd on track (gap before it)
+        videoEffect('a', 'hash-shot_1', 0, 0, 2000), // 1st
+        videoEffect('c', 'hash-shot_2', 2000, 0, 1500), // 2nd
+      ],
+      tracks: [{ id: 'track-0' }],
+    }
+    const back = omniclipStateToCut(state, prev, resolveShotId, 't')
+    // order recovered from start_at_position ascending: a(0), c(2000), b(9000).
+    expect(back.clips.map((c) => c.id)).toEqual(['a', 'c', 'b'])
+    expect(back.clips.map((c) => c.order)).toEqual([0, 1, 2])
+  })
+
+  it('a user-dragged gap/overlap is absorbed to a no-gap track after one round-trip', () => {
+    // User left an overlap (b starts at 1500 while a ends at 2000) and a gap
+    // (c starts at 9000). Round-trip: readback fixes order, re-hydrate snaps flush.
+    const dragged: OmniHistoricalState = {
+      effects: [
+        videoEffect('a', 'hash-shot_1', 0, 0, 2000), // span 2000
+        videoEffect('b', 'hash-shot_2', 1500, 0, 3000), // overlaps a; span 3000
+        videoEffect('c', 'hash-shot_1', 9000, 0, 1000), // big gap; span 1000
+      ],
+      tracks: [{ id: 'track-0' }],
+    }
+    const cut = omniclipStateToCut(dragged, prev, resolveShotId, 't')
+    // order recovered by position (a, b, c) and trim preserved.
+    expect(cut.clips.map((c) => [c.id, c.order])).toEqual([
+      ['a', 0],
+      ['b', 1],
+      ['c', 2],
+    ])
+    // Re-hydrate: positions are now flush (0, 2000, 5000) — gap+overlap gone.
+    const { state: rehydrated } = cutToOmniclipState(cut, resolveMedia)
+    expect(rehydrated.effects.map((e) => e.start_at_position)).toEqual([0, 2000, 5000])
+    let cursor = 0
+    for (const e of rehydrated.effects) {
+      expect(e.start_at_position).toBe(cursor)
+      cursor += e.duration
+    }
+  })
+
+  it('round-trips order exactly for an arbitrary permutation of positions', () => {
+    // Positions deliberately non-contiguous and out of array order.
+    const state: OmniHistoricalState = {
+      effects: [
+        videoEffect('x', 'hash-shot_1', 5000, 0, 1000),
+        videoEffect('y', 'hash-shot_2', 100, 0, 2000),
+        videoEffect('z', 'hash-shot_1', 50000, 0, 500),
+        videoEffect('w', 'hash-shot_2', 800, 0, 1500),
+      ],
+      tracks: [{ id: 'track-0' }],
+    }
+    const back = omniclipStateToCut(state, prev, resolveShotId, 't')
+    // ascending by position: y(100), w(800), x(5000), z(50000).
+    expect(back.clips.map((c) => c.id)).toEqual(['y', 'w', 'x', 'z'])
+    expect(back.clips.map((c) => c.order)).toEqual([0, 1, 2, 3])
+  })
+})

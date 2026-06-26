@@ -44,6 +44,12 @@ export interface HydrateResult {
  * track 0 in `order`, honouring per-clip trim. A clip whose source can't be
  * resolved (deleted Shot) is returned as an orphan (ADR 0006: tolerate, never
  * drop — the panel renders it via the fork's data-no-file path).
+ *
+ * NO-GAP RIPPLE INVARIANT (openimago-4rdj): each clip's on-track position is
+ * DERIVED here from `order` + the running sum of prior clip spans (`cursorMs`),
+ * never read from the cut — so the timeline is always flush, no gaps/overlaps.
+ * Any temporary gap/overlap a user drags in omniclip is dropped on readback
+ * (omniclipStateToCut keeps only order) and absorbed here on the next hydrate.
  */
 export function cutToOmniclipState(
   cut: EpisodeCut,
@@ -53,6 +59,8 @@ export function cutToOmniclipState(
   const effects: OmniAnyEffect[] = []
   const orphans: CutClip[] = []
 
+  // Running edge of the laid-out track; advances by each clip's span so the next
+  // clip butts flush against it (no-gap invariant). Never sourced from the cut.
   let cursorMs = 0
   for (const clip of ordered) {
     const media = resolveMedia(clip.sourceShotId)
@@ -113,6 +121,10 @@ export function omniclipStateToCut(
   resolveSourceShotId: (fileHash: string) => string | undefined,
   nowIso: string,
 ): EpisodeCut {
+  // Derive `order` purely from on-track position (no-gap ripple invariant,
+  // openimago-4rdj): we sort by start_at_position and assign 0..N-1, so a user's
+  // dragged gap/overlap collapses to plain ordering — the absolute positions are
+  // discarded and never persisted. The next hydrate re-lays everything flush.
   const videoEffects = state.effects
     .filter((e): e is OmniVideoEffect => e.kind === 'video')
     .sort((a, b) => a.start_at_position - b.start_at_position)

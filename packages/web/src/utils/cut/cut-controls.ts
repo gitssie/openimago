@@ -49,6 +49,48 @@ export function transitionBoundaries(
   return boundaries
 }
 
+/** Whole ms per second — transition durations are still seconds (bd-A kept the
+ *  transition input on the seconds boundary); convert here for the ms total. */
+const MS_PER_S = 1000
+
+/**
+ * Effective length of the assembled timeline in integer ms (openimago-4rdj):
+ *
+ *   Σ(outPointMs − inPointMs)  −  Σ(transition overlap durationMs)
+ *
+ * The video track is a NO-GAP ripple: clip positions are derived from order +
+ * each clip's span, never persisted, so the raw timeline length is just the sum
+ * of clip spans. A transition on a boundary OVERLAPS the two clips it joins, so
+ * its duration is played once, not twice — it shortens the effective timeline by
+ * that overlap. Only transitions on a REAL boundary count: the afterClipId must
+ * be an existing clip that is NOT the last in order (a transition after the final
+ * clip — or after a clip that no longer exists — has nothing to overlap into).
+ *
+ * `CutTransition.durationSeconds` is still SECONDS (bd-A kept the transition input
+ * on the seconds boundary), so it is ×1000'd here. A 'cut' transition is
+ * instantaneous (duration 0) and naturally deducts nothing. The result is floored
+ * at 0 so a pathological over-long transition can never make the total negative.
+ * Pure + unit-tested.
+ */
+export function timelineEffectiveDurationMs(
+  clips: readonly CutClip[],
+  transitions: readonly CutTransition[],
+): number {
+  const ordered = [...clips].sort((a, b) => a.order - b.order)
+  const clipSumMs = ordered.reduce((sum, c) => sum + (c.outPointMs - c.inPointMs), 0)
+
+  // Clips that can ANCHOR a transition overlap: every clip except the last in
+  // order (matching transitionBoundaries' afterClipId set).
+  const boundaryClipIds = new Set(ordered.slice(0, -1).map((c) => c.id))
+
+  const overlapMs = transitions.reduce((sum, t) => {
+    if (!boundaryClipIds.has(t.afterClipId)) return sum
+    return sum + Math.round(t.durationSeconds * MS_PER_S)
+  }, 0)
+
+  return Math.max(0, clipSumMs - overlapMs)
+}
+
 /** How to drive omniclip's reactive zoom from a slider target. */
 export interface ZoomStepPlan {
   /** which action to call repeatedly: zoom_in, zoom_out, or neither. */

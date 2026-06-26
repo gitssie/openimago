@@ -1,9 +1,19 @@
 import { describe, it, expect } from 'vitest'
-import { transitionBoundaries, resolveBgmLabel, zoomSteps } from '../cut-controls'
+import {
+  transitionBoundaries,
+  resolveBgmLabel,
+  zoomSteps,
+  timelineEffectiveDurationMs,
+} from '../cut-controls'
 import type { CutClip, CutTransition, CutAudioRef } from '../cut-types'
 
 function clip(id: string, order: number): CutClip {
   return { id, sourceShotId: `shot_${id}`, inPointMs: 0, outPointMs: 1000, order }
+}
+
+/** Clip with an explicit ms span (out - in) for duration-sum tests. */
+function spanClip(id: string, order: number, inMs: number, outMs: number): CutClip {
+  return { id, sourceShotId: `shot_${id}`, inPointMs: inMs, outPointMs: outMs, order }
 }
 
 describe('transitionBoundaries', () => {
@@ -93,5 +103,65 @@ describe('zoomSteps', () => {
   it('spans the full slider range in whole steps', () => {
     // -13 → 2 over step 0.1 is 150 steps in
     expect(zoomSteps(-13, 2, 0.1)).toEqual({ direction: 'in', count: 150 })
+  })
+})
+
+describe('timelineEffectiveDurationMs (openimago-4rdj)', () => {
+  it('sums each clip span (outMs - inMs) when there are no transitions', () => {
+    const clips = [
+      spanClip('a', 0, 0, 2500), // 2500ms
+      spanClip('b', 1, 1000, 4000), // 3000ms
+    ]
+    expect(timelineEffectiveDurationMs(clips, [])).toBe(5500)
+  })
+
+  it('returns 0 for an empty cut', () => {
+    expect(timelineEffectiveDurationMs([], [])).toBe(0)
+  })
+
+  it('deducts a transition overlap, converting its durationSeconds to ms (bd-A seconds boundary)', () => {
+    const clips = [spanClip('a', 0, 0, 5000), spanClip('b', 1, 0, 5000)] // 10000ms total
+    // a 0.5s dissolve overlaps the a→b boundary → deduct 500ms.
+    const transitions: CutTransition[] = [{ afterClipId: 'a', kind: 'dissolve', durationSeconds: 0.5 }]
+    expect(timelineEffectiveDurationMs(clips, transitions)).toBe(9500)
+  })
+
+  it('deducts every boundary transition', () => {
+    const clips = [
+      spanClip('a', 0, 0, 4000),
+      spanClip('b', 1, 0, 4000),
+      spanClip('c', 2, 0, 4000),
+    ] // 12000ms total
+    const transitions: CutTransition[] = [
+      { afterClipId: 'a', kind: 'dissolve', durationSeconds: 0.5 }, // 500ms
+      { afterClipId: 'b', kind: 'fade', durationSeconds: 1 }, // 1000ms
+    ]
+    expect(timelineEffectiveDurationMs(clips, transitions)).toBe(12000 - 1500)
+  })
+
+  it("does not deduct a transition whose afterClipId is the LAST clip (no boundary to overlap)", () => {
+    const clips = [spanClip('a', 0, 0, 4000), spanClip('b', 1, 0, 4000)] // 8000ms
+    // 'b' is the last clip — a transition after it has nothing to overlap into.
+    const transitions: CutTransition[] = [{ afterClipId: 'b', kind: 'dissolve', durationSeconds: 0.5 }]
+    expect(timelineEffectiveDurationMs(clips, transitions)).toBe(8000)
+  })
+
+  it('does not deduct a transition whose afterClipId is not a clip at all', () => {
+    const clips = [spanClip('a', 0, 0, 4000), spanClip('b', 1, 0, 4000)] // 8000ms
+    const transitions: CutTransition[] = [{ afterClipId: 'ghost', kind: 'dissolve', durationSeconds: 1 }]
+    expect(timelineEffectiveDurationMs(clips, transitions)).toBe(8000)
+  })
+
+  it("treats a 'cut' transition as zero-overlap (instantaneous)", () => {
+    const clips = [spanClip('a', 0, 0, 4000), spanClip('b', 1, 0, 4000)] // 8000ms
+    const transitions: CutTransition[] = [{ afterClipId: 'a', kind: 'cut', durationSeconds: 0 }]
+    expect(timelineEffectiveDurationMs(clips, transitions)).toBe(8000)
+  })
+
+  it('never returns a negative total (overlaps capped at the clip sum)', () => {
+    const clips = [spanClip('a', 0, 0, 1000), spanClip('b', 1, 0, 1000)] // 2000ms
+    // an absurd 10s transition would over-deduct → floor at 0.
+    const transitions: CutTransition[] = [{ afterClipId: 'a', kind: 'dissolve', durationSeconds: 10 }]
+    expect(timelineEffectiveDurationMs(clips, transitions)).toBe(0)
   })
 })
