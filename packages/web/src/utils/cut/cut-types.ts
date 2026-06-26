@@ -13,6 +13,12 @@ export interface CutClip {
   inPointMs: number // integer ms (cut schema v2, openimago-23cr)
   outPointMs: number // integer ms (cut schema v2, openimago-23cr)
   order: number // 0-based position on the video track
+  /** Persisted snapshot of the source media's real length in integer ms
+   *  (openimago-lknv): the assembler writes it from the source shot's primary
+   *  video run; trim/split/hydrate clamp the range into [0, sourceDurationMs].
+   *  Optional — legacy v1 cuts migrated without a snapshot omit it (the upper
+   *  bound is then not enforced). */
+  sourceDurationMs?: number
 }
 
 export interface CutTransition {

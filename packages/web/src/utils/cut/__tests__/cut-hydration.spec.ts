@@ -45,6 +45,18 @@ describe('buildHydrationPayload', () => {
     ])
   })
 
+  it('clamps a clip whose trim exceeds its source-duration snapshot (openimago-lknv)', () => {
+    const overlong: EpisodeCut = {
+      ...cut,
+      clips: [
+        // out 9s > source 2.5s → out clamped to 2.5s; in floored at 0.
+        { id: 'c-a', sourceShotId: 'shot_1', inPointMs: -500, outPointMs: 9000, order: 0, sourceDurationMs: 2500 },
+      ],
+    }
+    const { clips } = buildHydrationPayload(overlong, (id) => source(id))
+    expect(clips[0]).toMatchObject({ inPointSeconds: 0, outPointSeconds: 2.5 })
+  })
+
   it('passes a null filmstrip through as null (whole-or-null preserved)', () => {
     const { clips } = buildHydrationPayload(cut, (id) => ({
       ...source(id),

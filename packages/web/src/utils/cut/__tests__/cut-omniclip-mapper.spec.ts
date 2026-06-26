@@ -42,6 +42,18 @@ describe('cut <-> omniclip mapper (production)', () => {
     expect(state.effects[1]).toMatchObject({ start: 1000, end: 4000, duration: 3000, start_at_position: 2500 })
   })
 
+  it('clamps a clip whose out point exceeds its source-duration snapshot (openimago-lknv)', () => {
+    const overlongCut: EpisodeCut = {
+      ...baseCut,
+      clips: [
+        // out 9000 > source 5000 → effect end clamped to 5000.
+        { id: 'clip-a', sourceShotId: 'shot_1', inPointMs: 0, outPointMs: 9000, order: 0, sourceDurationMs: 5000 },
+      ],
+    }
+    const { state } = cutToOmniclipState(overlongCut, resolveMedia)
+    expect(state.effects[0]).toMatchObject({ start: 0, end: 5000, duration: 5000 })
+  })
+
   it('round-trips back to EpisodeCut without losing schema-owned fields', () => {
     const { state } = cutToOmniclipState(baseCut, resolveMedia)
     const back = omniclipStateToCut(

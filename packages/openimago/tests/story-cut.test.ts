@@ -246,6 +246,41 @@ test("trimClip updates in/out points of one clip", async () => {
   expect(cut.clips[0].outPointMs).toBe(7000)
 })
 
+test("trimClip clamps an out point past the clip's sourceDurationMs snapshot (openimago-lknv)", async () => {
+  const token = await registerUser("cut9b", "cut9b@example.com")
+  const project = await createProject(token, "CutTest9b")
+  await seedCut(project.directory, [
+    { id: "c1", sourceShotId: "s1", inPointMs: 0, outPointMs: 8000, order: 0, sourceDurationMs: 8000 },
+  ])
+  // Request an out beyond the 8s source — accepted (200) but silently clamped to 8000.
+  const res = await req("PATCH", token, cutUrl(project.id, "ep_001", "/clips/c1"), {
+    inPointMs: 1000,
+    outPointMs: 12000,
+  })
+  expect(res.status).toBe(200)
+  const cut = await getCut(token, project.id)
+  expect(cut.clips[0].inPointMs).toBe(1000)
+  expect(cut.clips[0].outPointMs).toBe(8000)
+  // The snapshot survives the write.
+  expect(cut.clips[0].sourceDurationMs).toBe(8000)
+})
+
+test("splitClip carries sourceDurationMs onto both halves (openimago-lknv)", async () => {
+  const token = await registerUser("cut9c", "cut9c@example.com")
+  const project = await createProject(token, "CutTest9c")
+  await seedCut(project.directory, [
+    { id: "c1", sourceShotId: "s1", inPointMs: 0, outPointMs: 10000, order: 0, sourceDurationMs: 10000 },
+  ])
+  const res = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/c1/split"), {
+    atMs: 4000,
+    newClipId: "c1-split",
+  })
+  expect(res.status).toBe(200)
+  const cut = await getCut(token, project.id)
+  expect(cut.clips[0].sourceDurationMs).toBe(10000)
+  expect(cut.clips[1].sourceDurationMs).toBe(10000)
+})
+
 test("trimClip rejects inPoint >= outPoint", async () => {
   const token = await registerUser("cut10", "cut10@example.com")
   const project = await createProject(token, "CutTest10")

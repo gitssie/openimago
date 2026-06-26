@@ -15,6 +15,7 @@
 import type { CutClip, EpisodeCut } from './cut-types'
 import type { HydrateBgm, HydrateClip, HydrateFilmstrip, OmniTransition } from './fork-contract'
 import type { Filmstrip, ShotMediaSource } from './shot-media-resolver'
+import { clampClipRange } from './clamp-clip-range'
 
 const MS_PER_S = 1000
 
@@ -57,12 +58,27 @@ export function buildHydrationPayload(
       continue
     }
     liveClipIds.add(clip.id)
+    // Clamp the clip's range into [0, sourceDurationMs] so legacy/corrupt data
+    // still hydrates (openimago-lknv). Silent clamp + warn — never block a load.
+    const { inPointMs, outPointMs, clamped } = clampClipRange(
+      clip.inPointMs,
+      clip.outPointMs,
+      clip.sourceDurationMs,
+    )
+    if (clamped) {
+      console.warn('cut-hydration: clip range clamped to source bounds', {
+        clipId: clip.id,
+        requested: { inPointMs: clip.inPointMs, outPointMs: clip.outPointMs },
+        sourceDurationMs: clip.sourceDurationMs,
+        clamped: { inPointMs, outPointMs },
+      })
+    }
     clips.push({
       id: clip.id,
       url: media.url,
       name: media.name,
-      inPointSeconds: clip.inPointMs / MS_PER_S,
-      outPointSeconds: clip.outPointMs / MS_PER_S,
+      inPointSeconds: inPointMs / MS_PER_S,
+      outPointSeconds: outPointMs / MS_PER_S,
       filmstrip: toHydrateFilmstrip(media.filmstrip),
     })
   }

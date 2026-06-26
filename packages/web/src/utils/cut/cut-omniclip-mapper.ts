@@ -15,6 +15,7 @@ import type {
   OmniHistoricalState,
   OmniVideoEffect,
 } from './omniclip-state.types'
+import { clampClipRange } from './clamp-clip-range'
 
 /** Whole ms per second — only for the source raw-duration seconds→ms conversion. */
 const MS_PER_S = 1000
@@ -55,8 +56,21 @@ export function cutToOmniclipState(
   let cursorMs = 0
   for (const clip of ordered) {
     const media = resolveMedia(clip.sourceShotId)
-    const startMs = clip.inPointMs
-    const endMs = clip.outPointMs
+    // Enforce [inPointMs, outPointMs] ⊆ [0, sourceDurationMs] so legacy/corrupt
+    // ranges still load (openimago-lknv). Silent clamp + warn — never block.
+    const { inPointMs: startMs, outPointMs: endMs, clamped } = clampClipRange(
+      clip.inPointMs,
+      clip.outPointMs,
+      clip.sourceDurationMs,
+    )
+    if (clamped) {
+      console.warn('cut-omniclip-mapper: clip range clamped to source bounds', {
+        clipId: clip.id,
+        requested: { inPointMs: clip.inPointMs, outPointMs: clip.outPointMs },
+        sourceDurationMs: clip.sourceDurationMs,
+        clamped: { inPointMs: startMs, outPointMs: endMs },
+      })
+    }
     const durationMs = endMs - startMs
 
     if (!media) {

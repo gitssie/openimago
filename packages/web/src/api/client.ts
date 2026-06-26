@@ -271,6 +271,9 @@ export interface OpenimagoCutClip {
   inPointMs: number // integer ms (cut schema v2, openimago-23cr)
   outPointMs: number // integer ms (cut schema v2, openimago-23cr)
   order: number
+  /** Persisted source-length snapshot in integer ms (openimago-lknv); absent on
+   *  legacy v1 cuts migrated without it. */
+  sourceDurationMs?: number
 }
 
 export interface OpenimagoCutTransition {

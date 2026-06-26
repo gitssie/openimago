@@ -16,6 +16,9 @@ export function rawCutToEpisodeCut(raw: OpenimagoEpisodeCut | null): EpisodeCut 
     inPointMs: c.inPointMs,
     outPointMs: c.outPointMs,
     order: c.order,
+    // Carry the source-length snapshot through when present (openimago-lknv);
+    // legacy v1 cuts omit it.
+    ...(c.sourceDurationMs !== undefined ? { sourceDurationMs: c.sourceDurationMs } : {}),
   }))
 
   // Drop any transition whose kind isn't one we support (defensive — backend

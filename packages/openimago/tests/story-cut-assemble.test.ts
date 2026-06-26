@@ -202,6 +202,49 @@ test("assemble derives outPoint from run duration, then shot durationEstimate, t
   expect(byShot.s3.outPointMs).toBeGreaterThan(0) // default fallback (DEFAULT_ASSEMBLED_CLIP_MS)
 })
 
+test("assemble writes sourceDurationMs from the run duration (openimago-lknv)", async () => {
+  const token = await registerUser("asm4b", "asm4b@example.com")
+  const project = await createProject(token, "Asm4b")
+
+  await writeShots(project.directory, [
+    { id: "s1", shotNumber: 1, status: "generated", durationEstimate: 7 }, // no run duration → snapshot omitted
+    { id: "s2", shotNumber: 2, status: "generated", durationEstimate: 7 }, // run duration 5s → snapshot 5000ms
+  ])
+  await writeRuns(project.directory, [
+    completedRun("s1", "image"), // no duration
+    completedRun("s2", "video", 5),
+  ])
+
+  const res = await req("POST", token, assembleUrl(project.id, "ep_001"))
+  expect(res.status).toBe(200)
+  const cut = await getCut(token, project.id)
+  const byShot = Object.fromEntries(cut.clips.map((c: any) => [c.sourceShotId, c]))
+  // The snapshot is the REAL run length (5s → 5000ms), persisted on the clip.
+  expect(byShot.s2.sourceDurationMs).toBe(5000)
+  // No run duration → no snapshot (clamp later won't enforce an upper bound).
+  expect(byShot.s1.sourceDurationMs).toBeUndefined()
+})
+
+test("assemble takes sourceDurationMs from the VIDEO run when image + video both completed (openimago-lknv)", async () => {
+  const token = await registerUser("asm4c", "asm4c@example.com")
+  const project = await createProject(token, "Asm4c")
+
+  await writeShots(project.directory, [{ id: "s1", shotNumber: 1, status: "generated" }])
+  // image run completes LATER but the primary/playback run is the video run, so the
+  // snapshot must be the video run's duration (12s), not the image run's (3s).
+  await writeRuns(project.directory, [
+    { ...completedRun("s1", "video", 12), completedAt: "2026-06-08T10:00:00Z" },
+    { ...completedRun("s1", "image", 3), completedAt: "2026-06-08T11:00:00Z" },
+  ])
+
+  const res = await req("POST", token, assembleUrl(project.id, "ep_001"))
+  expect(res.status).toBe(200)
+  const cut = await getCut(token, project.id)
+  const s1 = cut.clips.find((c: any) => c.sourceShotId === "s1")
+  expect(s1.sourceDurationMs).toBe(12000)
+  expect(s1.outPointMs).toBe(12000)
+})
+
 test("assemble is idempotent-shaped: re-running replaces clips and bumps updatedAt", async () => {
   const token = await registerUser("asm5", "asm5@example.com")
   const project = await createProject(token, "Asm5")

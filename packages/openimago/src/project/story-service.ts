@@ -49,6 +49,50 @@ const DEFAULT_ASSEMBLED_CLIP_MS = 5000
 /** Run result media kinds that count as a clip's visual source (ADR 0006). */
 const VISUAL_RUN_KINDS = new Set(["image", "video"])
 
+/** Smallest legal clip span — a clip must cover at least 1ms of source. */
+const MIN_CLIP_SPAN_MS = 1
+
+/**
+ * Force a clip's [inMs, outMs] into [0, sourceDurationMs] with inMs < outMs,
+ * silently correcting any violation (openimago-lknv — Clamp: never block a write
+ * or refuse to load). Pure: returns the corrected integer-ms range plus `clamped`;
+ * the caller logs when `clamped` is true. Mirrors the web clampClipRange so the
+ * write path and the front-end read paths share the same invariant. When
+ * sourceDurationMs is missing/unusable the UPPER bound is not enforced (legacy v1
+ * cuts carry no snapshot), while in >= 0 and in < out are always enforced.
+ */
+function clampClipRange(
+  inMs: number,
+  outMs: number,
+  sourceDurationMs: number | null | undefined,
+): { inPointMs: number; outPointMs: number; clamped: boolean } {
+  const hasUpperBound =
+    typeof sourceDurationMs === "number" && Number.isFinite(sourceDurationMs) && sourceDurationMs > 0
+  const upper = hasUpperBound ? Math.round(sourceDurationMs) : Number.POSITIVE_INFINITY
+
+  let inPointMs = Number.isFinite(inMs) ? Math.round(inMs) : 0
+  let outPointMs = Number.isFinite(outMs)
+    ? Math.round(outMs)
+    : hasUpperBound
+      ? upper
+      : Math.round(Number.isFinite(inMs) ? inMs : 0)
+
+  if (inPointMs < 0) inPointMs = 0
+  if (inPointMs > upper) inPointMs = upper
+  if (outPointMs > upper) outPointMs = upper
+
+  if (outPointMs <= inPointMs) {
+    if (inPointMs + MIN_CLIP_SPAN_MS <= upper) {
+      outPointMs = inPointMs + MIN_CLIP_SPAN_MS
+    } else {
+      inPointMs = outPointMs - MIN_CLIP_SPAN_MS
+    }
+  }
+
+  const clamped = inPointMs !== inMs || outPointMs !== outMs
+  return { inPointMs, outPointMs, clamped }
+}
+
 // ── Mock generation helpers (ADR 0005 mock command) ───────────────────────────
 
 /** Stable, positive 32-bit FNV-1a hash (mirrors opencode mockImageProvider). */
@@ -282,6 +326,11 @@ export interface CutClip {
   inPointMs: number
   outPointMs: number
   order: number
+  /** Persisted snapshot of the source media's real length in integer ms
+   *  (openimago-lknv): written by assemble from the source shot's primary video
+   *  run; trim/split clamp the range into [0, sourceDurationMs]. Optional — legacy
+   *  v1 cuts migrated without a snapshot omit it (upper bound then not enforced). */
+  sourceDurationMs?: number
 }
 
 /** A transition that plays after a given clip. */
@@ -1028,14 +1077,20 @@ export class StoryService {
 
     const clips: CutClip[] = rawClips.map((c) => {
       if (version >= 2) {
-        // Already ms — pass the trim points through verbatim.
-        return {
+        // Already ms — pass the trim points through verbatim. sourceDurationMs is
+        // carried through when present; a v2 cut written before the snapshot field
+        // existed (openimago-lknv) simply omits it (upper bound not enforced).
+        const clip: CutClip = {
           id: String(c["id"] ?? ""),
           sourceShotId: String(c["sourceShotId"] ?? ""),
           inPointMs: Number(c["inPointMs"] ?? 0),
           outPointMs: Number(c["outPointMs"] ?? 0),
           order: Number(c["order"] ?? 0),
         }
+        if (typeof c["sourceDurationMs"] === "number" && Number.isFinite(c["sourceDurationMs"])) {
+          clip.sourceDurationMs = c["sourceDurationMs"]
+        }
+        return clip
       }
       // v1 → v2: round seconds × 1000 to whole ms.
       const legacy = c as unknown as LegacyCutClipV1
@@ -1242,7 +1297,22 @@ export class StoryService {
     const idx = cut.clips.findIndex((c) => c.id === clipId)
     if (idx < 0) return { error: { code: "NOT_FOUND", message: `Clip not found: ${clipId}` }, status: 404 }
 
-    const clips = cut.clips.map((c, i) => (i === idx ? { ...c, inPointMs, outPointMs } : c))
+    const target = cut.clips[idx]!
+    // Clamp the requested range into [0, sourceDurationMs] before storing so the
+    // persisted range never exceeds the source snapshot (openimago-lknv). Silent
+    // correction + warn — the input validation above already rejected malformed
+    // requests; this caps an over-long out against the clip's own source length.
+    const range = clampClipRange(inPointMs, outPointMs, target.sourceDurationMs)
+    if (range.clamped) {
+      logger.warn(
+        { projectId, episodeId, clipId, requested: { inPointMs, outPointMs }, sourceDurationMs: target.sourceDurationMs, clamped: range },
+        "story: trim range clamped to source bounds",
+      )
+    }
+
+    const clips = cut.clips.map((c, i) =>
+      i === idx ? { ...c, inPointMs: range.inPointMs, outPointMs: range.outPointMs } : c,
+    )
     const result = await this.writeCut(dir, relativePath, { ...cut, clips }, projectId)
     if ("error" in result) return result
     return { data: { updatedAt: result.updatedAt }, status: 200 }
@@ -1294,13 +1364,28 @@ export class StoryService {
       return { error: { code: "VALIDATION_ERROR", message: "newClipId already in use" }, status: 400 }
     }
 
-    const firstHalf: CutClip = { ...target, outPointMs: atMs }
+    // Both halves clamp into [0, sourceDurationMs] and inherit the source snapshot
+    // (openimago-lknv) so the range invariant survives the split.
+    const first = clampClipRange(target.inPointMs, atMs, target.sourceDurationMs)
+    const second = clampClipRange(atMs, target.outPointMs, target.sourceDurationMs)
+    if (first.clamped || second.clamped) {
+      logger.warn(
+        { projectId, episodeId, clipId, atMs, sourceDurationMs: target.sourceDurationMs },
+        "story: split halves clamped to source bounds",
+      )
+    }
+    const firstHalf: CutClip = {
+      ...target,
+      inPointMs: first.inPointMs,
+      outPointMs: first.outPointMs,
+    }
     const secondHalf: CutClip = {
       id: newClipId,
       sourceShotId: target.sourceShotId,
-      inPointMs: atMs,
-      outPointMs: target.outPointMs,
+      inPointMs: second.inPointMs,
+      outPointMs: second.outPointMs,
       order: 0,
+      ...(target.sourceDurationMs !== undefined ? { sourceDurationMs: target.sourceDurationMs } : {}),
     }
 
     const spliced = [...cut.clips.slice(0, idx), firstHalf, secondHalf, ...cut.clips.slice(idx + 1)]
@@ -1516,16 +1601,25 @@ export class StoryService {
     const runs: Record<string, unknown>[] =
       "error" in runsRead ? [] : Array.isArray(runsRead.data.runs) ? runsRead.data.runs : []
 
-    // Latest completed visual run per shot (later runs in the append-only log win).
-    const runByShot = new Map<string, { durationSeconds?: number }>()
+    // Per-shot PRIMARY run = the latest completed VIDEO run, else the latest
+    // completed visual (image) run — mirrors bd-B's primary/playback semantics
+    // (openimago-wa33) so the sourceDurationMs snapshot is taken from the run whose
+    // media actually plays, not an unrelated run. Later runs in the append-only log
+    // win within a kind; a video run always beats an image run for the same shot.
+    const runByShot = new Map<string, { durationSeconds?: number; isVideo: boolean }>()
     for (const run of runs) {
       if (String(run["status"] ?? "") !== "completed") continue
       const result = (run["result"] ?? {}) as Record<string, unknown>
-      if (!VISUAL_RUN_KINDS.has(String(result["kind"] ?? ""))) continue
+      const kind = String(result["kind"] ?? "")
+      if (!VISUAL_RUN_KINDS.has(kind)) continue
       const shotId = String(run["shotId"] ?? "")
       if (!shotId) continue
+      const isVideo = kind === "video"
+      // Do not let a later image run displace an already-chosen video run.
+      const existing = runByShot.get(shotId)
+      if (existing?.isVideo && !isVideo) continue
       const duration = typeof result["duration"] === "number" ? result["duration"] : undefined
-      runByShot.set(shotId, { durationSeconds: duration })
+      runByShot.set(shotId, { durationSeconds: duration, isVideo })
     }
 
     // One clip per shot with completed media, in shotNumber order.
@@ -1550,9 +1644,17 @@ export class StoryService {
         typeof shot["durationEstimate"] === "number" && shot["durationEstimate"] > 0
           ? (shot["durationEstimate"] as number)
           : undefined
-      const outPointMs =
+      // sourceDurationMs (openimago-lknv): the persisted snapshot of the primary
+      // run's REAL media length — set ONLY from an actual run duration (not the
+      // estimate/default fallbacks, which are guesses, not the true source length).
+      // Absent → omitted, so clamping later simply does not enforce an upper bound.
+      const sourceDurationMs =
         media.durationSeconds && media.durationSeconds > 0
           ? Math.round(media.durationSeconds * MS_PER_S)
+          : undefined
+      const outPointMs =
+        sourceDurationMs !== undefined
+          ? sourceDurationMs
           : shotEstimateSeconds !== undefined
             ? Math.round(shotEstimateSeconds * MS_PER_S)
             : DEFAULT_ASSEMBLED_CLIP_MS
@@ -1563,6 +1665,7 @@ export class StoryService {
         inPointMs: 0,
         outPointMs,
         order: clips.length,
+        ...(sourceDurationMs !== undefined ? { sourceDurationMs } : {}),
       })
     }
 
