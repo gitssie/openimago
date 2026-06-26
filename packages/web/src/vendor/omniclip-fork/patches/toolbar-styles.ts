@@ -42,22 +42,25 @@ import { GUTTER_PX } from './timeline-gutter'
 
 export const combinedToolbarStyles = css`
   :host {
-    /* Pin the bar to the top-LEFT of the timeline pane during BOTH axes of scroll.
-       The toolbar host is the FIRST child of ".timeline", which is ~3000px wide
-       (its ".timeline-relative" sets an explicit scroll width) and scrolls inside
-       the omni-timeline scrollport (:host overflow:scroll). We pin the host on
-       BOTH axes here (sticky + top:0 + left:0) so the whole bar stays put — top:0
-       holds it through the full vertical range; left:0 holds it through horizontal
-       scroll so it never drifts. (.tools below is ALSO sticky-left as a second
-       layer, belt-and-suspenders.) z-index lifts it above later-sibling scrolled
-       content (ruler indicator z-index:10, playhead, clips). Opaque bg prevents
-       bleed. */
+    /* VERTICAL pin only. sticky + top:0 holds the bar at the top of the scrollport
+       across the whole vertical range (the host's containing block is the
+       full-height ".timeline" column). The HORIZONTAL pin lives on .tools below, NOT
+       here — see the .toolbar note for why .tools now has a genuine ~3000px
+       containing block. z-index lifts the bar above later-sibling scrolled content
+       (ruler indicator z-index:10, playhead, clips); opaque bg prevents bleed.
+
+       display: BLOCK (not flex): a flex host makes ".toolbar" (its single item) size
+       to CONTENT on the horizontal axis (~1218px), which would make .tools's
+       containing block too narrow and release sticky-left mid-scroll → drift. As a
+       block host, the block-level ".toolbar" fills the host's full width (the host
+       stretches to ".timeline"'s ~3000px column width), so .tools pins across the
+       entire horizontal scroll — exactly like .track-header inside the 3000px
+       .timeline-relative. */
     position: sticky;
     top: 0;
-    left: 0;
     z-index: 20;
     background: var(--imago-bg-deep, #0a0a0f);
-    display: flex;
+    display: block;
     min-height: 46px;
     /* ".timeline" has padding-left: GUTTER_PX (the track-header gutter), which would
        start the toolbar host 60px in and shift the cluster's center off the visible
@@ -73,22 +76,28 @@ export const combinedToolbarStyles = css`
     --cut-time-current: var(--imago-text-primary, #e8e8ec);
   }
 
+  /* .toolbar is the CONTAINING BLOCK for the horizontally-sticky .tools, so it MUST
+     span the full ~3000px ".timeline" width (like ".track" does for ".track-header")
+     or sticky-left releases mid-scroll. As a block element under the block host it
+     fills the host's full width; width:100% makes that explicit. NOT display:flex —
+     flex would shrink it to content (~1218px) and reintroduce the drift. */
   .toolbar {
-    display: flex;
-    align-items: center;
+    display: block;
+    width: 100%;
     box-sizing: border-box;
   }
 
-  /* ONE control cluster, horizontally CENTERED in the VISIBLE pane. The view sets
-     an inline "width: <paneWidth>px" measured from the scrollport's clientWidth
-     (reliable, via ResizeObserver — the old inline offsetWidth read stale ~455 and
-     bunched the cluster left). With that width = the visible pane and
-     "justify-content: center", the cluster sits at the visual center. sticky +
-     left:0 pins the measured-width box to the scrollport's left edge — so it covers
-     exactly the visible pane (x 0..paneWidth) and never drifts on horizontal scroll
-     (a SECOND pin layer under the host's own sticky-left). We do NOT use margin:auto
-     — that would offset the box within the ~3000px host before sticky engages.
-     "max-width: 100%" guards the pre-measure frame (width:auto) from overflowing. */
+  /* ONE control cluster, horizontally CENTERED in the VISIBLE pane and pinned. The
+     view sets an inline "width: <paneWidth>px" measured from the scrollport's
+     clientWidth (reliable, via ResizeObserver — the old inline offsetWidth read
+     stale ~455 and bunched the cluster left). With that width = the visible pane and
+     "justify-content: center", the cluster sits at the visual center. The HORIZONTAL
+     pin is here and here only: "position: sticky; left: 0" pins the box to the
+     scrollport's left edge, and because its containing block (.toolbar) now genuinely
+     spans the full ~3000px ".timeline" width (see the .toolbar note), sticky-left
+     HOLDS across the entire horizontal scroll — exactly like ".track-header" inside
+     the 3000px ".timeline-relative". No margin:auto (it would offset the box before
+     sticky engages); "max-width: 100%" guards the pre-measure frame (width:auto). */
   .tools {
     position: sticky;
     left: 0;
