@@ -87,23 +87,25 @@ export const combinedToolbarStyles = css`
     box-sizing: border-box;
   }
 
-  /* ONE control cluster, horizontally CENTERED in the VISIBLE pane and pinned. The
-     view sets an inline "width: <paneWidth>px" measured from the scrollport's
-     clientWidth (reliable, via ResizeObserver — the old inline offsetWidth read
-     stale ~455 and bunched the cluster left). With that width = the visible pane and
-     "justify-content: center", the cluster sits at the visual center. The HORIZONTAL
-     pin is here and here only: "position: sticky; left: 0" pins the box to the
-     scrollport's left edge, and because its containing block (.toolbar) now genuinely
-     spans the full ~3000px ".timeline" width (see the .toolbar note), sticky-left
-     HOLDS across the entire horizontal scroll — exactly like ".track-header" inside
-     the 3000px ".timeline-relative". No margin:auto (it would offset the box before
-     sticky engages); "max-width: 100%" guards the pre-measure frame (width:auto). */
+  /* The bar SPREADS its three groups across the FULL visible pane (CapCut-style):
+     LEFT (.flex — undo/redo/split) at the far left, CENTER (.transport — timecode /
+     play) reads centered, RIGHT (.right — mute/fullscreen/zoom) at the far right.
+     "justify-content: space-between" does the spread; the view sets an inline
+     "width: <paneWidth>px" measured from the scrollport's clientWidth (reliable, via
+     ResizeObserver — the old inline offsetWidth read stale ~455) so the groups span
+     the visible width, not the ~3000px scroll content. The HORIZONTAL pin is here and
+     here only: "position: sticky; left: 0" pins the box to the scrollport's left
+     edge, and because its containing block (.toolbar) now genuinely spans the full
+     ~3000px ".timeline" width (see the .toolbar note), sticky-left HOLDS across the
+     entire horizontal scroll — exactly like ".track-header" inside the 3000px
+     ".timeline-relative". No margin:auto; "max-width: 100%" guards the pre-measure
+     frame (width:auto). */
   .tools {
     position: sticky;
     left: 0;
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
     box-sizing: border-box;
     max-width: 100%;
     gap: 0.75em;
