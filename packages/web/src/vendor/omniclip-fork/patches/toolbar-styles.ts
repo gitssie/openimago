@@ -62,12 +62,6 @@ export const combinedToolbarStyles = css`
     background: var(--imago-bg-deep, #0a0a0f);
     display: block;
     min-height: 46px;
-    /* ".timeline" has padding-left: GUTTER_PX (the track-header gutter), which would
-       start the toolbar host 60px in and shift the cluster's center off the visible
-       middle. The toolbar is chrome, not clip-aligned content, so cancel the gutter
-       with a matching negative margin → the bar spans the FULL visible pane (x 0..
-       clientWidth) and centers on the true middle. */
-    margin-left: -${GUTTER_PX}px;
     --transition: 0.2s;
     /* CURRENT timecode reads as bright neutral off-white — the UPDATED reference
        (docs/images/cut_panel.png) shows it brighter than the muted-grey total,
@@ -99,10 +93,20 @@ export const combinedToolbarStyles = css`
      ~3000px ".timeline" width (see the .toolbar note), sticky-left HOLDS across the
      entire horizontal scroll — exactly like ".track-header" inside the 3000px
      ".timeline-relative". No margin:auto; "max-width: 100%" guards the pre-measure
-     frame (width:auto). */
+     frame (width:auto).
+
+     ZERO pre-stick travel: ".timeline" has padding-left: GUTTER_PX, so .tools's
+     NATURAL (scroll=0) left edge would be at ~GUTTER_PX while its sticky THRESHOLD is
+     left:0 — for the first GUTTER_PX of scroll the bar moves with the content, then
+     snaps to x0 (the ~60px leftward jump the user saw). The cancel MUST be on the
+     sticky element's own flow, not just the host (the host's margin did not reach
+     .tools's flow origin). "margin-left: -GUTTER_PX" pulls .tools's static position to
+     viewport x0 so natural left == sticky threshold == 0 → the bar (and the split
+     icon) sits at the SAME x before and after scroll, like the track-header. */
   .tools {
     position: sticky;
     left: 0;
+    margin-left: -${GUTTER_PX}px;
     display: flex;
     align-items: center;
     justify-content: space-between;
