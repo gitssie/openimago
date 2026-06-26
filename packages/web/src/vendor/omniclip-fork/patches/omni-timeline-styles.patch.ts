@@ -26,18 +26,33 @@
 //     oldLeft+GUTTER. Both shift by GUTTER together → the mapping stays inverse, the
 //     playhead (also an absolute child of `.timeline-relative`) tracks too.
 //
-// RULER + TOOLBAR ALIGNMENT FOR FREE: `.time-ruler` and the toolbar are SIBLING
-// flex children of `.timeline` (a flex-direction:column). Padding the column left
-// shifts the ruler tick origin AND the toolbar by the SAME GUTTER, so the ticks
-// stay over the shifted clips and the toolbar stays over the clip area — no
-// per-view ruler patch needed.
+// STRUCTURE (openimago-jtub): the toolbar used to be a sibling INSIDE the scrolling
+// host, so zoom (which resizes `.timeline-relative`, e.g. 9544px) churned the scroll
+// geometry and kept breaking the toolbar pin. The forked component.js now wraps ONLY
+// the ruler + tracks in a new `.scroll-area`, with the Toolbar a plain bar OUTSIDE it:
 //
-// The header CHIP itself is pulled back into the opened 0..GUTTER band by
-// track-view.patch.ts (sticky, negative margin), so nothing overlaps the clips.
+//   :host (flex column, overflow:hidden)         ← no longer the scrollport
+//     .timeline (flex column, height:100%)
+//       Toolbar                                   ← plain full-width bar, not scrolling
+//       .scroll-area (flex:1; min-height:0; overflow:scroll; position:relative)  ← scrolls + grows with zoom
+//         TimeRuler
+//         .timeline-relative
 //
-// Importing the upstream module from HERE does NOT loop: the resolveId guard only
-// redirects imports whose importer is inside the omniclip package; this file lives
-// in src/, so its import resolves to real upstream.
+// So this patch:
+//   • moves `overflow:scroll` OFF `:host` (now `overflow:hidden`, flex column) and
+//     ONTO the new `.scroll-area`,
+//   • makes `.timeline` a full-height flex column,
+//   • MOVES the gutter `padding-left:GUTTER_PX` FROM `.timeline` TO `.scroll-area`.
+//
+// COORDINATE-MATH STILL SAFE: padding-left on `.scroll-area` moves `.timeline-relative`'s
+// ENTIRE border box right by GUTTER, so getBoundingClientRect().left AND the absolute
+// effects (left:0) shift together — the drag mapping stays inverse (the same argument
+// as before, just one box up). The TimeRuler reads scroll/bounds from `.scroll-area`
+// (time-ruler-view.patch.ts) so its ticks stay aligned. The TOOLBAR is now OUTSIDE
+// `.scroll-area`, so it is NOT shifted by the gutter and spans the full width.
+//
+// We RE-EXPORT upstream styles then APPEND overrides (same specificity, later in the
+// cascade → they win). Importing upstream from a src/ importer does NOT loop.
 //
 // BROWSER-ONLY (this dir is excluded from typecheck/lint).
 
@@ -45,18 +60,38 @@ import { css } from '@benev/slate'
 import { styles as upstreamStyles } from 'omniclip/x/components/omni-timeline/styles.js'
 import { GUTTER_PX } from './timeline-gutter'
 
-// Reserve the left gutter on the flex COLUMN. Parent padding moves the ruler,
-// `.timeline-relative` (and its absolute effects + drag bounds, in lockstep) and
-// the toolbar all right by the same amount — coordinate-math safe (see header).
-const gutterShift = css`
+// Restructure the scroll model: the host stops scrolling; the new `.scroll-area`
+// scrolls and carries the gutter. Appended AFTER upstream so these win the cascade.
+const restructure = css`
+  :host {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
   .timeline {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+
+  /* The ONLY scrolling element now: ruler + tracks scroll here and grow with zoom.
+     The gutter padding lives here (NOT on .timeline) so the ruler/clips keep the
+     60px gutter while the toolbar (outside this box) spans full width. */
+  .scroll-area {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: scroll;
+    position: relative;
     padding-left: ${GUTTER_PX}px;
   }
 `
 
-// Single combined export (the component passes THIS to use.styles). Upstream
-// first, gutter shift last.
+// Single combined export (the component passes THIS to use.styles). Upstream first,
+// restructure last so the overrides win.
 export const styles = css`
   ${upstreamStyles}
-  ${gutterShift}
+  ${restructure}
 `

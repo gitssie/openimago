@@ -22,16 +22,18 @@
 //
 // FIX (keyed off the shared GUTTER_PX — never hardcode):
 //   • STYLES: make `.time-ruler{position:relative}` so the absolute ticks resolve
-//     against `.time-ruler`'s OWN box. `.time-ruler` is a flex child of the padded
-//     `.timeline`, so its left edge is ALREADY at host.left + GUTTER_PX → ticks now
-//     land at +GUTTER_PX, exactly over their clips. We add NO padding-left here
-//     (that would double-count the shift). `.time-ruler` is a fixed-height,
-//     viewport-width flex child (it does NOT scroll horizontally — only
-//     `.timeline-relative` is wide and scrolls), so switching the positioning
-//     ancestor changes ONLY the left origin by GUTTER_PX, with no scroll
-//     double-count: the tick `offset`s already fold in `timeline.scrollLeft`.
+//     against `.time-ruler`'s OWN box. The ruler now lives inside `.scroll-area`,
+//     which carries the gutter padding-left:GUTTER_PX (openimago-jtub), so the
+//     ruler box already starts at +GUTTER_PX → ticks land over their clips. We add
+//     NO padding-left here (that would double-count the shift). The tick `offset`s
+//     already fold in the scroll-area's scrollLeft.
 //   • JS: subtract GUTTER_PX from the measured x so the indicator + seek map into
 //     the same +GUTTER_PX frame as the ticks/clips.
+//
+// SCROLL SOURCE (openimago-jtub): the host no longer scrolls — only `.scroll-area`
+// does. So all scroll reads (scrollLeft/clientWidth, the scroll listener) AND the
+// indicator/seek bounds come from `scrollEl = host.shadowRoot.querySelector('.scroll-area')`,
+// NOT the host.
 //
 // Everything else (timecode generation, zoom buckets, indicator visuals) is COPIED
 // VERBATIM from upstream — this is a faithful drop-in, only the two x-frame sites
@@ -74,14 +76,23 @@ export const TimeRuler = shadow_view((use) => (timeline: AnyTimeline) => {
   const [indicatorX, setIndicatorX] = use.state(0)
   const [indicator, setIndicator] = use.state(false)
 
+  // openimago-jtub: only `.scroll-area` scrolls now (NOT the host), so read all
+  // scroll geometry from it. `timeline` is the host (use.element); fall back to it
+  // if the scroll-area isn't found (defensive).
+  const scrollEl = (): AnyTimeline =>
+    (timeline as { shadowRoot?: { querySelector(s: string): AnyTimeline } }).shadowRoot?.querySelector(
+      '.scroll-area',
+    ) ?? timeline
+
   use.mount(() => {
+    const el = scrollEl()
     const set_time_codes = () => setTimeCodes(generate_time_codes(use.context.state.zoom))
     watch.track(
       () => use.context.state.zoom,
       (zoom: number) => setTimeCodes(generate_time_codes(zoom)),
     )
-    timeline.addEventListener('scroll', set_time_codes)
-    return () => timeline.removeEventListener('scroll', set_time_codes)
+    el.addEventListener('scroll', set_time_codes)
+    return () => el.removeEventListener('scroll', set_time_codes)
   })
 
   function convert_ms_to_timecode(milliseconds: number) {
@@ -124,9 +135,10 @@ export const TimeRuler = shadow_view((use) => (timeline: AnyTimeline) => {
   function generate_time_codes(zoom: number) {
     const time_codes: Array<{ time: string; offset: number; kind: string }> = []
     const ms = 1000 / use.context.state.timebase
+    const el = scrollEl()
     for (
-      let time_code = timeline.scrollLeft;
-      time_code <= timeline.scrollLeft + timeline.clientWidth;
+      let time_code = el.scrollLeft;
+      time_code <= el.scrollLeft + el.clientWidth;
       time_code += 5
     ) {
       const exact_time_code = time_code * Math.pow(2, -zoom)
@@ -199,8 +211,10 @@ export const TimeRuler = shadow_view((use) => (timeline: AnyTimeline) => {
     <div
       @pointerenter=${() => setIndicator(true)}
       @pointerleave=${() => setIndicator(false)}
-      @pointermove=${(e: PointerEvent) =>
-        setIndicatorX(e.clientX - timeline.getBoundingClientRect().left - GUTTER_PX + timeline.scrollLeft)}
+      @pointermove=${(e: PointerEvent) => {
+        const el = scrollEl()
+        setIndicatorX(e.clientX - el.getBoundingClientRect().left - GUTTER_PX + el.scrollLeft)
+      }}
       @click=${() => translate_to_timecode_and_set(indicatorX)}
       class="time-ruler"
     >

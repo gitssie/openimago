@@ -84,7 +84,12 @@ const ZOOM_MIN = -13
 const ZOOM_MAX = 2
 const ZOOM_STEP = 0.1
 
-export const Toolbar = shadow_view((use) => (timeline: HTMLElement) => {
+// The toolbar is a PLAIN, NON-SCROLLING full-width bar ABOVE the scroll area
+// (openimago-jtub). It lives OUTSIDE omni-timeline's `.scroll-area`, so it no longer
+// shares the clips' scroll/zoom geometry — all the prior sticky/paneWidth/margin pin
+// hacks are gone. `timeline` (the host) is still passed in and used only as the
+// fullscreen fallback target.
+export const Toolbar = shadow_view((use) => (_timeline: HTMLElement) => {
   use.styles(combinedToolbarStyles)
   use.watch(() => use.context.state)
   const actions = use.context.actions
@@ -92,16 +97,6 @@ export const Toolbar = shadow_view((use) => (timeline: HTMLElement) => {
   const zoom = state.zoom
   const controller = use.context.controllers.timeline
   const compositor = use.context.controllers.compositor
-
-  // VISIBLE pane width for the centered cluster. `timeline` is the <omni-timeline>
-  // host = the `overflow:scroll` SCROLLPORT, so its clientWidth is the VISIBLE inner
-  // width (NOT the ~3000px scroll content). We keep it in state and feed it from the
-  // ResizeObserver below (which fires AFTER layout settles and on every resize),
-  // because reading `timeline.offsetWidth` inline at first render was stale (~455
-  // before the 300px pane bound + construct layout finalized → cluster bunched
-  // left). 0 until measured → the cluster falls back to its content width, then
-  // snaps to the pane width on the first observer tick.
-  const [paneWidth, setPaneWidth] = use.state(0)
 
   // ── Master mute (real global mute; omniclip has no native API) ──────────────
   const [muted, setMuted] = use.state(false)
@@ -129,25 +124,11 @@ export const Toolbar = shadow_view((use) => (timeline: HTMLElement) => {
   }
 
   use.mount(() => {
-    // Measure the scrollport's VISIBLE width into state; only re-render when it
-    // actually changes (avoids a rerender loop and stale reads).
-    const measure = () => {
-      const w = timeline.clientWidth
-      if (w > 0 && w !== paneWidth) setPaneWidth(w)
-    }
-    const observer = new ResizeObserver(measure)
-    observer.observe(timeline)
-    // First layout may not be settled when mount runs (the 300px pane bound + the
-    // construct layout finalize a frame later) — measure on the next frame so the
-    // initial width is the real pane width, not a transient narrow value.
-    const raf = requestAnimationFrame(measure)
     // Re-apply the mute flag every animation frame WHILE PLAYING so it persists
     // as new clips start (currently_played_effects changes) and as video elements
     // swap — mirrors how media-player subscribes to on_playing.
     const unsubPlaying = compositor?.on_playing?.(() => applyMute(muted))
     return () => {
-      observer.disconnect()
-      cancelAnimationFrame(raf)
       unsubPlaying?.()
     }
   })
@@ -191,7 +172,7 @@ export const Toolbar = shadow_view((use) => (timeline: HTMLElement) => {
 
   return html`
     <div class="toolbar">
-      <div class=tools style=${paneWidth > 0 ? `width: ${paneWidth}px;` : ''}>
+      <div class=tools>
         <!-- LEFT: edit history + clip ops (unchanged from upstream). -->
         <div class=flex>
           <button @click=${() => controller.split(use.context.state)} class="split">${scissorsSvg}</button>

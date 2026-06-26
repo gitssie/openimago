@@ -9,59 +9,23 @@
 // the shadow boundary), no heavy glow (NO --imago-glow-*). The active play
 // affordance is the single cyan accent (mirrors StoryCutPanel's design note).
 //
-// NOTE on layout (CRITICAL): the omni-timeline :host is \`overflow: scroll\` and
-// the toolbar lives INSIDE that horizontally-scrollable container, whose CONTENT
-// width follows the full timeline length (e.g. ~2976px), NOT the visible pane.
-// So a child \`width:100%\` resolves to the scroll width and a \`space-between\` row
-// throws the center/right groups thousands of px off-screen. That is exactly why
-// upstream pinned the toolbar with \`position:fixed\` + an explicit px width.
+// LAYOUT (openimago-jtub): the toolbar is now a PLAIN, NON-SCROLLING full-width bar
+// rendered ABOVE omni-timeline's `.scroll-area` (only the ruler + tracks scroll). It
+// no longer shares the clips' scroll/zoom geometry, so ALL the prior pin hacks are
+// gone — no sticky, no paneWidth measuring, no margin-left:-GUTTER_PX. The host fills
+// the timeline width; the bar simply spreads its three groups with space-between.
 //
-// We instead pin \`.tools\` with \`position: sticky; left: 0\` (stays at the visible
-// left edge as the timeline scrolls) and take its width from the inline
-// \`width: <timeline.offsetWidth>px\` the view sets (the VISIBLE pane width). That
-// makes \`space-between\` spread left | center | right across the visible bar.
-//
-// VERTICAL PIN (openimago-xgoi): the omni-timeline :host is also VERTICALLY
-// scrollable, so the toolbar must pin to the top too or it scrolls away. The
-// element whose containing block is the full-height \`.timeline\` flex column is the
-// toolbar's OWN host element (it is a flex child of \`.timeline\`; \`.toolbar\`/\`.tools\`
-// inside the host shadow root are only one row tall, so a sticky-top on THEM would
-// unstick immediately). So the vertical pin goes on \`:host\`:
-// \`position: sticky; top: 0\` keeps the whole bar at the top of the scrollport
-// across the entire vertical range, while \`.tools{sticky; left:0}\` keeps it at the
-// left during horizontal scroll (nested sticky → bar stays top-left). The host is
-// the FIRST child of \`.timeline\`, so later siblings (ruler, .timeline-relative)
-// would paint over it — \`z-index\` lifts it above them (and above the ruler's
-// z-index:10 hover indicator / playhead). An OPAQUE background (flat \`--imago-bg-deep\`,
-// the lane/gutter family) stops scrolled clips/ruler bleeding through the bar.
-//
-// BROWSER-ONLY (imports @benev/slate \`css\`).
+// BROWSER-ONLY (imports @benev/slate `css`).
 
 import { css } from '@benev/slate'
-import { GUTTER_PX } from './timeline-gutter'
 
 export const combinedToolbarStyles = css`
   :host {
-    /* VERTICAL pin only. sticky + top:0 holds the bar at the top of the scrollport
-       across the whole vertical range (the host's containing block is the
-       full-height ".timeline" column). The HORIZONTAL pin lives on .tools below, NOT
-       here — see the .toolbar note for why .tools now has a genuine ~3000px
-       containing block. z-index lifts the bar above later-sibling scrolled content
-       (ruler indicator z-index:10, playhead, clips); opaque bg prevents bleed.
-
-       display: BLOCK (not flex): a flex host makes ".toolbar" (its single item) size
-       to CONTENT on the horizontal axis (~1218px), which would make .tools's
-       containing block too narrow and release sticky-left mid-scroll → drift. As a
-       block host, the block-level ".toolbar" fills the host's full width (the host
-       stretches to ".timeline"'s ~3000px column width), so .tools pins across the
-       entire horizontal scroll — exactly like .track-header inside the 3000px
-       .timeline-relative. */
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    background: var(--imago-bg-deep, #0a0a0f);
     display: block;
+    width: 100%;
+    box-sizing: border-box;
     min-height: 46px;
+    background: var(--imago-bg-deep, #0a0a0f);
     --transition: 0.2s;
     /* CURRENT timecode reads as bright neutral off-white — the UPDATED reference
        (docs/images/cut_panel.png) shows it brighter than the muted-grey total,
@@ -70,52 +34,22 @@ export const combinedToolbarStyles = css`
     --cut-time-current: var(--imago-text-primary, #e8e8ec);
   }
 
-  /* .toolbar is the CONTAINING BLOCK for the horizontally-sticky .tools, so it MUST
-     span the full ~3000px ".timeline" width (like ".track" does for ".track-header")
-     or sticky-left releases mid-scroll. As a block element under the block host it
-     fills the host's full width; width:100% makes that explicit. NOT display:flex —
-     flex would shrink it to content (~1218px) and reintroduce the drift. */
   .toolbar {
     display: block;
     width: 100%;
     box-sizing: border-box;
   }
 
-  /* The bar SPREADS its three groups across the FULL visible pane (CapCut-style):
-     LEFT (.flex — undo/redo/split) at the far left, CENTER (.transport — timecode /
-     play) reads centered, RIGHT (.right — mute/fullscreen/zoom) at the far right.
-     "justify-content: space-between" does the spread; the view sets an inline
-     "width: <paneWidth>px" measured from the scrollport's clientWidth (reliable, via
-     ResizeObserver — the old inline offsetWidth read stale ~455) so the groups span
-     the visible width, not the ~3000px scroll content. The HORIZONTAL pin is here and
-     here only: "position: sticky; left: 0" pins the box to the scrollport's left
-     edge, and because its containing block (.toolbar) now genuinely spans the full
-     ~3000px ".timeline" width (see the .toolbar note), sticky-left HOLDS across the
-     entire horizontal scroll — exactly like ".track-header" inside the 3000px
-     ".timeline-relative". No margin:auto; "max-width: 100%" guards the pre-measure
-     frame (width:auto).
-
-     ZERO pre-stick travel: ".timeline" has padding-left: GUTTER_PX, so .tools's
-     NATURAL (scroll=0) left edge would be at ~GUTTER_PX while its sticky THRESHOLD is
-     left:0 — for the first GUTTER_PX of scroll the bar moves with the content, then
-     snaps to x0 (the ~60px leftward jump the user saw). The cancel MUST be on the
-     sticky element's own flow, not just the host (the host's margin did not reach
-     .tools's flow origin). "margin-left: -GUTTER_PX" pulls .tools's static position to
-     viewport x0 so natural left == sticky threshold == 0 → the bar (and the split
-     icon) sits at the SAME x before and after scroll, like the track-header. */
+  /* One full-width bar; three groups spread LEFT (.flex — undo/redo/split) ·
+     CENTER (.transport — timecode/play) · RIGHT (.right — mute/fullscreen/zoom). */
   .tools {
-    position: sticky;
-    left: 0;
-    margin-left: -${GUTTER_PX}px;
     display: flex;
+    width: 100%;
     align-items: center;
     justify-content: space-between;
     box-sizing: border-box;
-    max-width: 100%;
     gap: 0.75em;
     padding: 6px 12px;
-    /* Opaque bar surface (matches the host) so scrolled clips/ruler never show
-       through the controls. */
     background: var(--imago-bg-deep, #0a0a0f);
   }
 

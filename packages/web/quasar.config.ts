@@ -430,6 +430,42 @@ function omniclipTimelineStylesPatch() {
 }
 
 /**
+ * Vite plugin: swap omniclip's omni-timeline COMPONENT for the fork's version that
+ * restructures the render tree so ONLY the ruler+tracks scroll — the toolbar becomes
+ * a plain bar above a new `.scroll-area` (openimago-jtub). omniclip imports the
+ * component as `import { OmniTimeline } from "./components/omni-timeline/component.js"`
+ * from get-components.js / main.js / index.js (all inside the omniclip package), so
+ * GATE on an omniclip importer + the `omni-timeline/component.js` SOURCE. The fork
+ * component re-imports the fork views + upstream deps from a src/ importer (NOT
+ * isOmniclipPackageImporter), so it is not redirected → no loop. NOTE: because the
+ * fork component imports the fork Toolbar/Track/TimeRuler/styles DIRECTLY, the older
+ * gates that keyed on the `omni-timeline/component.js` IMPORTER (toolbar/track/
+ * time-ruler/component-styles) no longer fire — they are harmless dead code now.
+ */
+function omniclipTimelineComponentPatch() {
+  const FORK_TIMELINE_COMPONENT = fileURLToPath(
+    new URL(
+      './src/vendor/omniclip-fork/patches/omni-timeline-component.patch.ts',
+      import.meta.url,
+    ),
+  );
+  return {
+    name: 'omniclip-timeline-component-patch',
+    enforce: 'pre' as const,
+    resolveId(source: string, importer?: string) {
+      if (
+        importer &&
+        isOmniclipPackageImporter(importer) &&
+        /(^|\/)omni-timeline\/component\.js$/.test(source)
+      ) {
+        return FORK_TIMELINE_COMPONENT;
+      }
+      return undefined;
+    },
+  };
+}
+
+/**
  * Vite plugin: swap omniclip's TIME-RULER view for the fork's version that aligns
  * the ruler with the gutter-shifted clips (openimago-scml). The gutter padding on
  * `.timeline` shifts the clips +GUTTER_PX, but the ruler ticks (absolute, resolving
@@ -672,6 +708,12 @@ export default defineConfig((ctx) => {
         // @benev/construct construct-editor/element.js importer + styles.css.js
         // source — a different package from every omniclip gate, so no cross-fire.
         viteConf.plugins.unshift(omniclipConstructEditorStylesPatch())
+        // Restructure the omni-timeline render tree (openimago-jtub): toolbar becomes
+        // a plain bar ABOVE a new `.scroll-area` that wraps the ruler+tracks, so only
+        // that area scrolls/zooms and the toolbar never jitters. Gated on an omniclip
+        // importer + the omni-timeline/component.js SOURCE (get-components/main/index
+        // import it), distinct from every per-view gate.
+        viteConf.plugins.unshift(omniclipTimelineComponentPatch())
       },
 
       vitePlugins: [
