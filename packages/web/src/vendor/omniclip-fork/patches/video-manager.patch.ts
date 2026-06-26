@@ -21,6 +21,18 @@
 // resolveId guard does NOT redirect → no loop) and override add_video_effect to
 // call super then cover-fit the freshly-created FabricImage.
 //
+// PLAYBACK-ONLY PREVIEW (openimago-s6ki): omniclip builds the fabric Canvas with
+// interactivity on (no selection:false; FabricImages have no selectable:false), so
+// the upper-canvas lets you DRAG/move the video object. The cut-editor preview is
+// playback-only, so we disable object targeting with the single global fabric lever
+// `canvas.skipTargetFind = true` (+ `selection = false`): fabric then ignores all
+// object hit-testing → no move cursor, no drag, no marquee select, but it still
+// renders + plays. Set here (idempotently, on the compositor's canvas) rather than
+// via a new controller patch — the flag is global, so one assignment covers the
+// whole preview; add_video_effect is the single per-clip creation point, a reliable
+// place the canvas already exists. Timeline clip selection is a SEPARATE mechanism
+// on the omni-timeline DOM and is unaffected.
+//
 // BROWSER-ONLY (this dir is excluded from typecheck/lint).
 
 import { VideoManager as UpstreamVideoManager } from 'omniclip/x/context/controllers/compositor/parts/video-manager.js'
@@ -125,9 +137,22 @@ function applyCoverFit(compositor: any, fabricVideo: any, element: HTMLVideoElem
   compositor?.canvas?.requestRenderAll?.()
 }
 
+/**
+ * Make the preview canvas playback-only: fabric ignores object targeting so the
+ * video can't be selected or dragged. Global + idempotent — assigning the flags
+ * again on every clip add is harmless.
+ */
+function disableCanvasInteraction(compositor: any): void {
+  const canvas = compositor?.canvas
+  if (!canvas) return
+  canvas.skipTargetFind = true
+  canvas.selection = false
+}
+
 export class VideoManager extends UpstreamVideoManager {
   add_video_effect(effect: any, file: any, recreate?: boolean): void {
     super.add_video_effect(effect, file, recreate)
+    disableCanvasInteraction((this as unknown as { compositor: any }).compositor)
     const fabricVideo: any = this.get(effect.id)
     const element = fabricVideo?.getElement?.() as HTMLVideoElement | undefined
     if (!fabricVideo || !element) return
