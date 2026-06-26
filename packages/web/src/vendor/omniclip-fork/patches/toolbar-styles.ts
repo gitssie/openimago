@@ -21,12 +21,35 @@
 // \`width: <timeline.offsetWidth>px\` the view sets (the VISIBLE pane width). That
 // makes \`space-between\` spread left | center | right across the visible bar.
 //
+// VERTICAL PIN (openimago-xgoi): the omni-timeline :host is also VERTICALLY
+// scrollable, so the toolbar must pin to the top too or it scrolls away. The
+// element whose containing block is the full-height \`.timeline\` flex column is the
+// toolbar's OWN host element (it is a flex child of \`.timeline\`; \`.toolbar\`/\`.tools\`
+// inside the host shadow root are only one row tall, so a sticky-top on THEM would
+// unstick immediately). So the vertical pin goes on \`:host\`:
+// \`position: sticky; top: 0\` keeps the whole bar at the top of the scrollport
+// across the entire vertical range, while \`.tools{sticky; left:0}\` keeps it at the
+// left during horizontal scroll (nested sticky → bar stays top-left). The host is
+// the FIRST child of \`.timeline\`, so later siblings (ruler, .timeline-relative)
+// would paint over it — \`z-index\` lifts it above them (and above the ruler's
+// z-index:10 hover indicator / playhead). An OPAQUE background (flat \`--imago-bg-deep\`,
+// the lane/gutter family) stops scrolled clips/ruler bleeding through the bar.
+//
 // BROWSER-ONLY (imports @benev/slate \`css\`).
 
 import { css } from '@benev/slate'
 
 export const combinedToolbarStyles = css`
   :host {
+    /* Pin the bar to the top-left of the timeline pane during BOTH axes of scroll.
+       sticky+top:0 on the host (whose containing block is the full-height
+       .timeline) holds it across the whole vertical range; .tools{sticky;left:0}
+       holds the horizontal. z-index lifts it above later-sibling scrolled content
+       (ruler indicator z-index:10, playhead, clips). Opaque bg prevents bleed. */
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--imago-bg-deep, #0a0a0f);
     display: flex;
     min-height: 46px;
     --transition: 0.2s;
@@ -56,6 +79,9 @@ export const combinedToolbarStyles = css`
     max-width: 100%;
     gap: 0.75em;
     padding: 6px 12px;
+    /* Opaque bar surface (matches the host) so scrolled clips/ruler never show
+       through the controls. */
+    background: var(--imago-bg-deep, #0a0a0f);
   }
 
   button {
