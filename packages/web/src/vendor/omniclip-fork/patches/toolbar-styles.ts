@@ -124,16 +124,13 @@ export const combinedToolbarStyles = css`
     color: var(--imago-neon-pink, #f13131);
   }
 
-  /* ── CENTER: transport + current/total time ── */
+  /* ── CENTER: current-time · play/pause · total-time (00:01 ▶ 01:04). The play
+     button is the centered emphasis; the two times sit SYMMETRIC around it via an
+     equal gap. ── */
   .transport {
     display: flex;
     align-items: center;
-    gap: 0.35em;
-  }
-
-  .transport .seek svg {
-    width: 18px;
-    height: 18px;
+    gap: 0.7em;
   }
 
   /* Play/pause: NEUTRAL white glyph on a SUBTLE filled disc (the UPDATED
@@ -154,24 +151,21 @@ export const combinedToolbarStyles = css`
     background: color-mix(in srgb, var(--imago-text-primary, #fff) 15%, transparent);
   }
 
-  .timecode {
-    display: flex;
-    align-items: baseline;
-    gap: 0.35em;
-    margin-left: 0.6em;
+  /* The two times flank the play button. Tabular-nums so the digits don't shift the
+     button off-center as the timecode ticks. Current reads bright neutral off-white,
+     total stays muted grey. */
+  .transport .current,
+  .transport .total {
     font-size: 12px;
     font-variant-numeric: tabular-nums;
-    color: var(--imago-text-faint, #888);
     white-space: nowrap;
   }
 
-  /* Current time reads bright neutral off-white; separator + total stay muted grey. */
-  .timecode .current {
+  .transport .current {
     color: var(--cut-time-current, #e8e8ec);
   }
 
-  .timecode .sep,
-  .timecode .total {
+  .transport .total {
     color: var(--imago-text-faint, #888);
   }
 

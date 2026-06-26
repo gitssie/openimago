@@ -71,7 +71,6 @@ import { combinedToolbarStyles } from './toolbar-styles'
 // 01:04"), replacing omniclip's convert_ms_to_hmsms (HH:MM:SS:FF).
 import {
   totalDurationMs,
-  nextBoundaryTimecode,
   formatTimecodeMs,
 } from 'src/utils/cut/toolbar-timecode'
 // Pure zoom-step planning (slider target → N reactive ±0.1 action calls). Tested
@@ -146,16 +145,6 @@ export const Toolbar = shadow_view((use) => (_timeline: HTMLElement) => {
 
   const total = totalDurationMs(state.effects)
 
-  /** Seek to the nearest clip boundary before / after the current timecode. */
-  const seek = (direction: -1 | 1) => {
-    const target = nextBoundaryTimecode(state.effects, state.timecode, direction)
-    if (target === null) return
-    // Pause while scrubbing so the seek sticks, then redraw at the new time.
-    if (state.is_playing) compositor.set_video_playing(false)
-    actions.set_timecode(target)
-    compositor.set_current_time_of_audio_or_video_and_redraw(true, target)
-  }
-
   /** Fullscreen the editor host (the player <figure> is in a sibling shadow root). */
   const toggleFullscreen = () => {
     const host =
@@ -182,13 +171,9 @@ export const Toolbar = shadow_view((use) => (_timeline: HTMLElement) => {
           <button @click=${() => use.context.clear_project()} class="clean">${cleanSvg}</button -->
         </div>
 
-        <!-- CENTER: playback transport + current / total time (combined bar). -->
+        <!-- CENTER: current-time · play/pause · total-time (00:01 ▶ 01:04). -->
         <div class="transport" role="group" aria-label="播放控制">
-          <button class="seek prev" aria-label="上一个片段" @click=${() => seek(-1)}>
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-              <path d="M7 6h2v12H7zM20 6v12L9.5 12z" />
-            </svg>
-          </button>
+          <span class="current" aria-label="当前时间">${formatTimecodeMs(state.timecode)}</span>
           <button
             class="playpause"
             aria-label=${state.is_playing ? '暂停' : '播放'}
@@ -197,16 +182,7 @@ export const Toolbar = shadow_view((use) => (_timeline: HTMLElement) => {
           >
             ${state.is_playing ? pauseSvg : playSvg}
           </button>
-          <button class="seek next" aria-label="下一个片段" @click=${() => seek(1)}>
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-              <path d="M15 6h2v12h-2zM4 6l10.5 6L4 18z" />
-            </svg>
-          </button>
-          <div class="timecode" aria-label="当前时间 / 总时长">
-            <span class="current">${formatTimecodeMs(state.timecode)}</span>
-            <span class="sep">/</span>
-            <span class="total">${formatTimecodeMs(total)}</span>
-          </div>
+          <span class="total" aria-label="总时长">${formatTimecodeMs(total)}</span>
         </div>
 
         <!-- RIGHT: master-mute · fullscreen · zoom-out · slider · zoom-in. -->
