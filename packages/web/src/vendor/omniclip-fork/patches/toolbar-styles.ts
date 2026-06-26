@@ -206,17 +206,63 @@ export const combinedToolbarStyles = css`
     color: var(--imago-text-faint, #888);
   }
 
-  /* ── RIGHT: fullscreen + zoom ── */
+  /* ── RIGHT: mute · fullscreen · zoom-out · slider · zoom-in ── */
   .right {
     display: flex;
     align-items: center;
     gap: 0.5em;
   }
 
+  /* Master-mute speaker: muted state reads as the theme pink (an "off" warning),
+     matching the flat look; the on state uses the standard muted button color. */
+  .mute[data-muted='true'],
+  .mute[data-muted='true']:hover:not([disabled]) {
+    color: var(--imago-neon-pink, #f13131);
+  }
+
   .zoom {
     display: flex;
     align-items: center;
-    gap: 0.1em;
+    gap: 0.25em;
+  }
+
+  /* Flat zoom slider sitting between the magnifier buttons. Thin neutral track,
+     small neutral thumb (cyan is reserved for the selected clip); tokens cross the
+     shadow boundary. Native appearance reset so it matches the bar chrome. */
+  .zoom-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 96px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--imago-border-soft, rgba(255, 255, 255, 0.14));
+    outline: none;
+    cursor: pointer;
+    margin: 0 2px;
+  }
+
+  .zoom-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    background: var(--imago-text-primary, #e8e8ec);
+    border: none;
+    cursor: pointer;
+  }
+
+  .zoom-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    background: var(--imago-text-primary, #e8e8ec);
+    border: none;
+    cursor: pointer;
+  }
+
+  .zoom-slider:focus-visible {
+    box-shadow: 0 0 0 2px var(--imago-border-cyan-active, rgba(0, 224, 255, 0.4));
   }
 
   @media (prefers-reduced-motion: reduce) {

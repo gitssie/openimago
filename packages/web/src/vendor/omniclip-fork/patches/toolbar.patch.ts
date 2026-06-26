@@ -32,11 +32,22 @@
 // click handlers, so existing behaviour/markup is unchanged. ADDED: transport +
 // current/total time + fullscreen + zoom in the same flex row.
 //
-// HONEST CONTROL SET: omniclip exposes no audio mute/volume capability and no
-// native prev/next, so we do NOT render a dead volume control. prev/next are real
-// SEEKS to the adjacent clip boundary (derived from the effects + set_timecode).
-// fullscreen requests it on the construct-editor host (the player <figure> is in a
-// sibling shadow root we cannot query from here).
+// HONEST CONTROL SET: every control is REAL — no dead affordances (openimago-sm9j).
+//   • prev/next are real SEEKS to the adjacent clip boundary (effects + set_timecode).
+//   • fullscreen requests it on the construct-editor host (the player <figure> is in
+//     a sibling shadow root we cannot query from here).
+//   • MASTER MUTE (speaker): omniclip has no native mute API (its media-player
+//     `isVideoMuted` state is declared but unused). We implement a real global mute
+//     by setting `.muted` on every preview HTMLMediaElement — the audio-manager Map
+//     (id → <audio>) and the video-manager Map (id → FabricImage; the <video> is
+//     `fabricImage.getElement()`, guarded to HTMLMediaElement since decoded-frame
+//     rendering can swap that element to a <canvas>). The flag is RE-APPLIED on the
+//     compositor's `on_playing` rAF tick so it persists as new clips start playing
+//     and as video elements swap — not just the set playing at toggle time.
+//   • ZOOM SLIDER: omniclip exposes only zoom_in/zoom_out (±0.1) and no set_zoom, so
+//     the slider reaches its target by calling those REACTIVE actions the right
+//     number of ±0.1 steps (pure `zoomSteps` in cut-controls.ts) — the only route
+//     that recomputes the ruler ticks + clip widths. The +/- buttons remain.
 //
 // BROWSER-ONLY (this dir is excluded from typecheck/lint).
 
@@ -63,6 +74,15 @@ import {
   nextBoundaryTimecode,
   formatTimecodeMs,
 } from 'src/utils/cut/toolbar-timecode'
+// Pure zoom-step planning (slider target → N reactive ±0.1 action calls). Tested
+// in cut-controls.spec.ts — the view stays a thin caller. (openimago-sm9j)
+import { zoomSteps } from 'src/utils/cut/cut-controls'
+
+// Zoom slider bounds — mirror upstream's clamps (the +/- buttons disable at
+// these) and state.zoom default (-3). step matches the zoom_in/zoom_out delta.
+const ZOOM_MIN = -13
+const ZOOM_MAX = 2
+const ZOOM_STEP = 0.1
 
 export const Toolbar = shadow_view((use) => (timeline: HTMLElement) => {
   use.styles(combinedToolbarStyles)
@@ -73,11 +93,54 @@ export const Toolbar = shadow_view((use) => (timeline: HTMLElement) => {
   const controller = use.context.controllers.timeline
   const compositor = use.context.controllers.compositor
 
+  // ── Master mute (real global mute; omniclip has no native API) ──────────────
+  const [muted, setMuted] = use.state(false)
+
+  /** Set `.muted` on every preview HTMLMediaElement (audio clips + preview video).
+   *  Guards the video-manager element since decoded-frame draws can swap it to a
+   *  <canvas> (no `.muted`). */
+  const applyMute = (flag: boolean) => {
+    const managers = compositor?.managers
+    if (!managers) return
+    for (const el of managers.audioManager.values()) {
+      if (el instanceof HTMLMediaElement) el.muted = flag
+    }
+    for (const fab of managers.videoManager.values()) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const el = (fab as any)?.getElement?.()
+      if (el instanceof HTMLMediaElement) el.muted = flag
+    }
+  }
+
+  const toggleMute = () => {
+    const next = !muted
+    setMuted(next)
+    applyMute(next)
+  }
+
   use.mount(() => {
     const observer = new ResizeObserver(() => use.rerender())
     observer.observe(timeline)
-    return () => observer.disconnect()
+    // Re-apply the mute flag every animation frame WHILE PLAYING so it persists
+    // as new clips start (currently_played_effects changes) and as video elements
+    // swap — mirrors how media-player subscribes to on_playing.
+    const unsubPlaying = compositor?.on_playing?.(() => applyMute(muted))
+    return () => {
+      observer.disconnect()
+      unsubPlaying?.()
+    }
   })
+
+  /** Drive the slider's target zoom through the REACTIVE zoom_in/zoom_out actions
+   *  (no set_zoom exists) so the ruler + clip widths recompute live. */
+  const onZoomSlider = (event: Event) => {
+    const target = Number((event.target as HTMLInputElement).value)
+    if (!Number.isFinite(target)) return
+    const plan = zoomSteps(state.zoom, target, ZOOM_STEP)
+    if (plan.direction === 'none') return
+    const step = plan.direction === 'in' ? actions.zoom_in : actions.zoom_out
+    for (let i = 0; i < plan.count; i++) step()
+  }
 
   const total = totalDurationMs(state.effects)
 
@@ -148,12 +211,43 @@ export const Toolbar = shadow_view((use) => (timeline: HTMLElement) => {
           </div>
         </div>
 
-        <!-- RIGHT: fullscreen + zoom (zoom unchanged from upstream). -->
+        <!-- RIGHT: master-mute · fullscreen · zoom-out · slider · zoom-in. -->
         <div class="right">
+          <button
+            class="mute"
+            aria-label=${muted ? '取消静音' : '静音'}
+            aria-pressed=${muted ? 'true' : 'false'}
+            data-muted=${muted ? 'true' : 'false'}
+            @click=${toggleMute}
+          >
+            ${muted
+              ? html`
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+                    <path d="M3 9v6h4l5 5V4L7 9H3z" />
+                    <path d="M16 9l4 4m0-4l-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                  </svg>
+                `
+              : html`
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+                    <path d="M3 9v6h4l5 5V4L7 9H3z" />
+                    <path d="M16 8.5a4 4 0 0 1 0 7M18.5 6a7 7 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                  </svg>
+                `}
+          </button>
           <button class="fs" aria-label="全屏" @click=${toggleFullscreen}>${fullscreenSvg}</button>
           <div class="zoom">
-            <button ?disabled=${zoom <= -13} @click=${actions.zoom_out} class="zoom-out" aria-label="缩小">${zoomOutSvg}</button>
-            <button ?disabled=${zoom >= 2} @click=${actions.zoom_in} class="zoom-in" aria-label="放大">${zoomInSvg}</button>
+            <button ?disabled=${zoom <= ZOOM_MIN} @click=${actions.zoom_out} class="zoom-out" aria-label="缩小">${zoomOutSvg}</button>
+            <input
+              class="zoom-slider"
+              type="range"
+              min=${ZOOM_MIN}
+              max=${ZOOM_MAX}
+              step=${ZOOM_STEP}
+              .value=${String(zoom)}
+              aria-label="缩放时间轴"
+              @input=${onZoomSlider}
+            />
+            <button ?disabled=${zoom >= ZOOM_MAX} @click=${actions.zoom_in} class="zoom-in" aria-label="放大">${zoomInSvg}</button>
           </div>
         </div>
       </div>

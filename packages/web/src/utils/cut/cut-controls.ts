@@ -49,6 +49,34 @@ export function transitionBoundaries(
   return boundaries
 }
 
+/** How to drive omniclip's reactive zoom from a slider target. */
+export interface ZoomStepPlan {
+  /** which action to call repeatedly: zoom_in, zoom_out, or neither. */
+  direction: 'in' | 'out' | 'none'
+  /** how many ±step action calls to reach (the nearest whole step to) target. */
+  count: number
+}
+
+/**
+ * Translate a desired absolute zoom (`target`) into a number of discrete
+ * ±`step` action calls from the `current` zoom. omniclip exposes only
+ * `zoom_in`/`zoom_out` (each mutates `state.zoom` by ±step through the reactive
+ * actions proxy) and NO `set_zoom`, so a slider must reach its target by calling
+ * the existing reactive actions the right number of times — that is the ONLY
+ * route that triggers the same reactivity (ruler ticks + clip widths recompute).
+ *
+ * The delta is rounded to the NEAREST whole step so float drift in `current`
+ * (e.g. -2.9999999 from accumulated ±0.1) and sub-step slider noise never produce
+ * fractional/endless calls. Pure + unit-tested so the browser-only toolbar view
+ * stays a thin caller.
+ */
+export function zoomSteps(current: number, target: number, step: number): ZoomStepPlan {
+  const raw = (target - current) / step
+  const count = Math.round(raw)
+  if (count === 0) return { direction: 'none', count: 0 }
+  return { direction: count > 0 ? 'in' : 'out', count: Math.abs(count) }
+}
+
 /** A minimal audio asset shape the BGM picker resolves names against. */
 export interface BgmAsset {
   id: string

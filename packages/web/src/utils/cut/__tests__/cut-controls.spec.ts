@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { transitionBoundaries, resolveBgmLabel } from '../cut-controls'
+import { transitionBoundaries, resolveBgmLabel, zoomSteps } from '../cut-controls'
 import type { CutClip, CutTransition, CutAudioRef } from '../cut-types'
 
 function clip(id: string, order: number): CutClip {
@@ -60,5 +60,38 @@ describe('resolveBgmLabel', () => {
     const bgm: CutAudioRef = { artifactId: 'art_2' }
     expect(resolveBgmLabel(bgm, [{ id: 'art_2', filename: 'bed.mp3' }])).toBe('bed.mp3')
     expect(resolveBgmLabel(bgm, [])).toBe('art_2')
+  })
+})
+
+describe('zoomSteps', () => {
+  it('steps OUT (negative) when the target is below the current zoom', () => {
+    // current -3, target -3.5, step 0.1 → 5 zoom_out calls
+    expect(zoomSteps(-3, -3.5, 0.1)).toEqual({ direction: 'out', count: 5 })
+  })
+
+  it('steps IN (positive) when the target is above the current zoom', () => {
+    // current -3, target -2.7, step 0.1 → 3 zoom_in calls
+    expect(zoomSteps(-3, -2.7, 0.1)).toEqual({ direction: 'in', count: 3 })
+  })
+
+  it('returns no steps when target equals current', () => {
+    expect(zoomSteps(-3, -3, 0.1)).toEqual({ direction: 'none', count: 0 })
+  })
+
+  it('rounds to the nearest whole step (no fractional action calls)', () => {
+    // a 0.04 delta is below half a step → snaps to 0 steps
+    expect(zoomSteps(-3, -2.96, 0.1)).toEqual({ direction: 'none', count: 0 })
+    // a 0.06 delta rounds up to 1 step
+    expect(zoomSteps(-3, -2.94, 0.1)).toEqual({ direction: 'in', count: 1 })
+  })
+
+  it('is robust to float drift in the current zoom (e.g. -2.9999999)', () => {
+    // accumulated +0.1 drift should still read as "at -3", 5 steps to -3.5
+    expect(zoomSteps(-2.9999999, -3.5, 0.1)).toEqual({ direction: 'out', count: 5 })
+  })
+
+  it('spans the full slider range in whole steps', () => {
+    // -13 → 2 over step 0.1 is 150 steps in
+    expect(zoomSteps(-13, 2, 0.1)).toEqual({ direction: 'in', count: 150 })
   })
 })
