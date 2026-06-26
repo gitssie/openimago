@@ -49,6 +49,19 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
   const media = use.context.controllers.media
   const compositor = use.context.controllers.compositor
 
+  // Re-render this view when the timeline state changes (openimago-8ho9). A SPLIT
+  // mutates the original effect's `end` (set_effect_end) and adds a new effect.
+  // Without subscribing, this outer view kept a STALE `effect`, so the filmstrip
+  // (and the geometry we pass to the inner Effect span) didn't follow the split —
+  // span and filmstrip disagreed (wide empty span + short strip, gap between clips).
+  use.watch(() => use.context.state)
+
+  // ONE geometry source for BOTH the span and the filmstrip: the LIVE effect from
+  // state (post-split end/start), falling back to the passed arg before it lands in
+  // state. Passing this same object to the inner Effect view keeps the rendered span
+  // width and the filmstrip tile count in lockstep.
+  const live = use.context.state.effects.find((e) => e.id === effect.id) ?? effect
+
   // Compose the clip into the WebCodecs preview compositor when its media lands.
   // (Same trigger as upstream; the filmstrip recalc that used to follow is gone.)
   use.mount(() => {
@@ -83,18 +96,17 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
   //     (background-size-x = frameCount*100%, background-position-x = 0 —
   //     filmstrip-sprite-css). Tile is 9:16 and the frame is 9:16 → no distortion.
   const render_filmstrip = () => {
-    const get_effect = use.context.state.effects.find((e) => e.id === effect.id) ?? effect
-
-    const spriteUrl = get_effect.filmstrip_url
-    const frameCount = get_effect.filmstrip_frame_count
+    const spriteUrl = live.filmstrip_url
+    const frameCount = live.filmstrip_frame_count
     // No sprite (orphan / pre-78m9 data) → flat lane, no broken images.
     if (!spriteUrl || !frameCount || frameCount < 1) {
       return html`<div class="filmstrip"></div>`
     }
 
-    // Effect's real rendered width via the upstream zoom formula, then how many
-    // fixed-width tiles cover it. 0 width → empty lane (never NaN tiles).
-    const widthPx = effectWidthPx(get_effect.start, get_effect.end, use.context.state.zoom)
+    // Effect's real rendered width via the upstream zoom formula (SAME live start/end
+    // the inner Effect span uses), then how many fixed-width tiles cover it. 0 width →
+    // empty lane (never NaN tiles).
+    const widthPx = effectWidthPx(live.start, live.end, use.context.state.zoom)
     const tileCount = filmstripTileCount(widthPx, FILMSTRIP_TILE_W, MAX_CELLS)
     if (tileCount < 1) {
       return html`<div class="filmstrip"></div>`
@@ -124,7 +136,7 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
 
   return html`${Effect([
     timeline,
-    effect,
+    live,
     html`${render_filmstrip()}`,
     css`
       .content {
