@@ -35,6 +35,7 @@ import {
 } from './capabilities/clip-menu'
 import { setTransition, clearTransition, readTransitions } from './capabilities/transitions'
 import { onEdit } from './capabilities/on-edit'
+import { onSelectionChange } from './capabilities/selection'
 
 // ── Two-panel editor layout: video preview player ON TOP of the timeline ──────
 // (openimago-h8v6) omniclip's main.js setupContext() hardcodes the layout to
@@ -51,16 +52,18 @@ import { onEdit } from './capabilities/on-edit'
 // (sizing_styles: `flex:0 0 <size>%`); a null size on the last pane → `flex:1 1
 // auto` fills the remainder.
 //
-// PLAYER SHARE (openimago-ypxq): the preview is a portrait 9:16 figure, so its
-// WIDTH is bound by the player leaf HEIGHT (width = height × 9/16). At the old
-// 62% the preview read far narrower than the canonical (docs/images/cut_panel.png,
-// where the preview is ~26% of the editor width). Raising the player pane's
-// vertical share to 74% grows the leaf height → the 9:16 preview widens to ~24% of
-// the editor, matching the image, while the timeline pane keeps ~26% — enough for
-// the filmstrip + BGM lane. This is the construct split lever (a flex-basis %),
-// not a deep upstream rewrite. Tuned with the figure-margin trim in
+// PANE SIZING (openimago-hamw, supersedes the ypxq 74% player share): the TIMELINE
+// pane is bounded to a FIXED height (TIMELINE_PANE_PX, in
+// construct-editor-styles.patch.ts) via CSS, because construct's `size` lever only
+// emits a flex-basis PERCENT and a percent of the (tall) editor host left the
+// timeline unbounded — tracks floated in empty space and omni-timeline's
+// overflow:scroll scrolled the ruler/clips away. So BOTH panes here use `size:null`
+// (→ inline `flex:1 1 auto`); the CSS patch then forces ONLY the timeline pane to
+// `flex:0 0 TIMELINE_PANE_PX` (with !important to beat the inline flex), and the
+// PLAYER pane keeps `flex:1 1 auto` and FLEXES to fill the remaining height above
+// it — the 9:16 preview (width = leaf height × 9/16) stays flexible, as large as
+// the space allows, NOT boxed. Tuned with the figure-margin trim in
 // media-player-styles.patch.ts.
-const PLAYER_PANE_PERCENT = 74
 
 function twoPanelLayout() {
   return () => ({
@@ -72,13 +75,16 @@ function twoPanelLayout() {
       {
         id: freshId(),
         kind: 'pane',
-        size: PLAYER_PANE_PERCENT,
+        // Player flexes to fill the height ABOVE the fixed timeline pane.
+        size: null,
         active_leaf_index: 0,
         children: [{ id: freshId(), kind: 'leaf', panel: 'MediaPlayerPanel' }],
       },
       {
         id: freshId(),
         kind: 'pane',
+        // Nominally flex; the construct-editor-styles patch pins this pane (the one
+        // hosting <omni-timeline>) to TIMELINE_PANE_PX so the leaf is exactly that tall.
         size: null,
         active_leaf_index: 0,
         children: [{ id: freshId(), kind: 'leaf', panel: 'TimelinePanel' }],
@@ -136,6 +142,7 @@ export const omniclipFork: OmniclipForkApi = {
   clearTransition,
   readTransitions,
   onEdit,
+  onSelectionChange,
   themeVars: OMNI_THEME_VARS,
 }
 

@@ -126,6 +126,43 @@ function isOmniclipPackageImporter(importer: string): boolean {
 }
 
 /**
+ * Vite plugin: bound the cut-editor's TIMELINE pane to a fixed height
+ * (openimago-hamw). construct's `size` lever only emits a flex-basis PERCENT, so a
+ * fixed-px bound has to come from CSS. construct-editor is a slate shadow_component
+ * that does `use.styles(styles)` from `./styles.css.js`; the fork patch re-exports
+ * those upstream styles + appends `.pane:has(omni-timeline){flex:0 0 300px}` so the
+ * timeline pane/leaf is exactly 300px tall (the player pane flexes to fill above).
+ * GATE on the importer being construct-editor/element.js + the styles.css.js source
+ * so we redirect ONLY element.js's `styles` import (the resize util that pulls
+ * `size_of_resize_handle_in_rem` from the same module via `../../styles.css.js`
+ * keeps real upstream). The fork patch's own re-import comes from a src/ importer
+ * (not construct-editor/element.js) → not redirected, no loop.
+ */
+function omniclipConstructEditorStylesPatch() {
+  const FORK_CONSTRUCT_STYLES = fileURLToPath(
+    new URL(
+      './src/vendor/omniclip-fork/patches/construct-editor-styles.patch.ts',
+      import.meta.url,
+    ),
+  );
+  return {
+    name: 'omniclip-construct-editor-styles-patch',
+    enforce: 'pre' as const,
+    resolveId(source: string, importer?: string) {
+      if (
+        importer &&
+        /node_modules\/@benev\/construct\//.test(importer) &&
+        /construct-editor\/element\.js/.test(importer) &&
+        /(^|\/)styles\.css\.js$/.test(source)
+      ) {
+        return FORK_CONSTRUCT_STYLES;
+      }
+      return undefined;
+    },
+  };
+}
+
+/**
  * Vite plugin: swap omniclip's clip/effect shadow-DOM styles for the fork's
  * imago-themed ones (openimago-fhnz). omniclip's effect view does
  * `use.styles([..., styles])` from
@@ -628,6 +665,13 @@ export default defineConfig((ctx) => {
         // Gated on the omni-timeline/component.js importer + views/time-ruler/view.js
         // source, distinct from every other gate so none cross-fire.
         viteConf.plugins.unshift(omniclipTimeRulerViewPatch())
+        // Bound the TIMELINE pane to a fixed 300px height (openimago-hamw) so the
+        // omni-timeline stops filling the editor and scrolling the ruler/clips away.
+        // construct's `size` is percent-only, so this is a CSS lever injected into
+        // the construct-editor shadow root (where .pane/.leaf live). Gated on the
+        // @benev/construct construct-editor/element.js importer + styles.css.js
+        // source — a different package from every omniclip gate, so no cross-fire.
+        viteConf.plugins.unshift(omniclipConstructEditorStylesPatch())
       },
 
       vitePlugins: [

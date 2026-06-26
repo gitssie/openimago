@@ -47,8 +47,9 @@ const imagoOverrides = css`
     align-self: center;
     /* Trim upstream's 1em figure margin (openimago-ypxq): since the preview is
        bound by the leaf HEIGHT, ~32px of vertical margin shrank the 9:16 width. A
-       small symmetric margin reclaims that height so the preview reads larger,
-       paired with the raised PLAYER_PANE_PERCENT in index.ts. */
+       small symmetric margin reclaims that height so the preview reads larger. The
+       player pane now FLEXES to fill the height above the fixed 300px timeline pane
+       (openimago-hamw, replacing the old PLAYER_PANE_PERCENT split). */
     margin: 4px auto;
   }
   .canvas-container {
