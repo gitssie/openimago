@@ -108,6 +108,51 @@ describe('classifyEffectDiff — split', () => {
       newClipId: 'a-2',
     })
   })
+
+  it('atSeconds is ABSOLUTE SOURCE TIME when timeline position != source start (openimago-3xbg)', () => {
+    // Live regression: omniclip's split keeps `start`/`end` in SOURCE coords and
+    // `start_at_position` in TIMELINE coords. A clip that is not first has
+    // start_at_position != start (e.g. s02: source [0,15069]ms placed at timeline
+    // 15069ms). Splitting it mid-clip must report atSeconds as the SOURCE split
+    // time (newEffect.start / 1000), NOT the timeline position — the backend's
+    // splitClip requires atSeconds ∈ (inPoint, outPoint) in source seconds.
+    const a = [
+      vfx({ id: 's1', file_hash: 'h1', start: 0, end: 15069, start_at_position: 0 }),
+      vfx({ id: 's2', file_hash: 'h2', start: 0, end: 15069, start_at_position: 15069 }),
+    ]
+    // Split s2 at timeline 18720 → source split 18720 - 15069 = 3651ms = 3.651s.
+    const b = [
+      vfx({ id: 's1', file_hash: 'h1', start: 0, end: 15069, start_at_position: 0 }),
+      vfx({ id: 's2', file_hash: 'h2', start: 0, end: 3651, start_at_position: 15069 }),
+      vfx({ id: 's2-new', file_hash: 'h2', start: 3651, end: 15069, start_at_position: 18720 }),
+    ]
+    expect(classifyEffectDiff(a, b)).toEqual({
+      kind: 'split',
+      clipId: 's2',
+      atSeconds: 3.651,
+      newClipId: 's2-new',
+    })
+  })
+
+  it('a concurrent late-hydration add + split is NOT misclassified as a destructive edit (openimago-3xbg)', () => {
+    // Live root cause: on-edit subscribed to gestures BEFORE hydration finished,
+    // so its baseline could be missing a still-importing clip. When a user split
+    // landed in the same commit window as the late import, the diff saw TWO added
+    // effects (the late clip + the split half) against a stale baseline. That must
+    // NEVER be reported as a trim/reorder/delete (which would corrupt the cut) —
+    // the safe outcome is null. (The real fix subscribes after hydration completes
+    // so this collision cannot happen; this locks the diff's safe fallback.)
+    const a = [
+      vfx({ id: 's1', file_hash: 'h1', start: 0, end: 6840, start_at_position: 0 }),
+      // baseline is missing the still-importing 's2'.
+    ]
+    const b = [
+      vfx({ id: 's1', file_hash: 'h1', start: 0, end: 6840, start_at_position: 0 }),
+      vfx({ id: 's2', file_hash: 'h2', start: 0, end: 15069, start_at_position: 6840 }),
+      vfx({ id: 's1-new', file_hash: 'h1', start: 6840, end: 15069, start_at_position: 6840 }),
+    ]
+    expect(classifyEffectDiff(a, b)).toBeNull()
+  })
 })
 
 describe('classifyEffectDiff — delete', () => {
