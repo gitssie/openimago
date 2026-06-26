@@ -18,10 +18,18 @@
 //   :host (flex column, overflow:hidden)        — omni-timeline-styles.patch.ts
 //     .timeline (flex column, height:100%)
 //       Toolbar                                  ← plain full-width bar, NOT scrolling
-//       .scroll-area (flex:1; min-height:0; overflow:scroll; position:relative)
-//         TimeRuler
-//         .timeline-relative (width = calculate_timeline_width)
-//           Playhead / tracks / effects / ProposalIndicator
+//       .scroll-area (flex:1; min-height:0; overflow:scroll; position:relative; NO padding)
+//         .timeline-inner (padding-left: GUTTER_PX)   ← the gutter lives HERE, not on
+//           TimeRuler                                 the scroll container, so the
+//           .timeline-relative (width = calculate_timeline_width)   track-header sticky
+//             Playhead / tracks / effects / ProposalIndicator        left:0 anchors at x0
+//
+// WHY .timeline-inner (openimago-jo5q): the track-header chip pins into the gutter via
+// `sticky; left:0; margin-left:-GUTTER_PX`, which anchors at the SCROLL CONTAINER's
+// content edge. If the scroll container itself is padded, left:0 anchors at +GUTTER
+// and the icon column is indented. So the scroll container (.scroll-area) stays
+// UNPADDED and the GUTTER_PX shift lives on the inner wrapper (parent of
+// .timeline-relative) — same coordinate-math as the original `.timeline` padding.
 //
 // FAITHFUL: every handler (playhead_drag_over / effect_drag_over / augmented_dragover),
 // render_tracks, render_effects, the StateHandler wrapper, and the use.mount dragover
@@ -128,12 +136,14 @@ export const OmniTimeline = shadow_component((use) => {
       <div class="timeline">
         ${Toolbar([use.element])}
         <div class="scroll-area">
-          ${TimeRuler([use.element])}
-          <div
-            style="width: ${calculate_timeline_width(state.effects, state.zoom)}px"
-            class="timeline-relative"
-          >
-            ${Playhead([])} ${render_tracks()} ${render_effects()} ${ProposalIndicator()}
+          <div class="timeline-inner">
+            ${TimeRuler([use.element])}
+            <div
+              style="width: ${calculate_timeline_width(state.effects, state.zoom)}px"
+              class="timeline-relative"
+            >
+              ${Playhead([])} ${render_tracks()} ${render_effects()} ${ProposalIndicator()}
+            </div>
           </div>
         </div>
       </div>

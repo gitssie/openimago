@@ -34,22 +34,30 @@
 //   :host (flex column, overflow:hidden)         ← no longer the scrollport
 //     .timeline (flex column, height:100%)
 //       Toolbar                                   ← plain full-width bar, not scrolling
-//       .scroll-area (flex:1; min-height:0; overflow:scroll; position:relative)  ← scrolls + grows with zoom
-//         TimeRuler
-//         .timeline-relative
+//       .scroll-area (flex:1; min-height:0; overflow:scroll; position:relative; NO padding)  ← scrolls + grows with zoom
+//         .timeline-inner (padding-left: GUTTER_PX)   ← gutter lives here, not on the scroll container
+//           TimeRuler
+//           .timeline-relative
 //
 // So this patch:
 //   • moves `overflow:scroll` OFF `:host` (now `overflow:hidden`, flex column) and
-//     ONTO the new `.scroll-area`,
+//     ONTO the new `.scroll-area` (UNPADDED),
 //   • makes `.timeline` a full-height flex column,
-//   • MOVES the gutter `padding-left:GUTTER_PX` FROM `.timeline` TO `.scroll-area`.
+//   • puts the gutter `padding-left:GUTTER_PX` on `.timeline-inner` (the inner wrapper,
+//     parent of `.timeline-relative`) — NOT on `.scroll-area`.
 //
-// COORDINATE-MATH STILL SAFE: padding-left on `.scroll-area` moves `.timeline-relative`'s
-// ENTIRE border box right by GUTTER, so getBoundingClientRect().left AND the absolute
-// effects (left:0) shift together — the drag mapping stays inverse (the same argument
-// as before, just one box up). The TimeRuler reads scroll/bounds from `.scroll-area`
-// (time-ruler-view.patch.ts) so its ticks stay aligned. The TOOLBAR is now OUTSIDE
-// `.scroll-area`, so it is NOT shifted by the gutter and spans the full width.
+// WHY NOT pad `.scroll-area` (openimago-jo5q): the track-header chip pins into the
+// gutter with `sticky; left:0; margin-left:-GUTTER_PX`, which anchors at the SCROLL
+// CONTAINER's content edge. Padding the scroll container pushes that anchor to +GUTTER
+// → the icon column indents ~60px instead of sitting flush-left. So the scroll
+// container stays UNPADDED and the shift lives on `.timeline-inner`.
+//
+// COORDINATE-MATH STILL SAFE: padding-left on `.timeline-inner` (the parent of
+// `.timeline-relative`) moves `.timeline-relative`'s ENTIRE border box right by GUTTER,
+// so getBoundingClientRect().left AND the absolute effects (left:0) shift together —
+// the drag mapping stays inverse (same as the original `.timeline` padding). The
+// TimeRuler is also inside `.timeline-inner`, so its ticks shift +GUTTER with the clips
+// and stay aligned. The TOOLBAR is OUTSIDE `.scroll-area`, NOT shifted, spans full width.
 //
 // We RE-EXPORT upstream styles then APPEND overrides (same specificity, later in the
 // cascade → they win). Importing upstream from a src/ importer does NOT loop.
@@ -78,13 +86,24 @@ const restructure = css`
   }
 
   /* The ONLY scrolling element now: ruler + tracks scroll here and grow with zoom.
-     The gutter padding lives here (NOT on .timeline) so the ruler/clips keep the
-     60px gutter while the toolbar (outside this box) spans full width. */
+     It must have NO padding (openimago-jo5q): the track-header chip pins into the
+     gutter with sticky left:0 + margin-left:-GUTTER_PX, which anchors at the SCROLL
+     CONTAINER's content edge — padding here would push that anchor to +GUTTER and
+     indent the icon column. The gutter shift lives on .timeline-inner below instead. */
   .scroll-area {
     flex: 1 1 auto;
     min-height: 0;
     overflow: scroll;
     position: relative;
+  }
+
+  /* Inner wrapper (parent of .timeline-relative) that carries the gutter shift. The
+     ruler + clips keep their 60px gutter; the track-header sticky left:0 still anchors
+     at the unpadded scroll-container x0 so the icon column sits FLUSH at the left.
+     Coordinate-math safe: padding on the parent of .timeline-relative shifts its
+     border box + absolute effects + drag bounds.left together (same as the original
+     .timeline padding). */
+  .timeline-inner {
     padding-left: ${GUTTER_PX}px;
   }
 `

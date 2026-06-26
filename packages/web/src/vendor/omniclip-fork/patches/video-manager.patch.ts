@@ -119,20 +119,33 @@ function applyCoverFit(compositor: any, fabricVideo: any, element: HTMLVideoElem
 
   fabricVideo.set({ scaleX, scaleY, left: placedLeft, top: placedTop })
   fabricVideo.setCoords?.()
-  // Persist onto the stored effect so a later compose/recreate keeps the fit.
-  // CRITICAL (openimago-u8d1): omniclip's update_canvas_objects (run by
-  // compose_effects) re-applies object.left/top = position_on_canvas.x/y VERBATIM
-  // to the same center-origin object — it does NOT re-run cover-fit. So the
-  // write-back MUST store the origin-resolved (center) values we set above;
-  // storing the raw top-left geometry would let the next compose reset the center
-  // back to (0,0) and re-strand the video in the corner. On recreate, super
-  // rebuilds the FabricImage from these values and applyCoverFit recomputes from
-  // intrinsic dims, so there is no double-offset.
-  const effect = (fabricVideo as { effect?: { rect?: Record<string, unknown> } }).effect
-  if (effect?.rect) {
-    effect.rect.scaleX = scaleX
-    effect.rect.scaleY = scaleY
-    effect.rect.position_on_canvas = { x: placedLeft, y: placedTop }
+  // Mirror the origin-resolved (center) fit onto the FabricImage's OWN effect copy.
+  // CRASH FIX (openimago-jo5q): upstream builds the FabricImage with
+  // `effect: { ...effect }` (SHALLOW), so `fabricVideo.effect.rect` is the SAME
+  // FROZEN reference as omniclip's STATE effect.rect — mutating a field
+  // (`effect.rect.scaleX = ...`) throws "Cannot assign to read only property". So we
+  // REPLACE `.rect` with a fresh object on the (non-frozen) shallow-copy effect
+  // instead of mutating the frozen one. Defensive try/catch so a frozen/sealed effect
+  // never throws here again.
+  //
+  // PERSISTENCE NOTE: omniclip's update_canvas_objects reads from the STATE effect
+  // (`state.effects.find(...).rect`), NOT this copy, so this write-back does not
+  // itself persist the fit — the fit survives because applyCoverFit RECOMPUTES from
+  // intrinsic dims on every recreate (the single FabricImage creation point). The
+  // fresh-rect mirror just keeps fabricVideo.effect self-consistent for any reader.
+  const fabricEffect = (fabricVideo as { effect?: { rect?: Record<string, unknown> } }).effect
+  if (fabricEffect?.rect) {
+    try {
+      fabricEffect.rect = {
+        ...fabricEffect.rect,
+        scaleX,
+        scaleY,
+        position_on_canvas: { x: placedLeft, y: placedTop },
+      }
+    } catch {
+      // frozen/sealed effect object → skip the mirror; the recompute-on-recreate
+      // path keeps the fit regardless.
+    }
   }
   compositor?.canvas?.requestRenderAll?.()
 }
