@@ -75,8 +75,11 @@ const timelinePaneBound = css`
      cell.js, so hiding this does NOT affect resize (and resize is moot for our fixed
      layout — nothing throws). Removing it also returns its height to the leaf, so
      the now-300px leaf exactly fills the 300px pane with no overflow/clipping.
-     Scoped to this editor's shadow root, where .taskbar lives. */
-  .taskbar {
+     Scoped to this editor's shadow root, where .taskbar lives.
+     SELECTOR: must match upstream's ".pane > .taskbar{display:flex}" (specificity
+     0,2,0) — a plain ".taskbar" (0,1,0) loses to it. Equal specificity + appended
+     after upstream → wins the cascade, no !important needed. */
+  .pane > .taskbar {
     display: none;
   }
 
