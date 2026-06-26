@@ -38,20 +38,33 @@
 // BROWSER-ONLY (imports @benev/slate \`css\`).
 
 import { css } from '@benev/slate'
+import { GUTTER_PX } from './timeline-gutter'
 
 export const combinedToolbarStyles = css`
   :host {
-    /* Pin the bar to the top-left of the timeline pane during BOTH axes of scroll.
-       sticky+top:0 on the host (whose containing block is the full-height
-       .timeline) holds it across the whole vertical range; .tools{sticky;left:0}
-       holds the horizontal. z-index lifts it above later-sibling scrolled content
-       (ruler indicator z-index:10, playhead, clips). Opaque bg prevents bleed. */
+    /* Pin the bar to the top-LEFT of the timeline pane during BOTH axes of scroll.
+       The toolbar host is the FIRST child of ".timeline", which is ~3000px wide
+       (its ".timeline-relative" sets an explicit scroll width) and scrolls inside
+       the omni-timeline scrollport (:host overflow:scroll). We pin the host on
+       BOTH axes here (sticky + top:0 + left:0) so the whole bar stays put — top:0
+       holds it through the full vertical range; left:0 holds it through horizontal
+       scroll so it never drifts. (.tools below is ALSO sticky-left as a second
+       layer, belt-and-suspenders.) z-index lifts it above later-sibling scrolled
+       content (ruler indicator z-index:10, playhead, clips). Opaque bg prevents
+       bleed. */
     position: sticky;
     top: 0;
+    left: 0;
     z-index: 20;
     background: var(--imago-bg-deep, #0a0a0f);
     display: flex;
     min-height: 46px;
+    /* ".timeline" has padding-left: GUTTER_PX (the track-header gutter), which would
+       start the toolbar host 60px in and shift the cluster's center off the visible
+       middle. The toolbar is chrome, not clip-aligned content, so cancel the gutter
+       with a matching negative margin → the bar spans the FULL visible pane (x 0..
+       clientWidth) and centers on the true middle. */
+    margin-left: -${GUTTER_PX}px;
     --transition: 0.2s;
     /* CURRENT timecode reads as bright neutral off-white — the UPDATED reference
        (docs/images/cut_panel.png) shows it brighter than the muted-grey total,
@@ -66,15 +79,22 @@ export const combinedToolbarStyles = css`
     box-sizing: border-box;
   }
 
-  /* One bar: left | center | right, pinned to the visible viewport (the timeline
-     scroll-content is ~3000px wide, so width comes from the inline offsetWidth px,
-     and sticky+left:0 keeps the bar at the visible left as the timeline scrolls). */
+  /* ONE control cluster, horizontally CENTERED in the VISIBLE pane. The view sets
+     an inline "width: <paneWidth>px" measured from the scrollport's clientWidth
+     (reliable, via ResizeObserver — the old inline offsetWidth read stale ~455 and
+     bunched the cluster left). With that width = the visible pane and
+     "justify-content: center", the cluster sits at the visual center. sticky +
+     left:0 pins the measured-width box to the scrollport's left edge — so it covers
+     exactly the visible pane (x 0..paneWidth) and never drifts on horizontal scroll
+     (a SECOND pin layer under the host's own sticky-left). We do NOT use margin:auto
+     — that would offset the box within the ~3000px host before sticky engages.
+     "max-width: 100%" guards the pre-measure frame (width:auto) from overflowing. */
   .tools {
     position: sticky;
     left: 0;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     box-sizing: border-box;
     max-width: 100%;
     gap: 0.75em;
