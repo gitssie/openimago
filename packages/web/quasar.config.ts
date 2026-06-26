@@ -314,6 +314,85 @@ function omniclipWaveformPatch() {
 }
 
 /**
+ * Vite plugin: swap omniclip's track VIEW for the fork's version that adds the
+ * left TRACK-HEADER GUTTER (per-track icon column) (openimago-8qmq). The approved
+ * reference shows each track with a narrow left icon column (video=clip+speaker,
+ * BGM=music note+speaker, empty=waveform); upstream renders a bare 50px track div
+ * with no gutter. omni-timeline's component.js imports the track view as a
+ * RELATIVE `import { Track } from "./views/track/view.js"`, so Vite passes raw
+ * "./views/track/view.js" here — GATE on the importer being
+ * omni-timeline/component.js + REQUIRE the `views/track/` segment so this does NOT
+ * collide with the toolbar gate (views/toolbar/) or the per-view styles gates.
+ * isOmniclipPackageImporter keeps the fork's own upstream re-imports (importer =
+ * src/) from being redirected → no loop. The fork view is OVERLAY-ONLY (sticky
+ * chip), so it does NOT shift the timeline origin omniclip's drag math depends on.
+ */
+function omniclipTrackViewPatch() {
+  const FORK_TRACK_VIEW = fileURLToPath(
+    new URL(
+      './src/vendor/omniclip-fork/patches/track-view.patch.ts',
+      import.meta.url,
+    ),
+  );
+  return {
+    name: 'omniclip-track-view-patch',
+    enforce: 'pre' as const,
+    resolveId(source: string, importer?: string) {
+      if (
+        importer &&
+        isOmniclipPackageImporter(importer) &&
+        /(^|\/)views\/track\/view\.js$/.test(source) &&
+        /omni-timeline\/component\.js/.test(importer)
+      ) {
+        return FORK_TRACK_VIEW;
+      }
+      return undefined;
+    },
+  };
+}
+
+/**
+ * Vite plugin: swap omniclip's omni-timeline COMPONENT styles for the fork's
+ * version that reserves a real left GUTTER (openimago-scml). The fork patch
+ * re-exports upstream `styles` + appends `padding-left: GUTTER_PX` on `.timeline`,
+ * which shifts `.timeline-relative` (its absolute effects + the drag bounds, in
+ * lockstep) AND the time-ruler + toolbar right by the same amount — coordinate-math
+ * safe (parent padding, not padding on `.timeline-relative`; see the patch header).
+ * The track-header chip (track-view.patch.ts) is then pinned into that opened band.
+ *
+ * omni-timeline's component.js imports these as a RELATIVE
+ * `import { styles } from "./styles.js"`, so Vite passes raw "./styles.js" here —
+ * GATE on the importer being omni-timeline/component.js. The other styles.js
+ * patches gate on a `views/<name>/view.js` (or `effects/parts/effect.js`) importer
+ * and the track-view patch gates on a `views/track/` SOURCE, so none cross-fire
+ * with this component-level styles gate. isOmniclipPackageImporter keeps the fork's
+ * own upstream re-import (importer = src/) from being redirected → no loop.
+ */
+function omniclipTimelineStylesPatch() {
+  const FORK_TIMELINE_STYLES = fileURLToPath(
+    new URL(
+      './src/vendor/omniclip-fork/patches/omni-timeline-styles.patch.ts',
+      import.meta.url,
+    ),
+  );
+  return {
+    name: 'omniclip-timeline-styles-patch',
+    enforce: 'pre' as const,
+    resolveId(source: string, importer?: string) {
+      if (
+        importer &&
+        isOmniclipPackageImporter(importer) &&
+        /(^|\/)styles\.js$/.test(source) &&
+        /omni-timeline\/component\.js/.test(importer)
+      ) {
+        return FORK_TIMELINE_STYLES;
+      }
+      return undefined;
+    },
+  };
+}
+
+/**
  * Vite plugin: swap omniclip's VideoManager for the fork's cover-fit subclass
  * (openimago-ua5d). compositor/controller.js imports it as a RELATIVE
  * `import { VideoManager } from "./parts/video-manager.js"`, so GATE on the
@@ -484,6 +563,23 @@ export default defineConfig((ctx) => {
         // controllers/timeline/parts/waveform.js source, distinct from the other
         // gates so none cross-fire.
         viteConf.plugins.unshift(omniclipWaveformPatch())
+        // Left track-header gutter (per-track icon column) so each track shows
+        // its kind icon + speaker, matching docs/images/cut_panel.png
+        // (openimago-8qmq). Gated on the omni-timeline/component.js importer +
+        // views/track/view.js source, distinct from the toolbar (views/toolbar/)
+        // and per-view styles gates, so none cross-fire. The chip is now pinned
+        // into the REAL reserved gutter opened by omniclipTimelineStylesPatch
+        // below (openimago-scml) — no longer an overlay painting over clips.
+        viteConf.plugins.unshift(omniclipTrackViewPatch())
+        // Reserve the real left GUTTER: left-pad the `.timeline` flex column by
+        // GUTTER_PX (openimago-scml). Coordinate-math safe — parent padding shifts
+        // `.timeline-relative` (its absolute effects + the drag bounds, in lockstep)
+        // AND the ruler + toolbar by the same amount, so clip render === drag hit and
+        // ticks stay aligned. Gated on the omni-timeline/component.js importer +
+        // bare styles.js source, distinct from the per-view styles gates
+        // (views/<name>/view.js importers) and the track-view gate (views/track/
+        // source), so none cross-fire.
+        viteConf.plugins.unshift(omniclipTimelineStylesPatch())
       },
 
       vitePlugins: [
