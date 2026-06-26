@@ -96,8 +96,23 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
   //     (background-size-x = frameCount*100%, background-position-x = 0 —
   //     filmstrip-sprite-css). Tile is 9:16 and the frame is 9:16 → no distortion.
   const render_filmstrip = () => {
-    const spriteUrl = live.filmstrip_url
-    const frameCount = live.filmstrip_frame_count
+    // The filmstrip sprite is a property of the SOURCE media (file_hash), not of the
+    // individual clip segment. A native omniclip SPLIT creates the new half and may
+    // not carry our custom top-level filmstrip_* fields onto it (openimago-8ho9), so
+    // the selected new half rendered empty. Resolve the sprite from `live`, but if
+    // it's missing, fall back to ANY effect in state with the SAME file_hash that DOES
+    // have a sprite (the original half) — both halves share the same first-frame
+    // sprite. (Persistence is unaffected: cut.json keys filmstrip by sourceShotId and
+    // the resolver re-derives it on refresh.)
+    const spriteSource =
+      live.filmstrip_url && live.filmstrip_frame_count
+        ? live
+        : (use.context.state.effects.find(
+            (e) => e.file_hash === live.file_hash && e.filmstrip_url && e.filmstrip_frame_count,
+          ) ?? live)
+
+    const spriteUrl = spriteSource.filmstrip_url
+    const frameCount = spriteSource.filmstrip_frame_count
     // No sprite (orphan / pre-78m9 data) → flat lane, no broken images.
     if (!spriteUrl || !frameCount || frameCount < 1) {
       return html`<div class="filmstrip"></div>`
