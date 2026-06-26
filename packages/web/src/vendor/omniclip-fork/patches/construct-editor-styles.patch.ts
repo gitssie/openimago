@@ -66,6 +66,29 @@ const timelinePaneBound = css`
     min-height: 0;
     overflow: hidden;
   }
+
+  /* Hide the construct panel TASKBAR (the per-pane tab strip: Timeline tab, add
+     "+", split-row/column, close ×). Our layout is a FIXED two-pane editor
+     (MediaPlayerPanel + TimelinePanel, rebuilt each boot via reset_to_default), so
+     tab switching/add/split/close is never used — the strip is pure clutter. Only
+     pane.js renders \`.taskbar\`; the pane RESIZE handle is a separate \`.resizer\` in
+     cell.js, so hiding this does NOT affect resize (and resize is moot for our fixed
+     layout — nothing throws). Removing it also returns its height to the leaf, so
+     the now-300px leaf exactly fills the 300px pane with no overflow/clipping.
+     Scoped to this editor's shadow root, where .taskbar lives. */
+  .taskbar {
+    display: none;
+  }
+
+  /* Neutralize the focal-pane border highlight. Upstream draws a subtle 1px border
+     on the focused pane (\`.pane[data-is-focal]{border-color: color-mix(... var(--alpha)
+     15% ...)}\`); the user doesn't want the focused pane outlined. This override has
+     EQUAL specificity (0,2,0) and is appended AFTER upstream, so it wins the cascade
+     without !important. Only the focal state is touched — the pointer-locked border
+     (a separate state) is left as-is. */
+  .pane[data-is-focal] {
+    border-color: transparent;
+  }
 `
 
 // Re-export the resize-handle const unchanged (a resize util imports it from this
