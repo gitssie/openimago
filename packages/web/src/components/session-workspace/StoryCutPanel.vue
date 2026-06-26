@@ -178,6 +178,7 @@ import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import OiIcon from 'src/components/ui/OiIcon.vue'
 import type { StoryRunSummary, StoryShotSummary } from 'src/components/session-workspace/types'
 import { CUT_TRANSITION_KINDS, type CutTransitionKind, type EpisodeCut } from 'src/utils/cut/cut-types'
+import { Duration } from 'src/utils/cut/duration'
 import { makeShotMediaResolver } from 'src/utils/cut/shot-media-resolver'
 import { buildHydrationPayload, type BgmMediaSource } from 'src/utils/cut/cut-hydration'
 import { dispatchCutEdit, type CutEdit } from 'src/utils/cut/cut-edit-dispatcher'
@@ -360,13 +361,15 @@ async function toggleBgmPicker(): Promise<void> {
   }
 }
 
-/** Set/replace a boundary's transition: live preview via the fork + persist. */
+/** Set/replace a boundary's transition: live preview via the fork + persist.
+ *  The transition-duration input is the LAST seconds boundary in the Cut link
+ *  (openimago-23cr); Duration guards the seconds→ms conversion to the fork here. */
 async function applyTransition(
   afterClipId: string,
   kind: CutTransitionKind,
   durationSeconds: number,
 ): Promise<void> {
-  fork?.setTransition({ afterEffectId: afterClipId, kind, durationMs: durationSeconds * 1000 })
+  fork?.setTransition({ afterEffectId: afterClipId, kind, durationMs: Duration.fromSeconds(durationSeconds).ms })
   await persistEdit({ kind: 'set-transition', afterClipId, transitionKind: kind, durationSeconds })
 }
 

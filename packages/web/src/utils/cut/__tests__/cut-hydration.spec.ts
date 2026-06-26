@@ -18,11 +18,11 @@ function source(shotId: string): ShotMediaSource {
 }
 
 const cut: EpisodeCut = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   episodeId: 'ep_001',
   clips: [
-    { id: 'c-b', sourceShotId: 'shot_2', inPoint: 1, outPoint: 4, order: 1 },
-    { id: 'c-a', sourceShotId: 'shot_1', inPoint: 0, outPoint: 2.5, order: 0 },
+    { id: 'c-b', sourceShotId: 'shot_2', inPointMs: 1000, outPointMs: 4000, order: 1 },
+    { id: 'c-a', sourceShotId: 'shot_1', inPointMs: 0, outPointMs: 2500, order: 0 },
   ],
   transitions: [
     { afterClipId: 'c-a', kind: 'dissolve', durationSeconds: 0.5 },
@@ -32,7 +32,7 @@ const cut: EpisodeCut = {
 }
 
 describe('buildHydrationPayload', () => {
-  it('maps clips in order with seconds preserved + resolver urls', () => {
+  it('maps clips in order converting ms trim points to seconds at the fork boundary + resolver urls', () => {
     const { clips, orphans } = buildHydrationPayload(cut, (id) => source(id))
     expect(orphans).toEqual([])
     expect(clips).toEqual([

@@ -5,6 +5,12 @@
 // ms and keyed by the clip id they follow. Orphan clips (no resolvable media)
 // are split out so the host can surface them via the data-no-file path rather
 // than feeding a urless clip to the importer. Unit-tested headless.
+//
+// UNIT BOUNDARY (openimago-23cr): the domain EpisodeCut is integer ms, but the
+// fork HydrateClip contract is in SECONDS (it also carries seconds-based
+// filmstrip facts), so clip trim points are converted ms→seconds HERE — the one
+// place this conversion lives, mirroring the transition seconds→ms conversion
+// below. The fork remultiplies by 1000 internally for omniclip placement.
 
 import type { CutClip, EpisodeCut } from './cut-types'
 import type { HydrateBgm, HydrateClip, OmniTransition } from './fork-contract'
@@ -55,8 +61,8 @@ export function buildHydrationPayload(
       id: clip.id,
       url: media.url,
       name: media.name,
-      inPointSeconds: clip.inPoint,
-      outPointSeconds: clip.outPoint,
+      inPointSeconds: clip.inPointMs / MS_PER_S,
+      outPointSeconds: clip.outPointMs / MS_PER_S,
       filmstripUrl: media.filmstripUrl,
       filmstripFrameCount: media.filmstripFrameCount,
       filmstripFrameW: media.filmstripFrameW,

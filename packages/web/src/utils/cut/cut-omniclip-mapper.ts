@@ -2,9 +2,12 @@
 // openimago-4eiw). Promoted from the spike (openimago-2re7). Pure: no omniclip /
 // DOM imports, so it is fully unit-tested.
 //
-// UNIT MISMATCH this module is the single home for:
-//   EpisodeCut works in SECONDS (inPoint/outPoint);
-//   omniclip effects work in MILLISECONDS (start/end/duration/start_at_position).
+// UNITS (cut schema v2, openimago-23cr): EpisodeCut clip trim points
+// (inPointMs/outPointMs) and omniclip effect fields (start/end/duration/
+// start_at_position) are BOTH integer ms, so the clip<->effect mapping is a
+// direct pass-through — no ×1000/÷1000, no float drift, strictly reversible.
+// The only seconds value left is the source media's raw duration (a SECONDS
+// fact from the run), converted once for omniclip's raw_duration (ms).
 
 import type { CutClip, EpisodeCut, ResolvedShotMedia } from './cut-types'
 import type {
@@ -13,6 +16,7 @@ import type {
   OmniVideoEffect,
 } from './omniclip-state.types'
 
+/** Whole ms per second — only for the source raw-duration seconds→ms conversion. */
 const MS_PER_S = 1000
 
 /** Stable default rect — clips fill the portrait 9:16 frame (openimago-vm5v);
@@ -51,8 +55,8 @@ export function cutToOmniclipState(
   let cursorMs = 0
   for (const clip of ordered) {
     const media = resolveMedia(clip.sourceShotId)
-    const startMs = clip.inPoint * MS_PER_S
-    const endMs = clip.outPoint * MS_PER_S
+    const startMs = clip.inPointMs
+    const endMs = clip.outPointMs
     const durationMs = endMs - startMs
 
     if (!media) {
@@ -102,8 +106,8 @@ export function omniclipStateToCut(
   const clips: CutClip[] = videoEffects.map((effect, index) => ({
     id: effect.id,
     sourceShotId: resolveSourceShotId(effect.file_hash) ?? effect.file_hash,
-    inPoint: effect.start / MS_PER_S,
-    outPoint: effect.end / MS_PER_S,
+    inPointMs: effect.start,
+    outPointMs: effect.end,
     order: index,
   }))
 

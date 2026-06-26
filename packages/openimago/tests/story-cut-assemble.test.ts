@@ -138,7 +138,7 @@ test("assemble builds one clip per shot with completed media, ordered by shotNum
   // Ordered by shotNumber: s1 then s2.
   expect(cut.clips.map((c: any) => c.sourceShotId)).toEqual(["s1", "s2"])
   expect(cut.clips.map((c: any) => c.order)).toEqual([0, 1])
-  expect(cut.clips.every((c: any) => c.inPoint === 0)).toBe(true)
+  expect(cut.clips.every((c: any) => c.inPointMs === 0)).toBe(true)
   expect(cut.transitions).toEqual([])
   expect(cut.bgm).toBeUndefined()
 })
@@ -196,9 +196,10 @@ test("assemble derives outPoint from run duration, then shot durationEstimate, t
   expect(res.status).toBe(200)
   const cut = await getCut(token, project.id)
   const byShot = Object.fromEntries(cut.clips.map((c: any) => [c.sourceShotId, c]))
-  expect(byShot.s1.outPoint).toBe(7)
-  expect(byShot.s2.outPoint).toBe(5)
-  expect(byShot.s3.outPoint).toBeGreaterThan(0) // default fallback
+  // outPointMs is integer ms: shot estimate 7s → 7000ms, run duration 5s → 5000ms.
+  expect(byShot.s1.outPointMs).toBe(7000)
+  expect(byShot.s2.outPointMs).toBe(5000)
+  expect(byShot.s3.outPointMs).toBeGreaterThan(0) // default fallback (DEFAULT_ASSEMBLED_CLIP_MS)
 })
 
 test("assemble is idempotent-shaped: re-running replaces clips and bumps updatedAt", async () => {

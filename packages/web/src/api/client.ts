@@ -268,8 +268,8 @@ export interface OpenimagoStoryRuns {
 export interface OpenimagoCutClip {
   id: string
   sourceShotId: string
-  inPoint: number
-  outPoint: number
+  inPointMs: number // integer ms (cut schema v2, openimago-23cr)
+  outPointMs: number // integer ms (cut schema v2, openimago-23cr)
   order: number
 }
 
@@ -674,30 +674,30 @@ export const api = {
       },
     ),
 
-  // Trim a clip's in/out points.
+  // Trim a clip's in/out points (integer ms, cut schema v2).
   trimCutClip: (
     projectId: string,
     episodeId: string,
     clipId: string,
-    inPoint: number,
-    outPoint: number,
+    inPointMs: number,
+    outPointMs: number,
     expectedUpdatedAt?: string,
   ) =>
     request<{ updatedAt: string }>(
       `/api/platform/projects/${projectId}/story/episodes/${episodeId}/cut/clips/${clipId}`,
       {
         method: 'PATCH',
-        body: JSON.stringify({ inPoint, outPoint, ...(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}) }),
+        body: JSON.stringify({ inPointMs, outPointMs, ...(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}) }),
       },
     ),
 
-  // Split a clip at an absolute source time. The CLIENT mints the new
-  // second-half clip id (ADR 0008 #2); the server validates + echoes it.
+  // Split a clip at an absolute source time (integer ms). The CLIENT mints the
+  // new second-half clip id (ADR 0008 #2); the server validates + echoes it.
   splitCutClip: (
     projectId: string,
     episodeId: string,
     clipId: string,
-    atSeconds: number,
+    atMs: number,
     newClipId: string,
     expectedUpdatedAt?: string,
   ) =>
@@ -705,7 +705,7 @@ export const api = {
       `/api/platform/projects/${projectId}/story/episodes/${episodeId}/cut/clips/${clipId}/split`,
       {
         method: 'POST',
-        body: JSON.stringify({ atSeconds, newClipId, ...(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}) }),
+        body: JSON.stringify({ atMs, newClipId, ...(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}) }),
       },
     ),
 

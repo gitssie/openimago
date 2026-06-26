@@ -3,7 +3,7 @@ import { transitionBoundaries, resolveBgmLabel, zoomSteps } from '../cut-control
 import type { CutClip, CutTransition, CutAudioRef } from '../cut-types'
 
 function clip(id: string, order: number): CutClip {
-  return { id, sourceShotId: `shot_${id}`, inPoint: 0, outPoint: 1, order }
+  return { id, sourceShotId: `shot_${id}`, inPointMs: 0, outPointMs: 1000, order }
 }
 
 describe('transitionBoundaries', () => {

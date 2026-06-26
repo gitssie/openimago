@@ -43,17 +43,17 @@ describe('classifyEffectDiff — no change', () => {
 })
 
 describe('classifyEffectDiff — trim', () => {
-  it('detects an end-point trim and reports in/out in seconds', () => {
+  it('detects an end-point trim and reports in/out in ms', () => {
     const a = [vfx({ id: 'a', start: 0, end: 4000 }), vfx({ id: 'b', start: 0, end: 2000, start_at_position: 4000 })]
     // 'a' trimmed: end 4000 -> 3000 ms; 'b' shifts left as a consequence.
     const b = [vfx({ id: 'a', start: 0, end: 3000 }), vfx({ id: 'b', start: 0, end: 2000, start_at_position: 3000 })]
-    expect(classifyEffectDiff(a, b)).toEqual({ kind: 'trim', clipId: 'a', inPoint: 0, outPoint: 3 })
+    expect(classifyEffectDiff(a, b)).toEqual({ kind: 'trim', clipId: 'a', inPointMs: 0, outPointMs: 3000 })
   })
 
   it('detects an in-point trim', () => {
     const a = [vfx({ id: 'a', start: 1000, end: 4000 })]
     const b = [vfx({ id: 'a', start: 2000, end: 4000 })]
-    expect(classifyEffectDiff(a, b)).toEqual({ kind: 'trim', clipId: 'a', inPoint: 2, outPoint: 4 })
+    expect(classifyEffectDiff(a, b)).toEqual({ kind: 'trim', clipId: 'a', inPointMs: 2000, outPointMs: 4000 })
   })
 
   it('trim beats the consequential position cascade (precedence)', () => {
@@ -69,7 +69,7 @@ describe('classifyEffectDiff — trim', () => {
       vfx({ id: 'b', start: 0, end: 3000, start_at_position: 4000 }),
       vfx({ id: 'c', start: 0, end: 2000, start_at_position: 7000 }),
     ]
-    expect(classifyEffectDiff(a, b)).toEqual({ kind: 'trim', clipId: 'a', inPoint: 0, outPoint: 4 })
+    expect(classifyEffectDiff(a, b)).toEqual({ kind: 'trim', clipId: 'a', inPointMs: 0, outPointMs: 4000 })
   })
 })
 
@@ -86,7 +86,7 @@ describe('classifyEffectDiff — split', () => {
     expect(classifyEffectDiff(a, b)).toEqual({
       kind: 'split',
       clipId: 'a',
-      atSeconds: 4,
+      atMs: 4000,
       newClipId: 'a-new',
     })
   })
@@ -104,23 +104,23 @@ describe('classifyEffectDiff — split', () => {
     expect(classifyEffectDiff(a, b)).toEqual({
       kind: 'split',
       clipId: 'a',
-      atSeconds: 4,
+      atMs: 4000,
       newClipId: 'a-2',
     })
   })
 
-  it('atSeconds is ABSOLUTE SOURCE TIME when timeline position != source start (openimago-3xbg)', () => {
+  it('atMs is ABSOLUTE SOURCE TIME when timeline position != source start (openimago-3xbg)', () => {
     // Live regression: omniclip's split keeps `start`/`end` in SOURCE coords and
     // `start_at_position` in TIMELINE coords. A clip that is not first has
     // start_at_position != start (e.g. s02: source [0,15069]ms placed at timeline
-    // 15069ms). Splitting it mid-clip must report atSeconds as the SOURCE split
-    // time (newEffect.start / 1000), NOT the timeline position — the backend's
-    // splitClip requires atSeconds ∈ (inPoint, outPoint) in source seconds.
+    // 15069ms). Splitting it mid-clip must report atMs as the SOURCE split
+    // time (newEffect.start), NOT the timeline position — the backend's splitClip
+    // requires atMs ∈ (inPointMs, outPointMs) in source ms.
     const a = [
       vfx({ id: 's1', file_hash: 'h1', start: 0, end: 15069, start_at_position: 0 }),
       vfx({ id: 's2', file_hash: 'h2', start: 0, end: 15069, start_at_position: 15069 }),
     ]
-    // Split s2 at timeline 18720 → source split 18720 - 15069 = 3651ms = 3.651s.
+    // Split s2 at timeline 18720 → source split 18720 - 15069 = 3651ms.
     const b = [
       vfx({ id: 's1', file_hash: 'h1', start: 0, end: 15069, start_at_position: 0 }),
       vfx({ id: 's2', file_hash: 'h2', start: 0, end: 3651, start_at_position: 15069 }),
@@ -129,7 +129,7 @@ describe('classifyEffectDiff — split', () => {
     expect(classifyEffectDiff(a, b)).toEqual({
       kind: 'split',
       clipId: 's2',
-      atSeconds: 3.651,
+      atMs: 3651,
       newClipId: 's2-new',
     })
   })

@@ -10,8 +10,8 @@ export type CutTransitionKind = (typeof CUT_TRANSITION_KINDS)[number]
 export interface CutClip {
   id: string
   sourceShotId: string
-  inPoint: number // seconds
-  outPoint: number // seconds
+  inPointMs: number // integer ms (cut schema v2, openimago-23cr)
+  outPointMs: number // integer ms (cut schema v2, openimago-23cr)
   order: number // 0-based position on the video track
 }
 
@@ -29,7 +29,7 @@ export interface CutAudioRef {
 }
 
 export interface EpisodeCut {
-  schemaVersion: 1
+  schemaVersion: 2
   episodeId: string
   clips: CutClip[]
   transitions: CutTransition[]

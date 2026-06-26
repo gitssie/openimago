@@ -32,13 +32,19 @@ const SAFE_CLIP_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/
 
 const CUT_TRANSITION_KINDS = ["cut", "dissolve", "fade"] as const
 
+/** Whole milliseconds per second — the Cut is integer-ms end to end (cut schema
+ *  v2, openimago-23cr): the only ×1000/÷1000 left lives at the boundaries that
+ *  ingest seconds (assemble reads run/shot durations in seconds; migration lifts
+ *  legacy v1 second fields). Everything downstream is bare integer ms. */
+const MS_PER_S = 1000
+
 /**
- * Fallback clip length (seconds) used when assembling the first Cut for a shot
+ * Fallback clip length (integer ms) used when assembling the first Cut for a shot
  * that carries no duration anywhere — neither its completed run's
- * result.duration nor the shot's durationEstimate. A clip's outPoint must be
- * > inPoint, so a positive default is required; the user re-trims on the timeline.
+ * result.duration nor the shot's durationEstimate. A clip's outPointMs must be
+ * > inPointMs, so a positive default is required; the user re-trims on the timeline.
  */
-const DEFAULT_ASSEMBLED_CLIP_SECONDS = 5
+const DEFAULT_ASSEMBLED_CLIP_MS = 5000
 
 /** Run result media kinds that count as a clip's visual source (ADR 0006). */
 const VISUAL_RUN_KINDS = new Set(["image", "video"])
@@ -262,12 +268,19 @@ export interface StoryRuns {
 
 // ── Episode Cut (ADR 0006 — edit layer, separate cut.json file) ───────────────
 
-/** A trimmed slice of a source Shot's media on the video track. */
+/** The current on-disk cut.json schema version (openimago-23cr). v2 stores clip
+ *  trim points as integer milliseconds; v1 (legacy) stored them as float seconds
+ *  and is lifted on read by migrateCutToV2. */
+const CUT_SCHEMA_VERSION = 2
+
+/** A trimmed slice of a source Shot's media on the video track. inPointMs/outPointMs
+ *  are integer milliseconds (cut schema v2, openimago-23cr) — same unit as the
+ *  client domain, omniclip state, and disk: zero conversion across the link. */
 export interface CutClip {
   id: string
   sourceShotId: string
-  inPoint: number
-  outPoint: number
+  inPointMs: number
+  outPointMs: number
   order: number
 }
 
@@ -286,14 +299,24 @@ export interface CutAudioRef {
   outPoint?: number
 }
 
-/** Edit-layer state for an episode — its own optimistic-concurrency clock. */
+/** Edit-layer state for an episode — its own optimistic-concurrency clock.
+ *  schemaVersion 2: clip trim points are integer ms (openimago-23cr). */
 export interface EpisodeCut {
-  schemaVersion: 1
+  schemaVersion: 2
   episodeId: string
   clips: CutClip[]
   transitions: CutTransition[]
   bgm?: CutAudioRef
   updatedAt: string
+}
+
+/** Legacy v1 cut.json clip — float-seconds trim points, lifted to v2 on read. */
+interface LegacyCutClipV1 {
+  id: string
+  sourceShotId: string
+  inPoint: number
+  outPoint: number
+  order: number
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -985,7 +1008,59 @@ export class StoryService {
 
   /** An empty Cut, returned lazily when no cut file exists yet (ADR 0006). */
   private emptyCut(episodeId: string): EpisodeCut {
-    return { schemaVersion: 1, episodeId, clips: [], transitions: [], updatedAt: "" }
+    return { schemaVersion: CUT_SCHEMA_VERSION, episodeId, clips: [], transitions: [], updatedAt: "" }
+  }
+
+  /**
+   * Lift a raw cut.json document to the current schema (v2 — integer-ms clip
+   * trim points, openimago-23cr). A v1 doc (no schemaVersion 2; clips carry
+   * float-seconds `inPoint`/`outPoint`) is migrated by rounding `seconds × 1000`
+   * to whole ms; a doc already at v2 is returned unchanged. Read-path only — the
+   * write path re-stamps `schemaVersion: CUT_SCHEMA_VERSION`, so the upgrade is
+   * persisted the next time the cut is written. Tolerant: unknown fields are
+   * preserved (transitions/bgm stay in seconds — they are out of scope for the
+   * ms migration), orphan clips are never dropped.
+   */
+  private migrateCutToV2(raw: unknown, episodeId: string): EpisodeCut {
+    const doc = (raw ?? {}) as Record<string, unknown>
+    const version = typeof doc["schemaVersion"] === "number" ? (doc["schemaVersion"] as number) : 1
+    const rawClips = Array.isArray(doc["clips"]) ? (doc["clips"] as Record<string, unknown>[]) : []
+
+    const clips: CutClip[] = rawClips.map((c) => {
+      if (version >= 2) {
+        // Already ms — pass the trim points through verbatim.
+        return {
+          id: String(c["id"] ?? ""),
+          sourceShotId: String(c["sourceShotId"] ?? ""),
+          inPointMs: Number(c["inPointMs"] ?? 0),
+          outPointMs: Number(c["outPointMs"] ?? 0),
+          order: Number(c["order"] ?? 0),
+        }
+      }
+      // v1 → v2: round seconds × 1000 to whole ms.
+      const legacy = c as unknown as LegacyCutClipV1
+      return {
+        id: String(legacy.id ?? ""),
+        sourceShotId: String(legacy.sourceShotId ?? ""),
+        inPointMs: Math.round(Number(legacy.inPoint ?? 0) * MS_PER_S),
+        outPointMs: Math.round(Number(legacy.outPoint ?? 0) * MS_PER_S),
+        order: Number(legacy.order ?? 0),
+      }
+    })
+
+    const transitions = Array.isArray(doc["transitions"]) ? (doc["transitions"] as CutTransition[]) : []
+
+    const cut: EpisodeCut = {
+      schemaVersion: CUT_SCHEMA_VERSION,
+      episodeId: typeof doc["episodeId"] === "string" ? (doc["episodeId"] as string) : episodeId,
+      clips,
+      transitions,
+      updatedAt: typeof doc["updatedAt"] === "string" ? (doc["updatedAt"] as string) : "",
+    }
+    if (doc["bgm"] && typeof doc["bgm"] === "object") {
+      cut.bgm = doc["bgm"] as CutAudioRef
+    }
+    return cut
   }
 
   /**
@@ -1011,13 +1086,14 @@ export class StoryService {
     const dir = await this.resolveProjectDir(projectId, userId)
     if (typeof dir !== "string") return dir
 
-    const read = await this.readJsonFile<EpisodeCut>(dir, relativePath, projectId)
+    const read = await this.readJsonFile<unknown>(dir, relativePath, projectId)
     if ("error" in read) {
       // Missing file → lazily empty Cut. Any other error is forwarded.
       if (read.status === 404) return { data: this.emptyCut(episodeId), status: 200 }
       return read
     }
-    return { data: read.data, status: 200 }
+    // Lift legacy v1 (float-seconds) cut files to v2 (integer ms) on read.
+    return { data: this.migrateCutToV2(read.data, episodeId), status: 200 }
   }
 
   /**
@@ -1045,13 +1121,15 @@ export class StoryService {
     const dir = await this.resolveProjectDir(projectId, userId)
     if (typeof dir !== "string") return dir
 
-    const read = await this.readJsonFile<EpisodeCut>(dir, relativePath, projectId)
+    const read = await this.readJsonFile<unknown>(dir, relativePath, projectId)
     let cut: EpisodeCut
     if ("error" in read) {
       if (read.status !== 404) return read
       cut = this.emptyCut(episodeId)
     } else {
-      cut = read.data
+      // Lift legacy v1 (float-seconds) cut files to v2 (integer ms) on read; the
+      // subsequent write re-stamps schemaVersion 2, persisting the upgrade.
+      cut = this.migrateCutToV2(read.data, episodeId)
     }
 
     if (expectedUpdatedAt !== undefined && expectedUpdatedAt !== cut.updatedAt) {
@@ -1083,7 +1161,7 @@ export class StoryService {
     }
 
     const now = new Date().toISOString()
-    const doc: EpisodeCut = { ...cut, schemaVersion: 1, updatedAt: now }
+    const doc: EpisodeCut = { ...cut, schemaVersion: CUT_SCHEMA_VERSION, updatedAt: now }
     const write = await this.writeJsonFileAtomic(dir, relativePath, doc, projectId)
     if ("error" in write) return write
     return { updatedAt: now }
@@ -1130,29 +1208,29 @@ export class StoryService {
   }
 
   /**
-   * Trim one clip's in/out points. Both bounds must be finite numbers with
-   * inPoint < outPoint and inPoint >= 0.
+   * Trim one clip's in/out points (integer ms, cut schema v2). Both bounds must
+   * be finite numbers with inPointMs < outPointMs and inPointMs >= 0.
    */
   async trimClip(
     projectId: string,
     userId: string,
     episodeId: string,
     clipId: string,
-    inPoint: number,
-    outPoint: number,
+    inPointMs: number,
+    outPointMs: number,
     expectedUpdatedAt?: string,
   ): Promise<
     | { data: { updatedAt: string }; status: 200 }
     | { error: { code: string; message: string }; status: number }
   > {
     if (
-      !Number.isFinite(inPoint) ||
-      !Number.isFinite(outPoint) ||
-      inPoint < 0 ||
-      inPoint >= outPoint
+      !Number.isFinite(inPointMs) ||
+      !Number.isFinite(outPointMs) ||
+      inPointMs < 0 ||
+      inPointMs >= outPointMs
     ) {
       return {
-        error: { code: "VALIDATION_ERROR", message: "Require finite inPoint >= 0 and inPoint < outPoint" },
+        error: { code: "VALIDATION_ERROR", message: "Require finite inPointMs >= 0 and inPointMs < outPointMs" },
         status: 400,
       }
     }
@@ -1164,26 +1242,26 @@ export class StoryService {
     const idx = cut.clips.findIndex((c) => c.id === clipId)
     if (idx < 0) return { error: { code: "NOT_FOUND", message: `Clip not found: ${clipId}` }, status: 404 }
 
-    const clips = cut.clips.map((c, i) => (i === idx ? { ...c, inPoint, outPoint } : c))
+    const clips = cut.clips.map((c, i) => (i === idx ? { ...c, inPointMs, outPointMs } : c))
     const result = await this.writeCut(dir, relativePath, { ...cut, clips }, projectId)
     if ("error" in result) return result
     return { data: { updatedAt: result.updatedAt }, status: 200 }
   }
 
   /**
-   * Split one clip at `atSeconds` (an absolute source time, inPoint < t < outPoint)
-   * into two consecutive clips sharing the source. The first keeps the original
-   * id and [inPoint, t); the second is a new clip with [t, outPoint) and the
-   * client-supplied `newClipId` (ADR 0008 #2: the client owns clip-id minting so
-   * `omniclip effect id === CutClip.id` holds by construction). All clip orders
-   * are re-indexed 0..N-1.
+   * Split one clip at `atMs` (an absolute source time in integer ms,
+   * inPointMs < t < outPointMs) into two consecutive clips sharing the source.
+   * The first keeps the original id and [inPointMs, t); the second is a new clip
+   * with [t, outPointMs) and the client-supplied `newClipId` (ADR 0008 #2: the
+   * client owns clip-id minting so `omniclip effect id === CutClip.id` holds by
+   * construction). All clip orders are re-indexed 0..N-1.
    */
   async splitClip(
     projectId: string,
     userId: string,
     episodeId: string,
     clipId: string,
-    atSeconds: number,
+    atMs: number,
     newClipId: string,
     expectedUpdatedAt?: string,
   ): Promise<
@@ -1205,9 +1283,9 @@ export class StoryService {
     if (idx < 0) return { error: { code: "NOT_FOUND", message: `Clip not found: ${clipId}` }, status: 404 }
 
     const target = cut.clips[idx]!
-    if (!Number.isFinite(atSeconds) || atSeconds <= target.inPoint || atSeconds >= target.outPoint) {
+    if (!Number.isFinite(atMs) || atMs <= target.inPointMs || atMs >= target.outPointMs) {
       return {
-        error: { code: "VALIDATION_ERROR", message: "atSeconds must be strictly within the clip's in/out range" },
+        error: { code: "VALIDATION_ERROR", message: "atMs must be strictly within the clip's in/out range" },
         status: 400,
       }
     }
@@ -1216,12 +1294,12 @@ export class StoryService {
       return { error: { code: "VALIDATION_ERROR", message: "newClipId already in use" }, status: 400 }
     }
 
-    const firstHalf: CutClip = { ...target, outPoint: atSeconds }
+    const firstHalf: CutClip = { ...target, outPointMs: atMs }
     const secondHalf: CutClip = {
       id: newClipId,
       sourceShotId: target.sourceShotId,
-      inPoint: atSeconds,
-      outPoint: target.outPoint,
+      inPointMs: atMs,
+      outPointMs: target.outPointMs,
       order: 0,
     }
 
@@ -1376,7 +1454,7 @@ export class StoryService {
     const { dir, relativePath, cut } = loaded
 
     const next: Omit<EpisodeCut, "updatedAt"> = {
-      schemaVersion: 1,
+      schemaVersion: CUT_SCHEMA_VERSION,
       episodeId: cut.episodeId,
       clips: cut.clips,
       transitions: cut.transitions,
@@ -1465,20 +1543,25 @@ export class StoryService {
       const media = runByShot.get(shotId)
       if (!media) continue
 
-      const shotEstimate =
+      // Duration sources are SECONDS (run result.duration, shot durationEstimate);
+      // convert to integer ms at this ingest boundary (cut schema v2). Rounding
+      // keeps outPointMs whole even for fractional-second source durations.
+      const shotEstimateSeconds =
         typeof shot["durationEstimate"] === "number" && shot["durationEstimate"] > 0
           ? (shot["durationEstimate"] as number)
           : undefined
-      const outPoint =
+      const outPointMs =
         media.durationSeconds && media.durationSeconds > 0
-          ? media.durationSeconds
-          : shotEstimate ?? DEFAULT_ASSEMBLED_CLIP_SECONDS
+          ? Math.round(media.durationSeconds * MS_PER_S)
+          : shotEstimateSeconds !== undefined
+            ? Math.round(shotEstimateSeconds * MS_PER_S)
+            : DEFAULT_ASSEMBLED_CLIP_MS
 
       clips.push({
         id: `clip-${shotId}`,
         sourceShotId: shotId,
-        inPoint: 0,
-        outPoint,
+        inPointMs: 0,
+        outPointMs,
         order: clips.length,
       })
     }
@@ -1486,7 +1569,7 @@ export class StoryService {
     // Replace the clip list; preserve any existing bgm. Transitions reset to
     // empty (the assembler emits implicit 'cut' transitions only).
     const next: Omit<EpisodeCut, "updatedAt"> = {
-      schemaVersion: 1,
+      schemaVersion: CUT_SCHEMA_VERSION,
       episodeId,
       clips,
       transitions: [],

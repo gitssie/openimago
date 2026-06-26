@@ -11,8 +11,8 @@ import type { CutTransitionKind } from './cut-types'
 /** Editor edits, in our domain language (not omniclip's). */
 export type CutEdit =
   | { kind: 'reorder'; orderedClipIds: string[] }
-  | { kind: 'trim'; clipId: string; inPoint: number; outPoint: number }
-  | { kind: 'split'; clipId: string; atSeconds: number; newClipId: string }
+  | { kind: 'trim'; clipId: string; inPointMs: number; outPointMs: number }
+  | { kind: 'split'; clipId: string; atMs: number; newClipId: string }
   | { kind: 'delete'; clipId: string }
   | { kind: 'set-transition'; afterClipId: string; transitionKind: CutTransitionKind; durationSeconds: number }
   | { kind: 'clear-transition'; afterClipId: string }
@@ -22,8 +22,8 @@ export type CutEdit =
 /** The subset of the api.client cut methods this dispatcher needs. */
 export interface CutWriteApi {
   reorderCutClips: (projectId: string, episodeId: string, orderedClipIds: string[], expectedUpdatedAt?: string) => Promise<{ updatedAt: string }>
-  trimCutClip: (projectId: string, episodeId: string, clipId: string, inPoint: number, outPoint: number, expectedUpdatedAt?: string) => Promise<{ updatedAt: string }>
-  splitCutClip: (projectId: string, episodeId: string, clipId: string, atSeconds: number, newClipId: string, expectedUpdatedAt?: string) => Promise<{ updatedAt: string; newClipId: string }>
+  trimCutClip: (projectId: string, episodeId: string, clipId: string, inPointMs: number, outPointMs: number, expectedUpdatedAt?: string) => Promise<{ updatedAt: string }>
+  splitCutClip: (projectId: string, episodeId: string, clipId: string, atMs: number, newClipId: string, expectedUpdatedAt?: string) => Promise<{ updatedAt: string; newClipId: string }>
   deleteCutClip: (projectId: string, episodeId: string, clipId: string, expectedUpdatedAt?: string) => Promise<{ updatedAt: string }>
   setCutTransition: (projectId: string, episodeId: string, afterClipId: string, kind: string, durationSeconds: number, expectedUpdatedAt?: string) => Promise<{ updatedAt: string }>
   clearCutTransition: (projectId: string, episodeId: string, afterClipId: string, expectedUpdatedAt?: string) => Promise<{ updatedAt: string }>
@@ -50,9 +50,9 @@ function writeFor(deps: DispatchCutEditDeps, edit: CutEdit) {
     case 'reorder':
       return (u?: string) => api.reorderCutClips(p, e, edit.orderedClipIds, u)
     case 'trim':
-      return (u?: string) => api.trimCutClip(p, e, edit.clipId, edit.inPoint, edit.outPoint, u)
+      return (u?: string) => api.trimCutClip(p, e, edit.clipId, edit.inPointMs, edit.outPointMs, u)
     case 'split':
-      return (u?: string) => api.splitCutClip(p, e, edit.clipId, edit.atSeconds, edit.newClipId, u)
+      return (u?: string) => api.splitCutClip(p, e, edit.clipId, edit.atMs, edit.newClipId, u)
     case 'delete':
       return (u?: string) => api.deleteCutClip(p, e, edit.clipId, u)
     case 'set-transition':

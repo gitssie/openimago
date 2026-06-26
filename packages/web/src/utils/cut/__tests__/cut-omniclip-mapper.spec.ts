@@ -15,11 +15,11 @@ function media(sourceShotId: string, durationSeconds: number): ResolvedShotMedia
 }
 
 const baseCut: EpisodeCut = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   episodeId: 'ep_001',
   clips: [
-    { id: 'clip-b', sourceShotId: 'shot_2', inPoint: 1, outPoint: 4, order: 1 },
-    { id: 'clip-a', sourceShotId: 'shot_1', inPoint: 0, outPoint: 2.5, order: 0 },
+    { id: 'clip-b', sourceShotId: 'shot_2', inPointMs: 1000, outPointMs: 4000, order: 1 },
+    { id: 'clip-a', sourceShotId: 'shot_1', inPointMs: 0, outPointMs: 2500, order: 0 },
   ],
   transitions: [{ afterClipId: 'clip-a', kind: 'dissolve', durationSeconds: 0.5 }],
   updatedAt: '2026-06-18T00:00:00.000Z',
@@ -34,7 +34,7 @@ const resolveShotId = (hash: string) =>
   Object.values(mediaTable).find((m) => m.fileHash === hash)?.sourceShotId
 
 describe('cut <-> omniclip mapper (production)', () => {
-  it('hydrates clips onto track 0 in order with ms conversion', () => {
+  it('hydrates clips onto track 0 in order as direct ms (no conversion)', () => {
     const { state, orphans } = cutToOmniclipState(baseCut, resolveMedia)
     expect(orphans).toEqual([])
     expect(state.effects.map((e) => e.id)).toEqual(['clip-a', 'clip-b'])
@@ -46,13 +46,13 @@ describe('cut <-> omniclip mapper (production)', () => {
     const { state } = cutToOmniclipState(baseCut, resolveMedia)
     const back = omniclipStateToCut(
       state,
-      { schemaVersion: 1, episodeId: 'ep_001', transitions: baseCut.transitions },
+      { schemaVersion: 2, episodeId: 'ep_001', transitions: baseCut.transitions },
       resolveShotId,
       '2026-06-18T01:00:00.000Z',
     )
     expect(back.clips).toEqual([
-      { id: 'clip-a', sourceShotId: 'shot_1', inPoint: 0, outPoint: 2.5, order: 0 },
-      { id: 'clip-b', sourceShotId: 'shot_2', inPoint: 1, outPoint: 4, order: 1 },
+      { id: 'clip-a', sourceShotId: 'shot_1', inPointMs: 0, outPointMs: 2500, order: 0 },
+      { id: 'clip-b', sourceShotId: 'shot_2', inPointMs: 1000, outPointMs: 4000, order: 1 },
     ])
     expect(back.transitions).toEqual(baseCut.transitions)
   })

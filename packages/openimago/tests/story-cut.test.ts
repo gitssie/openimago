@@ -96,7 +96,7 @@ test("GET cut returns an empty lazily-synthesized Cut when no file exists", asyn
   const res = await req("GET", token, cutUrl(project.id, "ep_001"))
   expect(res.status).toBe(200)
   const body = (await res.json()) as Record<string, any>
-  expect(body.cut.schemaVersion).toBe(1)
+  expect(body.cut.schemaVersion).toBe(2)
   expect(body.cut.episodeId).toBe("ep_001")
   expect(body.cut.clips).toEqual([])
   expect(body.cut.transitions).toEqual([])
@@ -117,8 +117,8 @@ test("first clip write lazily creates story/cuts/ep_001.cut.json", async () => {
   const project = await createProject(token, "CutTest3")
 
   const res = await req("PATCH", token, cutUrl(project.id, "ep_001", "/clips/c1"), {
-    inPoint: 0,
-    outPoint: 5,
+    inPointMs: 0,
+    outPointMs: 5000,
   })
   // No clip exists yet — trim of a missing clip is a 404.
   expect(res.status).toBe(404)
@@ -128,7 +128,7 @@ test("addClip-less flow: split a clip the cut has no clips → 404", async () =>
   const token = await registerUser("cut4", "cut4@example.com")
   const project = await createProject(token, "CutTest4")
   const res = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/missing/split"), {
-    atSeconds: 2,
+    atMs: 2000,
     newClipId: "missing-split",
   })
   expect(res.status).toBe(404)
@@ -148,7 +148,7 @@ test("setBgm lazily creates the cut file and persists the bgm ref; clearBgm remo
   expect(setBody.updatedAt).not.toBe("")
 
   const file = await readCutFile(project.directory)
-  expect(file.schemaVersion).toBe(1)
+  expect(file.schemaVersion).toBe(2)
   expect(file.episodeId).toBe("ep_001")
   expect(file.bgm.artifactId).toBe("art_song1")
   expect(file.bgm.gainDb).toBe(-3)
@@ -187,7 +187,7 @@ import { writeFile, mkdir } from "node:fs/promises"
 
 async function seedCut(dir: string, clips: any[], transitions: any[] = []) {
   const cut = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     episodeId: "ep_001",
     clips,
     transitions,
@@ -202,9 +202,9 @@ test("reorderClips reorders clips and rewrites order 0..N", async () => {
   const token = await registerUser("cut7", "cut7@example.com")
   const project = await createProject(token, "CutTest7")
   await seedCut(project.directory, [
-    { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 3, order: 0 },
-    { id: "c2", sourceShotId: "s2", inPoint: 0, outPoint: 4, order: 1 },
-    { id: "c3", sourceShotId: "s3", inPoint: 0, outPoint: 5, order: 2 },
+    { id: "c1", sourceShotId: "s1", inPointMs: 0, outPointMs: 3000, order: 0 },
+    { id: "c2", sourceShotId: "s2", inPointMs: 0, outPointMs: 4000, order: 1 },
+    { id: "c3", sourceShotId: "s3", inPointMs: 0, outPointMs: 5000, order: 2 },
   ])
 
   const res = await req("PATCH", token, cutUrl(project.id, "ep_001", "/clips/reorder"), {
@@ -221,8 +221,8 @@ test("reorderClips rejects an id set that does not match the current clips", asy
   const token = await registerUser("cut8", "cut8@example.com")
   const project = await createProject(token, "CutTest8")
   await seedCut(project.directory, [
-    { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 3, order: 0 },
-    { id: "c2", sourceShotId: "s2", inPoint: 0, outPoint: 4, order: 1 },
+    { id: "c1", sourceShotId: "s1", inPointMs: 0, outPointMs: 3000, order: 0 },
+    { id: "c2", sourceShotId: "s2", inPointMs: 0, outPointMs: 4000, order: 1 },
   ])
   const res = await req("PATCH", token, cutUrl(project.id, "ep_001", "/clips/reorder"), {
     orderedClipIds: ["c1", "cX"],
@@ -234,27 +234,27 @@ test("trimClip updates in/out points of one clip", async () => {
   const token = await registerUser("cut9", "cut9@example.com")
   const project = await createProject(token, "CutTest9")
   await seedCut(project.directory, [
-    { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 10, order: 0 },
+    { id: "c1", sourceShotId: "s1", inPointMs: 0, outPointMs: 10000, order: 0 },
   ])
   const res = await req("PATCH", token, cutUrl(project.id, "ep_001", "/clips/c1"), {
-    inPoint: 2,
-    outPoint: 7,
+    inPointMs: 2000,
+    outPointMs: 7000,
   })
   expect(res.status).toBe(200)
   const cut = await getCut(token, project.id)
-  expect(cut.clips[0].inPoint).toBe(2)
-  expect(cut.clips[0].outPoint).toBe(7)
+  expect(cut.clips[0].inPointMs).toBe(2000)
+  expect(cut.clips[0].outPointMs).toBe(7000)
 })
 
 test("trimClip rejects inPoint >= outPoint", async () => {
   const token = await registerUser("cut10", "cut10@example.com")
   const project = await createProject(token, "CutTest10")
   await seedCut(project.directory, [
-    { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 10, order: 0 },
+    { id: "c1", sourceShotId: "s1", inPointMs: 0, outPointMs: 10000, order: 0 },
   ])
   const res = await req("PATCH", token, cutUrl(project.id, "ep_001", "/clips/c1"), {
-    inPoint: 8,
-    outPoint: 4,
+    inPointMs: 8000,
+    outPointMs: 4000,
   })
   expect(res.status).toBe(400)
 })
@@ -263,11 +263,11 @@ test("splitClip splits one clip into two at the given time, reindexing order", a
   const token = await registerUser("cut11", "cut11@example.com")
   const project = await createProject(token, "CutTest11")
   await seedCut(project.directory, [
-    { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 10, order: 0 },
-    { id: "c2", sourceShotId: "s2", inPoint: 0, outPoint: 4, order: 1 },
+    { id: "c1", sourceShotId: "s1", inPointMs: 0, outPointMs: 10000, order: 0 },
+    { id: "c2", sourceShotId: "s2", inPointMs: 0, outPointMs: 4000, order: 1 },
   ])
   const res = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/c1/split"), {
-    atSeconds: 4,
+    atMs: 4000,
     newClipId: "c1-split",
   })
   expect(res.status).toBe(200)
@@ -279,13 +279,13 @@ test("splitClip splits one clip into two at the given time, reindexing order", a
   expect(cut.clips.length).toBe(3)
   // first half keeps the source range start
   expect(cut.clips[0].id).toBe("c1")
-  expect(cut.clips[0].inPoint).toBe(0)
-  expect(cut.clips[0].outPoint).toBe(4)
+  expect(cut.clips[0].inPointMs).toBe(0)
+  expect(cut.clips[0].outPointMs).toBe(4000)
   // second half uses the client-supplied id verbatim with the remaining range
   expect(cut.clips[1].id).toBe("c1-split")
   expect(cut.clips[1].sourceShotId).toBe("s1")
-  expect(cut.clips[1].inPoint).toBe(4)
-  expect(cut.clips[1].outPoint).toBe(10)
+  expect(cut.clips[1].inPointMs).toBe(4000)
+  expect(cut.clips[1].outPointMs).toBe(10000)
   // trailing clip preserved
   expect(cut.clips[2].id).toBe("c2")
   // order is a contiguous 0..N
@@ -296,11 +296,11 @@ test("splitClip rejects a newClipId already present in the cut", async () => {
   const token = await registerUser("cut11b", "cut11b@example.com")
   const project = await createProject(token, "CutTest11b")
   await seedCut(project.directory, [
-    { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 10, order: 0 },
-    { id: "c2", sourceShotId: "s2", inPoint: 0, outPoint: 4, order: 1 },
+    { id: "c1", sourceShotId: "s1", inPointMs: 0, outPointMs: 10000, order: 0 },
+    { id: "c2", sourceShotId: "s2", inPointMs: 0, outPointMs: 4000, order: 1 },
   ])
   const res = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/c1/split"), {
-    atSeconds: 4,
+    atMs: 4000,
     newClipId: "c2",
   })
   expect(res.status).toBe(400)
@@ -310,14 +310,14 @@ test("splitClip rejects a missing or empty newClipId", async () => {
   const token = await registerUser("cut11c", "cut11c@example.com")
   const project = await createProject(token, "CutTest11c")
   await seedCut(project.directory, [
-    { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 10, order: 0 },
+    { id: "c1", sourceShotId: "s1", inPointMs: 0, outPointMs: 10000, order: 0 },
   ])
   const missing = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/c1/split"), {
-    atSeconds: 4,
+    atMs: 4000,
   })
   expect(missing.status).toBe(400)
   const empty = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/c1/split"), {
-    atSeconds: 4,
+    atMs: 4000,
     newClipId: "",
   })
   expect(empty.status).toBe(400)
@@ -327,10 +327,10 @@ test("splitClip rejects a newClipId that is not a safe slug", async () => {
   const token = await registerUser("cut11d", "cut11d@example.com")
   const project = await createProject(token, "CutTest11d")
   await seedCut(project.directory, [
-    { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 10, order: 0 },
+    { id: "c1", sourceShotId: "s1", inPointMs: 0, outPointMs: 10000, order: 0 },
   ])
   const res = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/c1/split"), {
-    atSeconds: 4,
+    atMs: 4000,
     newClipId: "../evil id",
   })
   expect(res.status).toBe(400)
@@ -340,10 +340,10 @@ test("splitClip rejects a split point outside the clip range", async () => {
   const token = await registerUser("cut12", "cut12@example.com")
   const project = await createProject(token, "CutTest12")
   await seedCut(project.directory, [
-    { id: "c1", sourceShotId: "s1", inPoint: 2, outPoint: 6, order: 0 },
+    { id: "c1", sourceShotId: "s1", inPointMs: 2000, outPointMs: 6000, order: 0 },
   ])
   const res = await req("POST", token, cutUrl(project.id, "ep_001", "/clips/c1/split"), {
-    atSeconds: 6,
+    atMs: 6000,
     newClipId: "c1-split",
   })
   expect(res.status).toBe(400)
@@ -355,9 +355,9 @@ test("deleteClip removes the clip, reindexes order, and drops its trailing trans
   await seedCut(
     project.directory,
     [
-      { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 3, order: 0 },
-      { id: "c2", sourceShotId: "s2", inPoint: 0, outPoint: 4, order: 1 },
-      { id: "c3", sourceShotId: "s3", inPoint: 0, outPoint: 5, order: 2 },
+      { id: "c1", sourceShotId: "s1", inPointMs: 0, outPointMs: 3000, order: 0 },
+      { id: "c2", sourceShotId: "s2", inPointMs: 0, outPointMs: 4000, order: 1 },
+      { id: "c3", sourceShotId: "s3", inPointMs: 0, outPointMs: 5000, order: 2 },
     ],
     [{ afterClipId: "c2", kind: "dissolve", durationSeconds: 1 }],
   )
@@ -375,8 +375,8 @@ test("setTransition adds/updates a transition after a clip; clearTransition remo
   const token = await registerUser("cut14", "cut14@example.com")
   const project = await createProject(token, "CutTest14")
   await seedCut(project.directory, [
-    { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 3, order: 0 },
-    { id: "c2", sourceShotId: "s2", inPoint: 0, outPoint: 4, order: 1 },
+    { id: "c1", sourceShotId: "s1", inPointMs: 0, outPointMs: 3000, order: 0 },
+    { id: "c2", sourceShotId: "s2", inPointMs: 0, outPointMs: 4000, order: 1 },
   ])
 
   const setRes = await req("PUT", token, cutUrl(project.id, "ep_001", "/transitions/c1"), {
@@ -410,7 +410,7 @@ test("setTransition rejects an unknown kind", async () => {
   const token = await registerUser("cut15", "cut15@example.com")
   const project = await createProject(token, "CutTest15")
   await seedCut(project.directory, [
-    { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 3, order: 0 },
+    { id: "c1", sourceShotId: "s1", inPointMs: 0, outPointMs: 3000, order: 0 },
   ])
   const res = await req("PUT", token, cutUrl(project.id, "ep_001", "/transitions/c1"), {
     kind: "wipe",
@@ -423,7 +423,7 @@ test("setTransition rejects an afterClipId that is not a clip", async () => {
   const token = await registerUser("cut16", "cut16@example.com")
   const project = await createProject(token, "CutTest16")
   await seedCut(project.directory, [
-    { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 3, order: 0 },
+    { id: "c1", sourceShotId: "s1", inPointMs: 0, outPointMs: 3000, order: 0 },
   ])
   const res = await req("PUT", token, cutUrl(project.id, "ep_001", "/transitions/cX"), {
     kind: "cut",
@@ -436,11 +436,85 @@ test("reader tolerates orphan clips (sourceShotId no longer exists) — returned
   const token = await registerUser("cut17", "cut17@example.com")
   const project = await createProject(token, "CutTest17")
   await seedCut(project.directory, [
-    { id: "c1", sourceShotId: "s_deleted", inPoint: 0, outPoint: 3, order: 0 },
+    { id: "c1", sourceShotId: "s_deleted", inPointMs: 0, outPointMs: 3000, order: 0 },
   ])
   const cut = await getCut(token, project.id)
   expect(cut.clips.length).toBe(1)
   expect(cut.clips[0].sourceShotId).toBe("s_deleted")
+})
+
+// ── Schema v1 → v2 migration (integer-ms, openimago-23cr) ──────────────────
+//
+// Legacy cut.json (schemaVersion 1, float-seconds inPoint/outPoint) must read
+// back as v2 (integer ms) without losing data — seconds × 1000, rounded.
+
+async function seedLegacyV1Cut(dir: string, clips: any[], transitions: any[] = []) {
+  const cut = {
+    schemaVersion: 1,
+    episodeId: "ep_001",
+    clips,
+    transitions,
+    updatedAt: new Date().toISOString(),
+  }
+  await mkdir(join(dir, "story/cuts"), { recursive: true })
+  await writeFile(join(dir, "story/cuts/ep_001.cut.json"), JSON.stringify(cut, null, 2) + "\n", "utf-8")
+  return cut
+}
+
+test("reading a legacy v1 cut migrates clip trim points from seconds to integer ms", async () => {
+  const token = await registerUser("cutmig1", "cutmig1@example.com")
+  const project = await createProject(token, "CutMig1")
+  await seedLegacyV1Cut(project.directory, [
+    { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 2.5, order: 0 },
+    { id: "c2", sourceShotId: "s2", inPoint: 1, outPoint: 15.069, order: 1 },
+  ])
+
+  const cut = await getCut(token, project.id)
+  expect(cut.schemaVersion).toBe(2)
+  // 0s → 0ms, 2.5s → 2500ms.
+  expect(cut.clips[0]).toMatchObject({ id: "c1", inPointMs: 0, outPointMs: 2500 })
+  // 1s → 1000ms, 15.069s → 15069ms (rounded, no float drift).
+  expect(cut.clips[1]).toMatchObject({ id: "c2", inPointMs: 1000, outPointMs: 15069 })
+})
+
+test("migrating a v1 cut preserves transitions (seconds) and orphan clips", async () => {
+  const token = await registerUser("cutmig2", "cutmig2@example.com")
+  const project = await createProject(token, "CutMig2")
+  await seedLegacyV1Cut(
+    project.directory,
+    [{ id: "c1", sourceShotId: "s_deleted", inPoint: 0.5, outPoint: 3, order: 0 }],
+    [{ afterClipId: "c1", kind: "dissolve", durationSeconds: 0.5 }],
+  )
+
+  const cut = await getCut(token, project.id)
+  // Orphan clip kept, lifted to ms.
+  expect(cut.clips).toHaveLength(1)
+  expect(cut.clips[0]).toMatchObject({ sourceShotId: "s_deleted", inPointMs: 500, outPointMs: 3000 })
+  // Transition durationSeconds is OUT of the ms migration — stays seconds.
+  expect(cut.transitions[0].durationSeconds).toBe(0.5)
+})
+
+test("a v1 cut is persisted as v2 after the next write", async () => {
+  const token = await registerUser("cutmig3", "cutmig3@example.com")
+  const project = await createProject(token, "CutMig3")
+  await seedLegacyV1Cut(project.directory, [
+    { id: "c1", sourceShotId: "s1", inPoint: 0, outPoint: 10, order: 0 },
+  ])
+
+  // A write (trim) re-stamps the doc to v2 with ms clip fields on disk.
+  const res = await req("PATCH", token, cutUrl(project.id, "ep_001", "/clips/c1"), {
+    inPointMs: 2000,
+    outPointMs: 7000,
+  })
+  expect(res.status).toBe(200)
+
+  const file = await readCutFile(project.directory)
+  expect(file.schemaVersion).toBe(2)
+  expect(file.clips[0].inPointMs).toBe(2000)
+  expect(file.clips[0].outPointMs).toBe(7000)
+  // The legacy seconds keys are gone after the upgrade.
+  expect(file.clips[0].inPoint).toBeUndefined()
+  expect(file.clips[0].outPoint).toBeUndefined()
 })
 
 test("cut write returns 400 for an invalid episode id", async () => {

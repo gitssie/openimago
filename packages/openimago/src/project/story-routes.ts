@@ -319,19 +319,19 @@ storyRoutes.post("/:id/story/episodes/:epId/cut/clips/:clipId/split", async (c) 
   const episodeId = c.req.param("epId")
   const clipId = c.req.param("clipId")
 
-  let atSeconds = Number.NaN
+  let atMs = Number.NaN
   let newClipId = ""
   let expectedUpdatedAt: string | undefined
   try {
-    const body = (await c.req.json()) as { atSeconds?: unknown; newClipId?: unknown; expectedUpdatedAt?: unknown }
-    if (typeof body?.atSeconds === "number") atSeconds = body.atSeconds
+    const body = (await c.req.json()) as { atMs?: unknown; newClipId?: unknown; expectedUpdatedAt?: unknown }
+    if (typeof body?.atMs === "number") atMs = body.atMs
     if (typeof body?.newClipId === "string") newClipId = body.newClipId
     if (typeof body?.expectedUpdatedAt === "string") expectedUpdatedAt = body.expectedUpdatedAt
   } catch {
-    // Empty/invalid body — atSeconds stays NaN / newClipId empty → splitClip returns 400.
+    // Empty/invalid body — atMs stays NaN / newClipId empty → splitClip returns 400.
   }
 
-  const result = await storyService.splitClip(projectId, userId, episodeId, clipId, atSeconds, newClipId, expectedUpdatedAt)
+  const result = await storyService.splitClip(projectId, userId, episodeId, clipId, atMs, newClipId, expectedUpdatedAt)
   if ("error" in result) return c.json({ error: result.error }, result.status as any)
   return c.json({ updatedAt: result.data.updatedAt, newClipId: result.data.newClipId })
 })
@@ -344,19 +344,19 @@ storyRoutes.patch("/:id/story/episodes/:epId/cut/clips/:clipId", async (c) => {
   const episodeId = c.req.param("epId")
   const clipId = c.req.param("clipId")
 
-  let inPoint = Number.NaN
-  let outPoint = Number.NaN
+  let inPointMs = Number.NaN
+  let outPointMs = Number.NaN
   let expectedUpdatedAt: string | undefined
   try {
-    const body = (await c.req.json()) as { inPoint?: unknown; outPoint?: unknown; expectedUpdatedAt?: unknown }
-    if (typeof body?.inPoint === "number") inPoint = body.inPoint
-    if (typeof body?.outPoint === "number") outPoint = body.outPoint
+    const body = (await c.req.json()) as { inPointMs?: unknown; outPointMs?: unknown; expectedUpdatedAt?: unknown }
+    if (typeof body?.inPointMs === "number") inPointMs = body.inPointMs
+    if (typeof body?.outPointMs === "number") outPointMs = body.outPointMs
     if (typeof body?.expectedUpdatedAt === "string") expectedUpdatedAt = body.expectedUpdatedAt
   } catch {
     // Empty/invalid body — bounds stay NaN → trimClip returns 400.
   }
 
-  const result = await storyService.trimClip(projectId, userId, episodeId, clipId, inPoint, outPoint, expectedUpdatedAt)
+  const result = await storyService.trimClip(projectId, userId, episodeId, clipId, inPointMs, outPointMs, expectedUpdatedAt)
   if ("error" in result) return c.json({ error: result.error }, result.status as any)
   return c.json({ updatedAt: result.data.updatedAt })
 })

@@ -13,8 +13,8 @@ export function rawCutToEpisodeCut(raw: OpenimagoEpisodeCut | null): EpisodeCut 
   const clips: CutClip[] = raw.clips.map((c) => ({
     id: c.id,
     sourceShotId: c.sourceShotId,
-    inPoint: c.inPoint,
-    outPoint: c.outPoint,
+    inPointMs: c.inPointMs,
+    outPointMs: c.outPointMs,
     order: c.order,
   }))
 
@@ -29,7 +29,7 @@ export function rawCutToEpisodeCut(raw: OpenimagoEpisodeCut | null): EpisodeCut 
     }))
 
   const cut: EpisodeCut = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     episodeId: raw.episodeId,
     clips,
     transitions,
