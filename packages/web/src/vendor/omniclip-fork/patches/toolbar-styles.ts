@@ -40,13 +40,17 @@ export const combinedToolbarStyles = css`
     box-sizing: border-box;
   }
 
-  /* One full-width bar; three groups spread LEFT (.flex — undo/redo/split) ·
-     CENTER (.transport — timecode/play) · RIGHT (.right — mute/fullscreen/zoom). */
+  /* One full-width bar; three groups LEFT (.flex — undo/redo/split) ·
+     CENTER (.transport — timecode/play) · RIGHT (.right — mute/fullscreen/zoom).
+     A 3-column grid (1fr auto 1fr) centers the middle group on the bar's TRUE
+     center regardless of the side widths — space-between would push it off-center
+     since the right group is wider than the left. The 1fr side columns hold the
+     left/right groups (which align their own children via justify-self below). */
   .tools {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     width: 100%;
     align-items: center;
-    justify-content: space-between;
     box-sizing: border-box;
     gap: 0.75em;
     padding: 6px 12px;
@@ -93,6 +97,8 @@ export const combinedToolbarStyles = css`
     display: flex;
     align-items: center;
     gap: 0.25em;
+    /* hug the left edge in the left 1fr grid column */
+    justify-self: start;
   }
 
   .history {
@@ -131,6 +137,9 @@ export const combinedToolbarStyles = css`
     display: flex;
     align-items: center;
     gap: 0.7em;
+    /* the auto middle column, centered between the two equal 1fr side columns →
+       the play/timecode sits at the bar's true horizontal center */
+    justify-self: center;
   }
 
   /* Play/pause: NEUTRAL white glyph on a SUBTLE filled disc (the UPDATED
@@ -174,6 +183,8 @@ export const combinedToolbarStyles = css`
     display: flex;
     align-items: center;
     gap: 0.5em;
+    /* hug the right edge in the right 1fr grid column */
+    justify-self: end;
   }
 
   /* Master-mute speaker: muted state reads as the theme pink (an "off" warning),
