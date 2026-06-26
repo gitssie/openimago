@@ -76,23 +76,63 @@ export const TimeRuler = shadow_view((use) => (timeline: AnyTimeline) => {
   const [indicatorX, setIndicatorX] = use.state(0)
   const [indicator, setIndicator] = use.state(false)
 
-  // openimago-jtub: only `.scroll-area` scrolls now (NOT the host), so read all
-  // scroll geometry from it. `timeline` is the host (use.element); fall back to it
-  // if the scroll-area isn't found (defensive).
-  const scrollEl = (): AnyTimeline =>
-    (timeline as { shadowRoot?: { querySelector(s: string): AnyTimeline } }).shadowRoot?.querySelector(
-      '.scroll-area',
-    ) ?? timeline
+  // openimago-jtub: only `.scroll-area` scrolls now (NOT the host), so ALL scroll
+  // geometry (scrollLeft/clientWidth, the scroll listener, the seek/indicator
+  // bounds) must come from `.scroll-area`. Resolve it from the RULER's OWN element
+  // (`use.element`) which lives inside `.scroll-area` in the same shadow root —
+  // `closest('.scroll-area')` is reliable once the ruler is in the DOM. The old
+  // resolution read `timeline.shadowRoot.querySelector('.scroll-area')` ONCE at
+  // mount, but the host's `.scroll-area` is not yet committed when the child ruler
+  // mounts, so it returned null → fell back to the (non-scrolling) host → the
+  // scroll listener bound to an element that never fires → the ruler stayed frozen
+  // on the initial 0–visible window and never extended across the timeline
+  // (openimago ruler regression). Resolving lazily every call fixes both the
+  // listener target and the scrollLeft/clientWidth reads.
+  const scrollEl = (): AnyTimeline => {
+    const self = use.element as { closest?(s: string): AnyTimeline } | null
+    const fromSelf = self?.closest?.('.scroll-area')
+    if (fromSelf) return fromSelf
+    const fromHost = (
+      timeline as { shadowRoot?: { querySelector(s: string): AnyTimeline } }
+    ).shadowRoot?.querySelector('.scroll-area')
+    return fromHost ?? timeline
+  }
 
   use.mount(() => {
-    const el = scrollEl()
     const set_time_codes = () => setTimeCodes(generate_time_codes(use.context.state.zoom))
     watch.track(
       () => use.context.state.zoom,
       (zoom: number) => setTimeCodes(generate_time_codes(zoom)),
     )
-    el.addEventListener('scroll', set_time_codes)
-    return () => el.removeEventListener('scroll', set_time_codes)
+    // The scroll-area may not exist in the DOM yet when this child view mounts, so
+    // bind the listener as soon as it resolves (retry across a few frames), and
+    // regenerate once on attach so the first window is correct. Bounded so the
+    // loop can never spin forever if `.scroll-area` is somehow never present.
+    const MAX_ATTACH_FRAMES = 120 // ~2s at 60fps
+    let scrollTarget: AnyTimeline = null
+    let rafId = 0
+    let frames = 0
+    let cancelled = false
+    const attach = () => {
+      if (cancelled) return
+      const el = scrollEl()
+      const isScrollArea =
+        (el as { classList?: { contains(s: string): boolean } }).classList?.contains?.('scroll-area') ?? false
+      if (isScrollArea) {
+        scrollTarget = el
+        el.addEventListener('scroll', set_time_codes)
+        set_time_codes()
+        return
+      }
+      if (frames++ >= MAX_ATTACH_FRAMES) return
+      rafId = requestAnimationFrame(attach)
+    }
+    attach()
+    return () => {
+      cancelled = true
+      if (rafId) cancelAnimationFrame(rafId)
+      if (scrollTarget) scrollTarget.removeEventListener('scroll', set_time_codes)
+    }
   })
 
   function convert_ms_to_timecode(milliseconds: number) {
