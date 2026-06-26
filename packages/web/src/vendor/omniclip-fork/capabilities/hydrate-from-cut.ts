@@ -107,10 +107,10 @@ export async function hydrateFromCut(
       raw_duration: imported.rawDurationSeconds * MS_PER_S,
       frames: imported.frames,
       rect: fullFrameRect(),
-      filmstrip_url: clip.filmstripUrl ?? null,
-      filmstrip_frame_count: clip.filmstripFrameCount ?? null,
-      filmstrip_frame_w: clip.filmstripFrameW ?? null,
-      filmstrip_frame_h: clip.filmstripFrameH ?? null,
+      filmstrip_url: clip.filmstrip?.spriteUrl ?? null,
+      filmstrip_frame_count: clip.filmstrip?.frameCount ?? null,
+      filmstrip_frame_w: clip.filmstrip?.frameW ?? null,
+      filmstrip_frame_h: clip.filmstrip?.frameH ?? null,
       // TRUE clip length in SECONDS (guarded finite>0) — the reliable basis for
       // "one cell per second" in the static sprite view (openimago-78m9); avoids
       // omniclip's internal-unit duration / 2^zoom math, and never NaN/0 (which
@@ -120,7 +120,7 @@ export async function hydrateFromCut(
       // filmstrip maps a cell's source time (inPoint + i*sec/cell) → sprite frame
       // against THIS — making a clip show its inPoint-onward frames, and split
       // halves visually distinct (openimago-px5g). null → falls back to clip dur.
-      filmstrip_source_duration_seconds: clip.filmstripSourceDurationSeconds ?? null,
+      filmstrip_source_duration_seconds: clip.filmstrip?.sourceDurationSeconds ?? null,
     })
     cursorMs += durationMs
   }

@@ -13,8 +13,8 @@
 // below. The fork remultiplies by 1000 internally for omniclip placement.
 
 import type { CutClip, EpisodeCut } from './cut-types'
-import type { HydrateBgm, HydrateClip, OmniTransition } from './fork-contract'
-import type { ShotMediaSource } from './shot-media-resolver'
+import type { HydrateBgm, HydrateClip, HydrateFilmstrip, OmniTransition } from './fork-contract'
+import type { Filmstrip, ShotMediaSource } from './shot-media-resolver'
 
 const MS_PER_S = 1000
 
@@ -63,11 +63,7 @@ export function buildHydrationPayload(
       name: media.name,
       inPointSeconds: clip.inPointMs / MS_PER_S,
       outPointSeconds: clip.outPointMs / MS_PER_S,
-      filmstripUrl: media.filmstripUrl,
-      filmstripFrameCount: media.filmstripFrameCount,
-      filmstripFrameW: media.filmstripFrameW,
-      filmstripFrameH: media.filmstripFrameH,
-      filmstripSourceDurationSeconds: media.sourceDurationSeconds,
+      filmstrip: toHydrateFilmstrip(media.filmstrip),
     })
   }
 
@@ -88,6 +84,23 @@ export function buildHydrationPayload(
   const bgm = resolveBgmRef(cut, resolveBgm)
 
   return { clips, transitions, orphans, ...(bgm ? { bgm } : {}) }
+}
+
+/**
+ * Convert the domain Filmstrip (ms) to the fork's HydrateFilmstrip (seconds).
+ * This is the single ms→s seam for the filmstrip's source duration, mirroring the
+ * trim-point conversion above: the fork boundary stays seconds (openimago-wa33).
+ * Whole-or-null is preserved — a null domain filmstrip stays null.
+ */
+function toHydrateFilmstrip(filmstrip: Filmstrip | null): HydrateFilmstrip | null {
+  if (!filmstrip) return null
+  return {
+    spriteUrl: filmstrip.spriteUrl,
+    frameCount: filmstrip.frameCount,
+    frameW: filmstrip.frameW,
+    frameH: filmstrip.frameH,
+    sourceDurationSeconds: filmstrip.sourceDurationMs / MS_PER_S,
+  }
 }
 
 function resolveBgmRef(

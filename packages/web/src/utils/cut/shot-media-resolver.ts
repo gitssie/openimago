@@ -8,6 +8,28 @@
 
 import type { StoryRunSummary, StoryShotSummary } from '../../components/session-workspace/types'
 
+/**
+ * Precomputed timeline filmstrip sprite for a clip (openimago-78m9, value object
+ * openimago-wa33). A self-consistent bundle: the sprite URL, its frame count and
+ * per-frame px dims, and the SOURCE duration the cell-time→frame mapping is
+ * computed against — all taken TOGETHER from the run that produced the sprite, so
+ * they can never drift apart. Either the whole object is present, or `filmstrip`
+ * is null (no sprite); the individual fields are never independently null.
+ *
+ * `sourceDurationMs` is the integer-ms source duration OF THE SPRITE'S run (cut
+ * schema v2 unit, openimago-23cr) — used ONLY for sprite frame mapping (which
+ * frame of the sprite a cell's source time lands on). It is deliberately
+ * separate from ShotMediaSource.sourceDurationMs (the PLAYBACK run's duration),
+ * which may come from a different run and is what bounds trim.
+ */
+export interface Filmstrip {
+  spriteUrl: string
+  frameCount: number
+  frameW: number
+  frameH: number
+  sourceDurationMs: number
+}
+
 /** URL-level media for a source shot, before browser import. */
 export interface ShotMediaSource {
   sourceShotId: string
@@ -15,18 +37,50 @@ export interface ShotMediaSource {
   url: string
   /** thumbnail URL for quick display. */
   thumbnailUrl: string | null
-  /** Precomputed filmstrip sprite URL for the timeline strip (openimago-78m9),
-   *  or null when the run has no sprite. */
-  filmstripUrl: string | null
-  /** Sprite frame count / per-frame px dims (null when no sprite). */
-  filmstripFrameCount: number | null
-  filmstripFrameW: number | null
-  filmstripFrameH: number | null
-  /** Real SOURCE video duration in seconds (run.result.duration) — the basis for
-   *  mapping a cell's source time → sprite frame (openimago-px5g). null if unknown. */
-  sourceDurationSeconds: number | null
+  /** Precomputed filmstrip sprite (sprite + dims + its own source duration),
+   *  whole-or-null. null when no completed run of the shot has a sprite. */
+  filmstrip: Filmstrip | null
+  /** Real SOURCE video duration in integer ms of the PLAYBACK run (the run whose
+   *  media actually plays) — this is what a clip's trim is bounded against, so it
+   *  MUST come from the primary/playback run, NOT the (possibly different)
+   *  filmstrip run (openimago-wa33). null when the playback run has no duration. */
+  sourceDurationMs: number | null
   /** a stable, human name for the imported file. */
   name: string
+}
+
+const MS_PER_S = 1000
+
+/** Whole ms from a run's seconds duration, or null when absent/non-finite. */
+function runDurationMs(durationSeconds: number | null): number | null {
+  if (durationSeconds === null || !Number.isFinite(durationSeconds)) return null
+  return Math.round(durationSeconds * MS_PER_S)
+}
+
+/**
+ * Build the Filmstrip VO from the run that owns the sprite — whole-or-null. The
+ * sprite needs all four image facts AND a source duration to map cell-time →
+ * frame; if any is missing the strip is simply absent (the clip falls back to a
+ * flat lane) rather than half-built.
+ */
+function buildFilmstrip(run: StoryRunSummary): Filmstrip | null {
+  if (
+    !run.filmstripUrl ||
+    run.filmstripFrameCount === null ||
+    run.filmstripFrameW === null ||
+    run.filmstripFrameH === null
+  ) {
+    return null
+  }
+  const sourceDurationMs = runDurationMs(run.durationSeconds)
+  if (sourceDurationMs === null) return null
+  return {
+    spriteUrl: run.filmstripUrl,
+    frameCount: run.filmstripFrameCount,
+    frameW: run.filmstripFrameW,
+    frameH: run.filmstripFrameH,
+    sourceDurationMs,
+  }
 }
 
 /**
@@ -44,10 +98,19 @@ export interface ShotMediaSource {
  *     completed run (legacy fallback for video-less shots),
  *   • filmstripRun (sprite + its consistent dims + source duration) = the most-recent
  *     completed run that HAS a filmstripUrl ?? primary.
- * The filmstrip fields are taken TOGETHER from filmstripRun so the sprite, its frame
- * dims, and the sourceDurationSeconds that maps cell-time → frame stay self-consistent.
- * The thumbnail therefore survives as long as ANY completed run of the shot has a
- * sprite. Returns null when the shot has no usable completed run (orphan placeholder).
+ * The filmstrip fields are taken TOGETHER from filmstripRun (as the Filmstrip VO) so
+ * the sprite, its frame dims, and the source duration that maps cell-time → frame
+ * stay self-consistent. The thumbnail therefore survives as long as ANY completed run
+ * of the shot has a sprite.
+ *
+ * sourceDurationMs (openimago-wa33): the clip's PLAYBACK duration — what trim is
+ * bounded against — MUST come from `primary` (the run whose media plays), NOT from
+ * filmstripRun. These can be DIFFERENT runs (a fallback sprite from an older run of a
+ * different length); taking the duration from the sprite run made trim bounds
+ * disagree with the actual playing media. The sprite's own source duration lives on
+ * the Filmstrip VO and is used only for frame mapping.
+ *
+ * Returns null when the shot has no usable completed run (orphan placeholder).
  */
 export function resolveShotMediaSource(
   sourceShotId: string,
@@ -80,13 +143,11 @@ export function resolveShotMediaSource(
     sourceShotId,
     url: primary.previewUrl,
     thumbnailUrl: primary.thumbnailUrl,
-    // All filmstrip-consistent fields TOGETHER from filmstripRun (sprite + its dims +
-    // the source duration the cell-time→frame mapping needs for that sprite).
-    filmstripUrl: filmstripRun.filmstripUrl,
-    filmstripFrameCount: filmstripRun.filmstripFrameCount,
-    filmstripFrameW: filmstripRun.filmstripFrameW,
-    filmstripFrameH: filmstripRun.filmstripFrameH,
-    sourceDurationSeconds: filmstripRun.durationSeconds,
+    // The sprite (+ dims + its own source duration) TOGETHER from filmstripRun.
+    filmstrip: buildFilmstrip(filmstripRun),
+    // PLAYBACK duration from `primary` (the run whose media plays), so trim bounds
+    // match the actual clip — not the (possibly different) filmstripRun.
+    sourceDurationMs: runDurationMs(primary.durationSeconds),
     name: `${sourceShotId}.mp4`,
   }
 }

@@ -142,6 +142,24 @@ export function buildOmniThemeStyle(): Record<OmniThemeVar, string> {
 }
 
 /**
+ * Precomputed filmstrip sprite for a hydrated clip (openimago-78m9, value object
+ * openimago-wa33). A horizontal-strip image of N 9:16 frames + its dims, rendered
+ * statically by the fork via CSS background-position (no WebCodecs). Whole-or-null:
+ * the host passes the entire object or nothing (a null filmstrip → the clip falls
+ * back to a flat lane). `sourceDurationSeconds` is the sprite's own source
+ * duration (the basis for mapping a cell's source time → sprite frame,
+ * openimago-px5g) — this is the FORK boundary, which is seconds (the host's
+ * cut-hydration converts the domain ms → seconds here, the single ms↔s seam).
+ */
+export interface HydrateFilmstrip {
+  spriteUrl: string
+  frameCount: number
+  frameW: number
+  frameH: number
+  sourceDurationSeconds: number
+}
+
+/**
  * One clip to lay onto the timeline during hydration: its source media url + a
  * stable id (the CutClip id) + trim points in seconds. Orphan clips (no
  * resolvable media) are NOT passed here — the host renders them via the
@@ -153,17 +171,9 @@ export interface HydrateClip {
   name: string
   inPointSeconds: number
   outPointSeconds: number
-  /** Precomputed filmstrip sprite for the timeline strip (openimago-78m9):
-   *  a horizontal-strip image of N 9:16 frames + its dims. The fork renders the
-   *  strip statically via CSS background-position (no WebCodecs). null → the clip
-   *  falls back to a flat lane (no per-frame thumbnails). */
-  filmstripUrl?: string | null
-  filmstripFrameCount?: number | null
-  filmstripFrameW?: number | null
-  filmstripFrameH?: number | null
-  /** Real SOURCE video duration (seconds) — sprite-frame mapping basis for the
-   *  per-second-with-inPoint filmstrip (openimago-px5g). */
-  filmstripSourceDurationSeconds?: number | null
+  /** Precomputed filmstrip sprite (whole-or-null) for the timeline strip. null →
+   *  the clip falls back to a flat lane (no per-frame thumbnails). */
+  filmstrip?: HydrateFilmstrip | null
 }
 
 /**

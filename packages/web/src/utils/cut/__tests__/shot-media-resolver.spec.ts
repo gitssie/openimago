@@ -55,16 +55,20 @@ describe('resolveShotMediaSource', () => {
       run('r1', 'shot_1', { completedAt: '2026-06-18T00:01:00Z' }),
       run('r2', 'shot_1', { completedAt: '2026-06-18T00:00:30Z' }),
     ])
-    // latestRunId wins even though r1 completed later
+    // latestRunId wins even though r1 completed later. filmstrip is the VO; the
+    // playback duration is integer ms (12s → 12000ms).
     expect(res).toEqual({
       sourceShotId: 'shot_1',
       url: 'r2-preview.mp4',
       thumbnailUrl: 'r2-thumb.png',
-      filmstripUrl: 'r2.filmstrip.webp',
-      filmstripFrameCount: 24,
-      filmstripFrameW: 28,
-      filmstripFrameH: 50,
-      sourceDurationSeconds: 12,
+      filmstrip: {
+        spriteUrl: 'r2.filmstrip.webp',
+        frameCount: 24,
+        frameW: 28,
+        frameH: 50,
+        sourceDurationMs: 12000,
+      },
+      sourceDurationMs: 12000,
       name: 'shot_1.mp4',
     })
   })
@@ -106,8 +110,8 @@ describe('resolveShotMediaSource', () => {
       run('aud', 's01', { kind: 'audio', completedAt: '2026-06-08T10:21:14Z', previewUrl: '/mock/narration-s01.mp3', filmstripUrl: null, filmstripFrameCount: null }),
     ])
     expect(res?.url).toBe('/mock/shot-s01.mp4')
-    expect(res?.filmstripUrl).toBe('/mock/shot-s01.filmstrip.png')
-    expect(res?.filmstripFrameCount).toBe(24)
+    expect(res?.filmstrip?.spriteUrl).toBe('/mock/shot-s01.filmstrip.png')
+    expect(res?.filmstrip?.frameCount).toBe(24)
   })
 
   it('falls back to a run with a filmstripUrl for the FILMSTRIP, preview from primary, when no video run', () => {
@@ -121,23 +125,26 @@ describe('resolveShotMediaSource', () => {
     // preview = primary = completed[0] = the most-recent run (a)
     expect(withStrip?.url).toBe('a.mp3')
     // filmstrip = the run that HAS a sprite (b), decoupled from preview
-    expect(withStrip?.filmstripUrl).toBe('b.filmstrip.png')
+    expect(withStrip?.filmstrip?.spriteUrl).toBe('b.filmstrip.png')
     // No video AND no filmstrip anywhere → legacy: latest completed run for both.
     const legacy = resolveShotMediaSource('s3', [shot('s3')], [
       run('c', 's3', { kind: 'image', completedAt: '2026-06-08T10:10:00Z', previewUrl: 'c.png', filmstripUrl: null, filmstripFrameCount: null }),
       run('d', 's3', { kind: 'audio', completedAt: '2026-06-08T10:21:00Z', previewUrl: 'd.mp3', filmstripUrl: null, filmstripFrameCount: null }),
     ])
     expect(legacy?.url).toBe('d.mp3')
-    expect(legacy?.filmstripUrl).toBeNull()
+    expect(legacy?.filmstrip).toBeNull()
   })
 
   // openimago-iiab: the blank-after-refresh bug. The filmstrip is re-resolved each
   // hydration, and the run-pick coupled filmstrip to the preview/video run. When the
   // newest VIDEO run has no sprite but an OLDER completed run does, the clip went
   // blank. Decouple: preview from the video run, filmstrip from the best-sprite run.
+  //
+  // openimago-wa33: AND the playback duration must come from the PRIMARY (newest
+  // video) run, while the sprite's own source duration comes from the filmstrip run.
   it('resolves the filmstrip from an older completed run when the newest video run lacks a sprite', () => {
     const res = resolveShotMediaSource('s10', [shot('s10', 'vidNew')], [
-      // older completed run that DID get a sprite generated
+      // older completed run that DID get a sprite generated (source = 9s)
       run('older', 's10', {
         kind: 'video',
         completedAt: '2026-06-08T10:00:00Z',
@@ -149,7 +156,8 @@ describe('resolveShotMediaSource', () => {
         filmstripFrameH: 50,
         durationSeconds: 9,
       }),
-      // newest video run (latestRunId) — preview source, but NO sprite yet
+      // newest video run (latestRunId) — preview/playback source, but NO sprite yet
+      // (source = 10s, a DIFFERENT length than the older sprite run)
       run('vidNew', 's10', {
         kind: 'video',
         completedAt: '2026-06-08T11:00:00Z',
@@ -167,13 +175,18 @@ describe('resolveShotMediaSource', () => {
     expect(res?.thumbnailUrl).toBe('new-thumb.png')
     // filmstrip fields come TOGETHER from the older run that has the sprite — so the
     // thumbnail survives instead of going blank.
-    expect(res?.filmstripUrl).toBe('older.filmstrip.png')
-    expect(res?.filmstripFrameCount).toBe(24)
-    expect(res?.filmstripFrameW).toBe(28)
-    expect(res?.filmstripFrameH).toBe(50)
-    // sourceDurationSeconds must come from the SAME (older) run as the sprite so the
-    // cell-time → frame mapping stays self-consistent with that sprite.
-    expect(res?.sourceDurationSeconds).toBe(9)
+    expect(res?.filmstrip).toEqual({
+      spriteUrl: 'older.filmstrip.png',
+      frameCount: 24,
+      frameW: 28,
+      frameH: 50,
+      // the sprite maps cell-time → frame against ITS OWN run's source duration (9s).
+      sourceDurationMs: 9000,
+    })
+    // BUG FIX (openimago-wa33): the clip's PLAYBACK source duration — what trim is
+    // bounded against — comes from the PRIMARY run (10s → 10000ms), NOT the filmstrip
+    // run (which is 9s). These were wrongly conflated before.
+    expect(res?.sourceDurationMs).toBe(10000)
   })
 
   it('keeps the filmstrip from the video run itself when that run has its own sprite', () => {
@@ -193,20 +206,41 @@ describe('resolveShotMediaSource', () => {
       }),
     ])
     expect(res?.url).toBe('v.mp4')
-    // the video run has its own sprite → it is the first sprite run, used unchanged
-    expect(res?.filmstripUrl).toBe('v.filmstrip.png')
-    expect(res?.sourceDurationSeconds).toBe(7)
+    // the video run has its own sprite → it is the first sprite run, used unchanged.
+    // primary === filmstripRun here, so both durations agree (7s → 7000ms).
+    expect(res?.filmstrip?.spriteUrl).toBe('v.filmstrip.png')
+    expect(res?.filmstrip?.sourceDurationMs).toBe(7000)
+    expect(res?.sourceDurationMs).toBe(7000)
   })
 
   it('leaves the filmstrip null when no completed run of the shot has a sprite', () => {
-    // image-only shot: nothing has a sprite → blank filmstrip stays null (the
+    // image-only shot: nothing has a sprite → whole filmstrip stays null (the
     // image case is handled elsewhere; this documents it is NOT this fix's job).
     const res = resolveShotMediaSource('s12', [shot('s12', 'img')], [
       run('img', 's12', { kind: 'image', previewUrl: 'i.png', filmstripUrl: null, filmstripFrameCount: null, filmstripFrameW: null, filmstripFrameH: null, durationSeconds: null }),
     ])
     expect(res?.url).toBe('i.png')
-    expect(res?.filmstripUrl).toBeNull()
-    expect(res?.filmstripFrameCount).toBeNull()
-    expect(res?.sourceDurationSeconds).toBeNull()
+    expect(res?.filmstrip).toBeNull()
+    // playback run also has no duration → null.
+    expect(res?.sourceDurationMs).toBeNull()
+  })
+
+  it('leaves the filmstrip null when the sprite run has no source duration (incomplete VO)', () => {
+    // A sprite with all image facts but no source duration cannot map cell-time →
+    // frame, so the VO is whole-or-null: it stays null rather than half-built.
+    const res = resolveShotMediaSource('s13', [shot('s13', 'vid')], [
+      run('vid', 's13', {
+        kind: 'video',
+        previewUrl: 'v.mp4',
+        filmstripUrl: 'v.filmstrip.png',
+        filmstripFrameCount: 24,
+        filmstripFrameW: 28,
+        filmstripFrameH: 50,
+        durationSeconds: null,
+      }),
+    ])
+    expect(res?.url).toBe('v.mp4')
+    expect(res?.filmstrip).toBeNull()
+    expect(res?.sourceDurationMs).toBeNull()
   })
 })
