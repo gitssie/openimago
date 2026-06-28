@@ -283,6 +283,25 @@ describe("syncUserSkillsToDir", () => {
     expect(md).not.toContain("old body")
   })
 
+  test("materialized SKILL.md has exactly one frontmatter when content was pasted with one", async () => {
+    // Regression for openimago-9qs5: a user pasting a full SKILL.md as content
+    // must not produce a double frontmatter in the materialized file.
+    const token = await registerUser("sync5", "sync5@example.com")
+    const userId = await userIdForEmail("sync5@example.com")
+    const pastedContent = "---\nname: dbl\ndescription: pasted\n---\n\n# Real body\ninstructions here\n"
+    await app.fetch(req("POST", `/api/platform/skills`, token, { name: "dbl", description: "Real desc", content: pastedContent }))
+
+    const dir = join(tmp, "sync5")
+    await skillConfigService.syncUserSkillsToDir(userId, dir)
+
+    const md = await readFile(join(dir, ".opencode", "skills", "dbl", "SKILL.md"), "utf-8")
+    const fences = md.match(/^---$/gm) ?? []
+    expect(fences.length).toBe(2) // single block: opening + closing
+    expect(md).toContain("description: Real desc")
+    expect(md).not.toContain("description: pasted")
+    expect(md).toContain("# Real body")
+  })
+
   test("sync to an empty user library prunes a stale dir and writes nothing", async () => {
     const token = await registerUser("sync4", "sync4@example.com")
     const userId = await userIdForEmail("sync4@example.com")

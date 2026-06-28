@@ -53,12 +53,34 @@ function yamlScalar(value: string): string {
 }
 
 /**
+ * Strip a LEADING YAML frontmatter block from content. `content` is contractually
+ * the instructions-only body, but a user may paste a full SKILL.md (frontmatter +
+ * body). Without this, serializeSkillMd would emit TWO frontmatter blocks.
+ *
+ * Matches: optional leading whitespace, an opening `---` line, any lines up to the
+ * first closing `---` line, then any trailing blank lines. Only a LEADING block is
+ * removed — a `---` later in the body (e.g. a Markdown horizontal rule) is left
+ * untouched. Pure.
+ */
+export function stripLeadingFrontmatter(content: string): string {
+  // ^\s* — optional leading whitespace/newlines
+  // ---\r?\n — opening fence
+  // [\s\S]*? — minimal block body (non-greedy)
+  // \r?\n---[ \t]*(\r?\n|$) — closing fence on its own line
+  // [\r\n]* — swallow trailing blank lines so the body starts clean
+  const LEADING_FRONTMATTER_RE = /^\s*---\r?\n[\s\S]*?\r?\n---[ \t]*(\r?\n|$)[\r\n]*/
+  return content.replace(LEADING_FRONTMATTER_RE, "")
+}
+
+/**
  * Serialize a skill to SKILL.md text: YAML frontmatter (name, description)
- * followed by a blank line and the instructions-only body. Pure.
+ * followed by a blank line and the instructions-only body. A leading frontmatter
+ * block in `content` is stripped first so the output has exactly one. Pure.
  */
 export function serializeSkillMd(name: string, description: string, content: string): string {
   const frontmatter = `---\nname: ${yamlScalar(name)}\ndescription: ${yamlScalar(description)}\n---`
-  const body = content.endsWith("\n") ? content : `${content}\n`
+  const stripped = stripLeadingFrontmatter(content)
+  const body = stripped.endsWith("\n") ? stripped : `${stripped}\n`
   return `${frontmatter}\n\n${body}`
 }
 

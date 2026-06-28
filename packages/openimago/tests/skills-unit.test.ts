@@ -15,6 +15,43 @@ describe("serializeSkillMd", () => {
     )
   })
 
+  test("strips a leading frontmatter block from content so output has exactly one", () => {
+    // User pasted a full SKILL.md as content; the generated frontmatter must win
+    // and the pasted leading block must be removed (no double frontmatter).
+    const content = "---\nname: e2e-test-skill\ndescription: Old\n---\n\n# Updated Skill\nbody text\n"
+    const md = serializeSkillMd("e2e-test-skill", "New description", content)
+    // Exactly one frontmatter block: opening --- then a single closing --- line.
+    const fmBlocks = md.match(/^---$/gm) ?? []
+    expect(fmBlocks.length).toBe(2) // opening + closing of the single block
+    expect(md).toContain("description: New description")
+    expect(md).not.toContain("description: Old")
+    expect(md).toContain("# Updated Skill")
+    expect(md).toContain("body text")
+  })
+
+  test("leaves '---' that appears mid-body (horizontal rule) untouched", () => {
+    const content = "intro paragraph\n\n---\n\nafter the rule\n"
+    const md = serializeSkillMd("k", "d", content)
+    // The mid-body rule must survive verbatim in the body.
+    const bodyStart = md.indexOf("\n\n") + 2
+    const body = md.slice(bodyStart)
+    expect(body).toBe(content)
+  })
+
+  test("plain body without leading frontmatter is unchanged", () => {
+    const md = serializeSkillMd("k", "d", "Step 1. Do the thing.")
+    expect(md).toBe("---\nname: k\ndescription: d\n---\n\nStep 1. Do the thing.\n")
+  })
+
+  test("strips a leading frontmatter block even with leading whitespace before it", () => {
+    const content = "  \n---\nname: x\n---\nreal body\n"
+    const md = serializeSkillMd("k", "d", content)
+    const fmBlocks = md.match(/^---$/gm) ?? []
+    expect(fmBlocks.length).toBe(2)
+    expect(md).toContain("real body")
+    expect(md).not.toContain("name: x")
+  })
+
   test("quotes description that contains a colon so YAML stays valid", () => {
     const md = serializeSkillMd("k", "Use: carefully", "body")
     expect(md).toContain('description: "Use: carefully"')
