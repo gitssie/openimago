@@ -96,6 +96,7 @@ const realFs: SkillFileSystem = {
   mkdir: async (dir) => { await mkdir(dir, { recursive: true }) },
   writeFile: async (file, data) => { await writeFile(file, data, "utf-8") },
   rm: async () => { /* provisioning never removes — upsert-only */ },
+  readdir: async () => [], /* provisioning never prunes — upsert-only */
 }
 
 export interface ProvisionOptions {

@@ -309,9 +309,31 @@ export async function migrate() {
     )
   `)
 
+  // Legacy per-project unique index — only (re)create while project_id still
+  // exists; the openimago-680i pivot below drops the column, after which this
+  // index is gone for good.
   await db.execute(sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS user_skills_project_name_idx
-    ON user_skills (project_id, name)
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'user_skills' AND column_name = 'project_id'
+      ) THEN
+        CREATE UNIQUE INDEX IF NOT EXISTS user_skills_project_name_idx
+        ON user_skills (project_id, name);
+      END IF;
+    END$$
+  `)
+
+  // ── Pivot user_skills: project-scoped → user-scoped (openimago-680i) ─────
+  // Drop the per-project unique index + project_id column, and add a per-user
+  // unique index on (user_id, name). The DB row is now the single per-user
+  // source of truth; skills are materialized into a project on session-create.
+  await db.execute(sql`DROP INDEX IF EXISTS user_skills_project_name_idx`)
+  await db.execute(sql`ALTER TABLE user_skills DROP COLUMN IF EXISTS project_id`)
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS user_skills_user_name_idx
+    ON user_skills (user_id, name)
   `)
 }
 

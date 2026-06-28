@@ -20,7 +20,7 @@ import { billingRoutes } from "../billing/routes"
 import { billingAdminRoutes } from "../billing/admin-routes"
 import { mediaChargeRoutes } from "../billing/media-charge-routes"
 import { storyRoutes, storyValidateRoutes } from "../project/story-routes"
-import { projectSkillsRoutes } from "../skills/routes"
+import { userSkillsRoutes } from "../skills/routes"
 import { EventLayer } from "../event/layer"
 import { UserEventBus, type UserEventBusService } from "../event/bus"
 import { logger } from "./logger"
@@ -91,7 +91,7 @@ export function createApp() {
   app.route("/api/platform/billing", billingRoutes)
   app.route("/api/platform/billing", mediaChargeRoutes)
   app.route("/api/platform/projects", storyRoutes)
-  app.route("/api/platform/projects", projectSkillsRoutes)
+  app.route("/api/platform/skills", userSkillsRoutes)
   app.route("/", healthRoutes)
   app.route("/", createProxyRoutes(undefined, subscribe))
 

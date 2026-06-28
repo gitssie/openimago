@@ -17,6 +17,7 @@ import { billingService } from "../billing/service"
 import { resolveAttachments, type AttachmentInput } from "../attachments/resolver"
 import { tempUploadService } from "../temp-uploads/service"
 import { verifyJwt } from "../auth/jwt"
+import { skillConfigService } from "../skills/service"
 
 /**
  * Legacy callback (kept for compatibility).
@@ -111,6 +112,13 @@ export function createProxyRoutes(configOverrides?: { opencodeUrl?: string }, su
         target: WorkspaceTable.id,
         set: { directory, type: "worktree", userId },
       })
+
+    // Materialize the user's skill library into this project before opencode
+    // starts the session, so opencode's walk-up `.opencode` discovery finds them.
+    // Non-fatal: session creation succeeds even if skill sync partially fails.
+    await skillConfigService.syncUserSkillsToDir(userId, directory).catch((err) => {
+      logger.warn({ userId, directory, err }, "proxy: skill sync failed — continuing")
+    })
 
     // Forward to opencode with real directory
     const sessionRes = await forward(config, {

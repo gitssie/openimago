@@ -1,17 +1,21 @@
 // ── SkillConfigService ────────────────────────────────────────────────────────
 //
-// Per-project, user-authored skill management. The DB row (user_skills) is the
-// source of truth; the SKILL.md file on disk is materialized from it so opencode
-// discovers it natively at ${projectDir}/.opencode/skills/<name>/SKILL.md.
+// Per-user, user-authored skill management. A single per-user skill library; the
+// DB row (user_skills) is the single source of truth. CRUD does NOT touch disk.
 //
-// Mirrors ProjectService.create (validate → id → mkdir → db.insert → write file)
-// and WorkDirService's injectable FileSystem so the disk side is unit-testable.
+// Skills are materialized into a project ONLY when the user actually uses it
+// (session create) via syncUserSkillsToDir, which writes each active skill to
+// ${targetDir}/.opencode/skills/<name>/SKILL.md so opencode discovers it natively
+// through its walk-up `.opencode` discovery (openimago-680i).
+//
+// The injectable SkillFileSystem (mirrors WorkDirService.FileSystem) keeps the
+// disk side unit-testable.
 
-import { mkdir, writeFile, rm } from "node:fs/promises"
+import { mkdir, writeFile, rm, readdir } from "node:fs/promises"
 import path from "node:path"
 import { and, eq } from "drizzle-orm"
 import { db } from "../db/client"
-import { projects, userSkills } from "../db/schema"
+import { userSkills } from "../db/schema"
 import { skillId } from "../utils/ids"
 import { logger } from "../server/logger"
 
@@ -64,19 +68,28 @@ export interface SkillFileSystem {
   mkdir(dir: string): Promise<void>
   writeFile(file: string, data: string): Promise<void>
   rm(dir: string): Promise<void>
+  /** List the entries of a directory. Used by sync to prune deleted skills. */
+  readdir(dir: string): Promise<string[]>
 }
 
 const realFs: SkillFileSystem = {
   mkdir: async (dir) => { await mkdir(dir, { recursive: true }) },
   writeFile: async (file, data) => { await writeFile(file, data, "utf-8") },
   rm: async (dir) => { await rm(dir, { recursive: true, force: true }) },
+  readdir: async (dir) => {
+    try {
+      return await readdir(dir)
+    } catch {
+      // Missing dir → nothing to prune.
+      return []
+    }
+  },
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface CreateSkillInput {
   userId: string
-  projectId: string
   name: string
   description: string
   content: string
@@ -84,7 +97,6 @@ export interface CreateSkillInput {
 
 export interface UpdateSkillInput {
   userId: string
-  projectId: string
   name: string
   description?: string
   content?: string
@@ -92,7 +104,6 @@ export interface UpdateSkillInput {
 
 interface SkillDto {
   id: string
-  projectId: string
   name: string
   description: string
   content: string
@@ -116,36 +127,9 @@ export class SkillConfigService {
     this.fs = fs
   }
 
-  /** Resolve the project directory, enforcing ownership (404 missing / 403 wrong owner). */
-  private async resolveProjectDir(
-    projectId: string,
-    userId: string,
-  ): Promise<string | ServiceError> {
-    const rows = await db
-      .select({ directory: projects.directory, userId: projects.userId })
-      .from(projects)
-      .where(eq(projects.id, projectId))
-      .limit(1)
-
-    if (rows.length === 0) {
-      return { error: { code: "NOT_FOUND", message: "Project not found" }, status: 404 }
-    }
-    if (rows[0]!.userId !== userId) {
-      logger.warn({ userId, projectId }, "skills: forbidden — not project owner")
-      return { error: { code: "FORBIDDEN", message: "Not project owner" }, status: 403 }
-    }
-    return rows[0]!.directory
-  }
-
-  /** Absolute path of a skill's directory inside the project. */
-  private skillDir(projectDir: string, name: string): string {
-    return path.join(projectDir, ".opencode", "skills", name)
-  }
-
   private toDto(row: typeof userSkills.$inferSelect): SkillDto {
     return {
       id: row.id,
-      projectId: row.projectId,
       name: row.name,
       description: row.description,
       content: row.content,
@@ -153,18 +137,6 @@ export class SkillConfigService {
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     }
-  }
-
-  /** Materialize (or rewrite) the SKILL.md file for a skill on disk. */
-  private async writeSkillFile(
-    projectDir: string,
-    name: string,
-    description: string,
-    content: string,
-  ): Promise<void> {
-    const dir = this.skillDir(projectDir, name)
-    await this.fs.mkdir(dir)
-    await this.fs.writeFile(path.join(dir, "SKILL.md"), serializeSkillMd(name, description, content))
   }
 
   async create(input: CreateSkillInput): Promise<{ skill: SkillDto; status: 201 } | ServiceError> {
@@ -184,17 +156,14 @@ export class SkillConfigService {
       return { error: { code: "VALIDATION_ERROR", message: "Content must not be empty" }, status: 400 }
     }
 
-    const dir = await this.resolveProjectDir(input.projectId, input.userId)
-    if (isError(dir)) return dir
-
-    // Collision check (the unique (projectId, name) index is the hard guarantee).
+    // Collision check (the unique (userId, name) index is the hard guarantee).
     const existing = await db
       .select({ id: userSkills.id })
       .from(userSkills)
-      .where(and(eq(userSkills.projectId, input.projectId), eq(userSkills.name, input.name)))
+      .where(and(eq(userSkills.userId, input.userId), eq(userSkills.name, input.name)))
       .limit(1)
     if (existing.length > 0) {
-      return { error: { code: "VALIDATION_ERROR", message: "Skill name already exists in project" }, status: 400 }
+      return { error: { code: "VALIDATION_ERROR", message: "Skill name already exists" }, status: 400 }
     }
 
     const id = skillId()
@@ -206,7 +175,6 @@ export class SkillConfigService {
         .values({
           id,
           userId: input.userId,
-          projectId: input.projectId,
           name: input.name,
           description: input.description,
           content: input.content,
@@ -218,34 +186,27 @@ export class SkillConfigService {
       row = inserted[0]!
     } catch (err) {
       // Unique-index race → treat as collision.
-      logger.warn({ projectId: input.projectId, name: input.name, err }, "skills.create: insert failed")
-      return { error: { code: "VALIDATION_ERROR", message: "Skill name already exists in project" }, status: 400 }
+      logger.warn({ userId: input.userId, name: input.name, err }, "skills.create: insert failed")
+      return { error: { code: "VALIDATION_ERROR", message: "Skill name already exists" }, status: 400 }
     }
 
-    await this.writeSkillFile(dir, input.name, input.description, input.content)
-    logger.info({ userId: input.userId, projectId: input.projectId, skillId: id, name: input.name }, "skills.create: created")
+    logger.info({ userId: input.userId, skillId: id, name: input.name }, "skills.create: created")
     return { skill: this.toDto(row), status: 201 }
   }
 
-  async list(input: { userId: string; projectId: string }): Promise<{ skills: SkillDto[]; status: 200 } | ServiceError> {
-    const dir = await this.resolveProjectDir(input.projectId, input.userId)
-    if (isError(dir)) return dir
-
+  async list(input: { userId: string }): Promise<{ skills: SkillDto[]; status: 200 } | ServiceError> {
     const rows = await db
       .select()
       .from(userSkills)
-      .where(eq(userSkills.projectId, input.projectId))
+      .where(eq(userSkills.userId, input.userId))
     return { skills: rows.map((r) => this.toDto(r)), status: 200 }
   }
 
-  async get(input: { userId: string; projectId: string; name: string }): Promise<{ skill: SkillDto; status: 200 } | ServiceError> {
-    const dir = await this.resolveProjectDir(input.projectId, input.userId)
-    if (isError(dir)) return dir
-
+  async get(input: { userId: string; name: string }): Promise<{ skill: SkillDto; status: 200 } | ServiceError> {
     const rows = await db
       .select()
       .from(userSkills)
-      .where(and(eq(userSkills.projectId, input.projectId), eq(userSkills.name, input.name)))
+      .where(and(eq(userSkills.userId, input.userId), eq(userSkills.name, input.name)))
       .limit(1)
     if (rows.length === 0) {
       return { error: { code: "NOT_FOUND", message: "Skill not found" }, status: 404 }
@@ -261,13 +222,10 @@ export class SkillConfigService {
       return { error: { code: "VALIDATION_ERROR", message: "Content must not be empty" }, status: 400 }
     }
 
-    const dir = await this.resolveProjectDir(input.projectId, input.userId)
-    if (isError(dir)) return dir
-
     const rows = await db
       .select()
       .from(userSkills)
-      .where(and(eq(userSkills.projectId, input.projectId), eq(userSkills.name, input.name)))
+      .where(and(eq(userSkills.userId, input.userId), eq(userSkills.name, input.name)))
       .limit(1)
     if (rows.length === 0) {
       return { error: { code: "NOT_FOUND", message: "Skill not found" }, status: 404 }
@@ -284,28 +242,60 @@ export class SkillConfigService {
       .where(eq(userSkills.id, current.id))
       .returning()
 
-    await this.writeSkillFile(dir, current.name, description, content)
-    logger.info({ projectId: input.projectId, name: input.name }, "skills.update: updated")
+    logger.info({ userId: input.userId, name: input.name }, "skills.update: updated")
     return { skill: this.toDto(updated[0]!), status: 200 }
   }
 
-  async remove(input: { userId: string; projectId: string; name: string }): Promise<{ status: 200 } | ServiceError> {
-    const dir = await this.resolveProjectDir(input.projectId, input.userId)
-    if (isError(dir)) return dir
-
+  async remove(input: { userId: string; name: string }): Promise<{ status: 200 } | ServiceError> {
     const rows = await db
       .select({ id: userSkills.id })
       .from(userSkills)
-      .where(and(eq(userSkills.projectId, input.projectId), eq(userSkills.name, input.name)))
+      .where(and(eq(userSkills.userId, input.userId), eq(userSkills.name, input.name)))
       .limit(1)
     if (rows.length === 0) {
       return { error: { code: "NOT_FOUND", message: "Skill not found" }, status: 404 }
     }
 
     await db.delete(userSkills).where(eq(userSkills.id, rows[0]!.id))
-    await this.fs.rm(this.skillDir(dir, input.name))
-    logger.info({ projectId: input.projectId, name: input.name }, "skills.remove: removed")
+    logger.info({ userId: input.userId, name: input.name }, "skills.remove: removed")
     return { status: 200 }
+  }
+
+  /**
+   * Materialize all of a user's `active` skills into
+   * `${targetDir}/.opencode/skills/<name>/SKILL.md`, then PRUNE any skill dir
+   * under `${targetDir}/.opencode/skills/` that is not in the user's current DB
+   * set (so deletes propagate). Called on session-create to land skills in the
+   * project the user is actually using. Best-effort; callers wrap it non-fatally.
+   */
+  async syncUserSkillsToDir(userId: string, targetDir: string): Promise<void> {
+    const rows = await db
+      .select()
+      .from(userSkills)
+      .where(and(eq(userSkills.userId, userId), eq(userSkills.status, "active")))
+
+    const skillsRoot = path.join(targetDir, ".opencode", "skills")
+    const active = new Set<string>()
+
+    for (const row of rows) {
+      active.add(row.name)
+      const dir = path.join(skillsRoot, row.name)
+      await this.fs.mkdir(dir)
+      await this.fs.writeFile(
+        path.join(dir, "SKILL.md"),
+        serializeSkillMd(row.name, row.description, row.content),
+      )
+    }
+
+    // Prune skill dirs that are no longer in the user's DB set.
+    const existing = await this.fs.readdir(skillsRoot)
+    for (const entry of existing) {
+      if (!active.has(entry)) {
+        await this.fs.rm(path.join(skillsRoot, entry))
+      }
+    }
+
+    logger.info({ userId, targetDir, written: rows.length }, "skills.sync: user skills synced to dir")
   }
 }
 

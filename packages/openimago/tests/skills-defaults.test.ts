@@ -35,6 +35,7 @@ function memFs() {
         if (key.startsWith(dir + path.sep) || key === dir) files.delete(key)
       }
     },
+    readdir: async () => [],
   }
   return { fs, dirs, files }
 }

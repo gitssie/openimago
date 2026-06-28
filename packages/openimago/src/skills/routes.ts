@@ -2,28 +2,27 @@ import { Hono } from "hono"
 import { authMiddleware } from "../server/middleware"
 import { skillConfigService } from "./service"
 
-// Per-project user skill config routes (openimago-wjcp).
-// Mounted under /api/platform/projects, so paths are /:id/skills[...].
-export const projectSkillsRoutes = new Hono()
+// Per-user skill config routes (openimago-680i, supersedes per-project openimago-wjcp).
+// Mounted under /api/platform/skills. A single per-user skill library; the DB row
+// is the source of truth. Skills materialize into a project on session-create.
+export const userSkillsRoutes = new Hono()
 
-projectSkillsRoutes.use("/:id/skills", authMiddleware)
-projectSkillsRoutes.use("/:id/skills/*", authMiddleware)
+userSkillsRoutes.use("/", authMiddleware)
+userSkillsRoutes.use("/*", authMiddleware)
 
-// GET /api/platform/projects/:id/skills
-projectSkillsRoutes.get("/:id/skills", async (c) => {
+// GET /api/platform/skills
+userSkillsRoutes.get("/", async (c) => {
   const userId = c.get("userId") as string
-  const projectId = c.req.param("id")
-  const result = await skillConfigService.list({ userId, projectId })
+  const result = await skillConfigService.list({ userId })
   if ("error" in result) {
     return c.json({ error: result.error }, result.status as any)
   }
   return c.json({ skills: result.skills })
 })
 
-// POST /api/platform/projects/:id/skills  body: { name, description, content }
-projectSkillsRoutes.post("/:id/skills", async (c) => {
+// POST /api/platform/skills  body: { name, description, content }
+userSkillsRoutes.post("/", async (c) => {
   const userId = c.get("userId") as string
-  const projectId = c.req.param("id")
 
   let body: { name?: unknown; description?: unknown; content?: unknown } = {}
   try {
@@ -36,29 +35,27 @@ projectSkillsRoutes.post("/:id/skills", async (c) => {
   const description = typeof body.description === "string" ? body.description : ""
   const content = typeof body.content === "string" ? body.content : ""
 
-  const result = await skillConfigService.create({ userId, projectId, name, description, content })
+  const result = await skillConfigService.create({ userId, name, description, content })
   if ("error" in result) {
     return c.json({ error: result.error }, result.status as any)
   }
   return c.json({ skill: result.skill }, 201)
 })
 
-// GET /api/platform/projects/:id/skills/:name
-projectSkillsRoutes.get("/:id/skills/:name", async (c) => {
+// GET /api/platform/skills/:name
+userSkillsRoutes.get("/:name", async (c) => {
   const userId = c.get("userId") as string
-  const projectId = c.req.param("id")
   const name = c.req.param("name")
-  const result = await skillConfigService.get({ userId, projectId, name })
+  const result = await skillConfigService.get({ userId, name })
   if ("error" in result) {
     return c.json({ error: result.error }, result.status as any)
   }
   return c.json({ skill: result.skill })
 })
 
-// PUT /api/platform/projects/:id/skills/:name  body: { description?, content? }
-projectSkillsRoutes.put("/:id/skills/:name", async (c) => {
+// PUT /api/platform/skills/:name  body: { description?, content? }
+userSkillsRoutes.put("/:name", async (c) => {
   const userId = c.get("userId") as string
-  const projectId = c.req.param("id")
   const name = c.req.param("name")
 
   let body: { description?: unknown; content?: unknown } = {}
@@ -72,19 +69,18 @@ projectSkillsRoutes.put("/:id/skills/:name", async (c) => {
   if (typeof body.description === "string") update.description = body.description
   if (typeof body.content === "string") update.content = body.content
 
-  const result = await skillConfigService.update({ userId, projectId, name, ...update })
+  const result = await skillConfigService.update({ userId, name, ...update })
   if ("error" in result) {
     return c.json({ error: result.error }, result.status as any)
   }
   return c.json({ skill: result.skill })
 })
 
-// DELETE /api/platform/projects/:id/skills/:name
-projectSkillsRoutes.delete("/:id/skills/:name", async (c) => {
+// DELETE /api/platform/skills/:name
+userSkillsRoutes.delete("/:name", async (c) => {
   const userId = c.get("userId") as string
-  const projectId = c.req.param("id")
   const name = c.req.param("name")
-  const result = await skillConfigService.remove({ userId, projectId, name })
+  const result = await skillConfigService.remove({ userId, name })
   if ("error" in result) {
     return c.json({ error: result.error }, result.status as any)
   }
