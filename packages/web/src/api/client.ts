@@ -125,6 +125,16 @@ export interface PromptTemplate {
   updatedAt: string
 }
 
+export interface Skill {
+  id: string
+  name: string
+  description: string
+  content: string
+  status: string
+  createdAt: string
+  updatedAt: string
+}
+
 // ── Workspace Generated Files (ADR 0002) ─────────────────────────────────────
 //
 // WorkspaceFile mirrors the workspace-files API response shape and is
@@ -520,6 +530,17 @@ export const api = {
     request<{ template: PromptTemplate }>(`/api/platform/prompts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }).then((r) => r.template),
   deletePrompt: (id: string) =>
     request<{ deleted: boolean }>(`/api/platform/prompts/${id}`, { method: 'DELETE' }),
+
+  // Skills — user-level SKILL.md library (openimago-680i, USER-scoped).
+  // { skills: [...] } / { skill: {...} } / { ok: true }
+  listSkills: () =>
+    request<{ skills: Skill[] }>('/api/platform/skills').then((r) => r.skills ?? []),
+  createSkill: (data: { name: string; description: string; content: string }) =>
+    request<{ skill: Skill }>('/api/platform/skills', { method: 'POST', body: JSON.stringify(data) }).then((r) => r.skill),
+  updateSkill: (name: string, data: { description?: string; content?: string }) =>
+    request<{ skill: Skill }>(`/api/platform/skills/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) }).then((r) => r.skill),
+  deleteSkill: (name: string) =>
+    request<{ ok: boolean }>(`/api/platform/skills/${encodeURIComponent(name)}`, { method: 'DELETE' }),
 
   // Admin — { users: [...], total } / { user: {...} }
   listUsers: () =>

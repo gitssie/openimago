@@ -218,6 +218,8 @@ const navItems: NavItem[] = [
   { icon: 'image-placeholder', iconKind: 'oi',    label: t('gallery.navAssets'), to: '/assets' },
   // 技能与风格: 4-grid template (matches reference's 4-grid look)
   { icon: 'template-grid',  iconKind: 'oi',       label: t('gallery.navPrompts'), to: '/prompts' },
+  // 技能: SKILL.md library — invoked as a command, so the slash glyph fits
+  { icon: 'command-slash',  iconKind: 'oi',       label: t('gallery.navSkills'), to: '/skills' },
   // 计费: clock (timer / billing time)
   { icon: 'clock',          iconKind: 'oi',       label: t('gallery.navBilling'), to: '/billing' },
   { icon: 'settings',       iconKind: 'oi',       label: t('gallery.navSettings'), to: '/settings' },

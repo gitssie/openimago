@@ -105,6 +105,7 @@ export default {
     navProjects: '项目',
     navAssets: '资产',
     navPrompts: '技能与风格',
+    navSkills: '技能',
     navBilling: '计费',
     navSettings: '设置',
     navAdmin: '管理',

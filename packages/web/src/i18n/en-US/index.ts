@@ -104,6 +104,7 @@ export default {
     navProjects: 'Projects',
     navAssets: 'Assets',
     navPrompts: 'Skills & styles',
+    navSkills: 'Skills',
     navBilling: 'Billing',
     navSettings: 'Settings',
     navAdmin: 'Admin',
