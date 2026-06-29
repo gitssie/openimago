@@ -38,6 +38,23 @@ import type {
 
 const MS_PER_S = 1000
 
+/** The number of timeline lanes the rough-cut editor always shows: video,
+ * narration (empty), BGM. */
+const TRACK_COUNT = 3
+
+/**
+ * Normalise the live timeline to exactly TRACK_COUNT (3) lanes regardless of the
+ * seed/persisted state. remove_tracks() resets omniclip to a single fresh track;
+ * add_track() appends one each. Lanes are addressed by index downstream (video→0,
+ * narration→1, BGM→2), so the regenerated track ids do not matter.
+ */
+function ensureThreeTracks(ctx: typeof omnislate.context): void {
+  ctx.actions.remove_tracks()
+  for (let i = ctx.state.tracks.length; i < TRACK_COUNT; i++) {
+    ctx.actions.add_track()
+  }
+}
+
 // PREVIEW COMPOSITION (openimago-74y8): the editor boots from the VENDORED 1.1.3
 // source, whose native VideoEffect / AudioEffect views already carry the compose
 // contract — each mounts an `media.on_media_change("added")` listener that, gated by
@@ -79,6 +96,15 @@ export async function hydrateFromCut(
 ): Promise<void> {
   const ctx = omnislate.context
   ctx.actions.remove_all_effects()
+
+  // Establish exactly THREE lanes to match the approved layout (openimago-g1hb,
+  // docs/images/cut_panel.png):
+  //   track 0 = VIDEO filmstrip, track 1 = NARRATION (empty), track 2 = BGM (bottom).
+  // omniclip's default/persisted track count is non-deterministic (1 in the seed
+  // state, more once a project is restored from localStorage), so we normalise it
+  // here on every (re)hydrate: remove_tracks resets to a single fresh track, then
+  // add two more. Effects reference tracks by INDEX, so fresh ids are irrelevant.
+  ensureThreeTracks(ctx)
 
   if (import.meta.env.DEV) {
     console.time('[omniclip-fork] hydrateFromCut total')
@@ -166,10 +192,11 @@ export async function hydrateFromCut(
     setTransition(transition)
   }
 
-  // Place the Cut's BGM bed on its OWN audio track → the green waveform lane
-  // under the video track (openimago-w5bu, docs/images/cut_panel.png). omniclip
-  // boots with several empty tracks, so track 1 is the lane directly below the
-  // video clips (track 0); no add_track needed. Imported via the same media path
+  // Place the Cut's BGM bed on its OWN audio track → the green bar on the BOTTOM
+  // lane (track 2) per docs/images/cut_panel.png (openimago-w5bu / openimago-g1hb).
+  // ensureThreeTracks() above guarantees lanes 0/1/2 exist: video clips sit on
+  // track 0, the narration lane (track 1) stays empty, BGM is the bottom track 2.
+  // Imported via the same media path
   // as clips (importFromUrl handles audio kind), then re-announced so the
   // AudioEffect view's waveform composes (its on_media_change("added") listener
   // misses the import-time publish — same mount-after-publish race as clips).
@@ -204,9 +231,9 @@ export async function hydrateFromCut(
   if (import.meta.env.DEV) console.timeEnd('[omniclip-fork] hydrateFromCut total')
 }
 
-/** The audio lane sits directly below the video clips (track 0). omniclip boots
- *  with several empty tracks, so this index already exists. */
-const BGM_TRACK = 1
+/** The BGM lane is the BOTTOM track (index 2): video=0, narration=1, BGM=2
+ *  (docs/images/cut_panel.png). ensureThreeTracks() guarantees it exists. */
+const BGM_TRACK = 2
 
 /**
  * Import + place the Cut's BGM bed as an audio effect on its own track (the

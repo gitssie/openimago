@@ -19,14 +19,15 @@ export const TimeRuler = shadow_view(use => (timeline: GoldElement) => {
 	})
 
 	function convert_ms_to_timecode(milliseconds: number) {
-		let seconds = Math.floor(milliseconds / 1000)
-		let minutes = Math.floor(seconds / 60)
-		seconds = seconds % 60
+		const total_seconds = Math.floor(milliseconds / 1000)
+		const minutes = Math.floor(total_seconds / 60)
+		const seconds = total_seconds % 60
 		const zoom_rounded = round_to_two_decimal_places(use.context.state.zoom)
 		if(zoom_rounded <= -9) {
 			return `${minutes}min`
 		} else {
-			return `${Math.floor((milliseconds/1000)*1000)/1000}s`
+			// M:SS to match docs/images/cut_panel.png (0:00, 0:05, 0:10…), not "5s/10s".
+			return `${minutes}:${String(seconds).padStart(2, "0")}`
 		}
 	}
 

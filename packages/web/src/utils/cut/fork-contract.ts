@@ -127,10 +127,12 @@ export const ORPHAN_CLIP_ATTRIBUTE = 'data-no-file'
  * as a JS option, hence concrete hex here.
  */
 export const BGM_WAVEFORM_COLORS = {
-  /** unplayed portion of the waveform. */
-  wave: '#4ec273',
+  /** Flat BGM-bar fill. Sampled directly from docs/images/cut_panel.png — the bed
+   *  bar is a MUTED sage green rgb(85,117,95), not the vivid #4ec273 a literal
+   *  CapCut-green read suggested (openimago-g1hb pixel audit). */
+  wave: '#55755f',
   /** played (progress) portion — a touch deeper so the playhead reads. */
-  progress: '#2f9d57',
+  progress: '#41614b',
 } as const
 
 /**
@@ -222,6 +224,14 @@ export interface OmniclipForkApi {
    * 1b) and do NOT arrive through this channel.
    */
   onEdit: (cb: (edit: CutEdit) => void) => () => void
+  /**
+   * Subscribe to clip-selection changes (openimago-e6k1). Emits the selected
+   * clip's effect id (= CutClip.id), or null when the selection is cleared — once
+   * immediately with the current selection, then once per change. The host uses
+   * this to show SELECTION-DRIVEN contextual controls (the transition editor for
+   * the selected clip's following boundary). Returns an unsubscribe fn.
+   */
+  onSelectionChange: (cb: (effectId: string | null) => void) => () => void
   themeVars: Record<string, string>
 }
 

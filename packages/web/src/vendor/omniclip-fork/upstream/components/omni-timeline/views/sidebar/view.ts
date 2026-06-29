@@ -76,17 +76,24 @@ export const TrackSidebar = shadow_view(use => (index: number, trackId: string) 
 			: `height: 50px;`
 	}
 
+	// The empty NARRATION lane shows ONLY its wave kind-icon — no volume/mute toggle
+	// (docs/images/cut_panel.png: middle row has the wave glyph and no speaker). The
+	// video + BGM lanes carry a working volume/mute toggle.
+	const showVolume = kind !== "empty"
+
 	return html`
 		<div class="switches" data-kind=${kind} role="presentation" aria-label=${kindLabel(kind)} style=${if_text_on_track_styles()}>
 			<div class="items">
 				<span class="kind-icon">${kindIcon(kind)}</span>
-				<button
-					class="mute"
-					?data-active=${isMuted}
-					aria-label=${isMuted ? "取消静音" : "静音"}
-					aria-pressed=${isMuted ? "true" : "false"}
-					@click=${() => use.context.actions.toggle_track_muted(trackId)}
-				>${isMuted ? volumeSlashSvg : volumeSvg}</button>
+				${showVolume ? html`
+					<button
+						class="mute"
+						?data-active=${isMuted}
+						aria-label=${isMuted ? "取消静音" : "静音"}
+						aria-pressed=${isMuted ? "true" : "false"}
+						@click=${() => use.context.actions.toggle_track_muted(trackId)}
+					>${isMuted ? volumeSlashSvg : volumeSvg}</button>
+				` : null}
 			</div>
 		</div>
 	`

@@ -1,6 +1,6 @@
 import {css} from "@benev/slate"
 
-export const styles = css`
+const base_styles = css`
 	.track {
 		display: flex;
 		position: relative;
@@ -50,4 +50,19 @@ export const styles = css`
 			}
 		}
 	}
+`
+
+// ── Imago: empty-lane surface (openimago-g1hb). The empty NARRATION lane shows the
+// bare .track background; docs/images/cut_panel.png samples it at rgb(39,39,39) — a
+// touch lighter than 1.1.3's rgb(26,26,26). Retint flat to match. Appended after
+// base_styles so it wins the cascade. ──
+const imago_pass = css`
+	.track {
+		background: rgb(39, 39, 39);
+	}
+`
+
+export const styles = css`
+	${base_styles}
+	${imago_pass}
 `
