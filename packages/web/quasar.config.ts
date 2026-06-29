@@ -19,11 +19,13 @@ const OMNICLIP_VENDOR_PKGS = [
   'fabric',
   '@ffmpeg/ffmpeg',
   '@ffmpeg/util',
-  // wavesurfer.js is an omniclip transitive dep (the BGM waveform). The fork's
-  // waveform patch imports it from a src/ importer, so it must be excluded from
-  // the dep optimizer + resolved via the subpath resolver like the rest of the
-  // omniclip vendor set (openimago-r7to).
-  'wavesurfer.js',
+  // NOTE: wavesurfer.js (the BGM waveform, imported bare as `import WaveSurfer from
+  // 'wavesurfer.js'` in upstream/context/controllers/timeline/parts/waveform.ts) is
+  // deliberately NOT in this set — it is a plain bare default import with NO
+  // problematic sub-path, so the subpath resolver never applied to it (it only
+  // handles `<pkg>/<subpath>`). It is now a direct web dependency, optimized
+  // normally like pixi.js/gsap, which both resolves the bare import and avoids the
+  // in-root-symlink unbundled-serving failure mode (openimago-bb0f).
   // ── vendored omniclip 1.1.3 SOURCE transitive deps (openimago-lo9v) ──────────
   // The vendored upstream (src/vendor/omniclip-fork/upstream) imports these via
   // physical sub-path files whose `exports` maps omit the path key, so Vite 8
