@@ -49,12 +49,37 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
   const media = use.context.controllers.media
   const compositor = use.context.controllers.compositor
 
-  // Re-render this view when the timeline state changes (openimago-8ho9). A SPLIT
-  // mutates the original effect's `end` (set_effect_end) and adds a new effect.
-  // Without subscribing, this outer view kept a STALE `effect`, so the filmstrip
-  // (and the geometry we pass to the inner Effect span) didn't follow the split —
-  // span and filmstrip disagreed (wide empty span + short strip, gap between clips).
-  use.watch(() => use.context.state)
+  // NARROW subscription (openimago-2m8d). Slate's `use.watch(collector)` re-renders
+  // ONLY when the collector's RETURN VALUE changes by deep-equal (WatchTower.track:
+  // it runs the collector on EVERY state dispatch but gates the rerender on
+  // `!deep.equal(current, previous)`). The old `() => use.context.state` returned the
+  // whole state object, so it re-rendered on EVERY field change — including `timecode`,
+  // which ticks every frame during playback — rebuilding up to MAX_CELLS tile <div>s
+  // per clip each frame (the perf regression). Instead collect ONLY the fields this
+  // view's output depends on: the live effect's trim window + sprite inputs, the zoom
+  // (tile density), and effects.length (so a SPLIT's new half + the sibling-fallback
+  // availability still trigger a re-render — openimago-8ho9). `timecode`/playhead/
+  // selection/scroll are NOT in the key, so they no longer force a filmstrip rebuild.
+  //
+  // The collector MUST read state FRESH each call (it is invoked on every dispatch and
+  // must NOT close over a stale effect), so it re-finds the live effect inside itself
+  // rather than over the render-scoped `live` below. NOTE: the inner omniclip Effect
+  // view has its OWN `use.watch(() => state)` and re-derives its own live effect for the
+  // span width/position/transform, so move/trim/delete snap geometry (uvm4) is
+  // unaffected by narrowing THIS outer subscription.
+  use.watch(() => {
+    const state = use.context.state
+    const e = state.effects.find((x) => x.id === effect.id) ?? effect
+    return [
+      e.start,
+      e.end,
+      e.file_hash,
+      e.filmstrip_url,
+      e.filmstrip_frame_count,
+      state.zoom,
+      state.effects.length,
+    ]
+  })
 
   // ONE geometry source for BOTH the span and the filmstrip: the LIVE effect from
   // state (post-split end/start), falling back to the passed arg before it lands in
@@ -96,18 +121,6 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
   //     (background-size-x = frameCount*100%, background-position-x = 0 —
   //     filmstrip-sprite-css). Tile is 9:16 and the frame is 9:16 → no distortion.
   const render_filmstrip = () => {
-    // [filmstrip-diag] (openimago-jzun) Point 1 — entry: which effect is rendering and
-    // whether the LIVE effect itself carries the sprite fields. If `liveHasUrl` is true
-    // for the BLANK split half, the bug is downstream (geometry/patch); if false, the
-    // split dropped our custom fields and we depend on the sibling fallback below.
-    // eslint-disable-next-line no-console
-    console.log('[filmstrip-diag] render entry', {
-      effectId: live.id,
-      file_hash: live.file_hash,
-      liveHasUrl: !!live.filmstrip_url,
-      liveFrameCount: live.filmstrip_frame_count,
-    })
-
     // The filmstrip sprite is a property of the SOURCE media (file_hash), not of the
     // individual clip segment. A native omniclip SPLIT creates the new half and may
     // not carry our custom top-level filmstrip_* fields onto it (openimago-8ho9), so
@@ -116,45 +129,17 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
     // have a sprite (the original half) — both halves share the same first-frame
     // sprite. (Persistence is unaffected: cut.json keys filmstrip by sourceShotId and
     // the resolver re-derives it on refresh.)
-    const liveHasSprite = !!(live.filmstrip_url && live.filmstrip_frame_count)
-    const sameHashEffects = use.context.state.effects.filter(
-      (e) => e.file_hash === live.file_hash,
-    )
-    const siblingWithSprite = sameHashEffects.find(
-      (e) => e.filmstrip_url && e.filmstrip_frame_count,
-    )
-    const spriteSource = liveHasSprite ? live : (siblingWithSprite ?? live)
-
-    // [filmstrip-diag] (openimago-jzun) Point 2 — sibling fallback: did we fall back,
-    // and was there a same-file_hash sibling carrying a sprite to fall back ONTO?
-    // usedFallback=true + siblingWithSprite missing ⇒ no source half in state to copy
-    // from (the real failure for a blank split half). spriteResolved=false ⇒ the
-    // early-return below fires (empty lane).
-    // eslint-disable-next-line no-console
-    console.log('[filmstrip-diag] sprite resolve', {
-      effectId: live.id,
-      file_hash: live.file_hash,
-      usedFallback: !liveHasSprite,
-      sameHashCount: sameHashEffects.length,
-      sameHashWithUrlCount: sameHashEffects.filter(
-        (e) => e.filmstrip_url && e.filmstrip_frame_count,
-      ).length,
-      spriteSourceId: spriteSource.id,
-      spriteUrl: spriteSource.filmstrip_url ?? null,
-      spriteResolved: !!(spriteSource.filmstrip_url && spriteSource.filmstrip_frame_count),
-    })
+    const spriteSource =
+      live.filmstrip_url && live.filmstrip_frame_count
+        ? live
+        : (use.context.state.effects.find(
+            (e) => e.file_hash === live.file_hash && e.filmstrip_url && e.filmstrip_frame_count,
+          ) ?? live)
 
     const spriteUrl = spriteSource.filmstrip_url
     const frameCount = spriteSource.filmstrip_frame_count
     // No sprite (orphan / pre-78m9 data) → flat lane, no broken images.
     if (!spriteUrl || !frameCount || frameCount < 1) {
-      // [filmstrip-diag] (openimago-jzun) Point 3a — early-return: no sprite resolved.
-      // eslint-disable-next-line no-console
-      console.log('[filmstrip-diag] early-return: no-sprite', {
-        effectId: live.id,
-        spriteUrl: spriteUrl ?? null,
-        frameCount: frameCount ?? null,
-      })
       return html`<div class="filmstrip"></div>`
     }
 
@@ -163,28 +148,7 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
     // empty lane (never NaN tiles).
     const widthPx = effectWidthPx(live.start, live.end, use.context.state.zoom)
     const tileCount = filmstripTileCount(widthPx, FILMSTRIP_TILE_W, MAX_CELLS)
-
-    // [filmstrip-diag] (openimago-jzun) Point 3b — geometry: the inputs to the tile
-    // math. widthPx or tileCount = 0 (e.g. start===end after a bad split, or zoom not
-    // yet hydrated) ⇒ empty lane even though a sprite resolved.
-    // eslint-disable-next-line no-console
-    console.log('[filmstrip-diag] geometry', {
-      effectId: live.id,
-      widthPx,
-      tileCount,
-      zoom: use.context.state.zoom,
-      start: live.start,
-      end: live.end,
-    })
-
     if (tileCount < 1) {
-      // [filmstrip-diag] (openimago-jzun) Point 3c — early-return: tileCount < 1.
-      // eslint-disable-next-line no-console
-      console.log('[filmstrip-diag] early-return: zero-tiles', {
-        effectId: live.id,
-        widthPx,
-        tileCount,
-      })
       return html`<div class="filmstrip"></div>`
     }
 
@@ -207,17 +171,6 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
         ></div>
       `)
     }
-    // [filmstrip-diag] (openimago-jzun) Point 3d — success: reached tile render. If a
-    // BLANK split half logs this with tileCount>0 and a real spriteUrl, the issue is
-    // NOT in this view (CSS/asset/hot-reload of an OLD bundle) — verify this whole
-    // [filmstrip-diag] chain appears at all to rule out the patch not hot-reloading.
-    // eslint-disable-next-line no-console
-    console.log('[filmstrip-diag] rendering tiles', {
-      effectId: live.id,
-      tileCount,
-      spriteUrl,
-    })
-
     // CANCEL the parent .content shift (openimago-fsyz). omniclip's Effect view wraps
     // our filmstrip in `<span class="content" style="transform: translateX(
     // -effect.start * 2^zoom)px)">` (effect.js:115) — it assumes content spans the WHOLE

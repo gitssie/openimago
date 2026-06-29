@@ -78,20 +78,6 @@ export async function hydrateFromCut(
     const endMs = clip.outPointSeconds * MS_PER_S
     const durationMs = endMs - startMs
 
-    // [filmstrip-diag] (openimago-jzun) Point 4 — hydrate set-value: which clips arrive
-    // with a sprite at initial mount. A split half is created LATER by omniclip's split
-    // action (not here), so it won't appear in this log — if the blank effectId never
-    // shows here, it was born from a split and depends on the render-time sibling
-    // fallback (Point 2). spriteUrl=null here ⇒ the cut mapper never resolved a sprite
-    // for this source.
-    // eslint-disable-next-line no-console
-    console.log('[filmstrip-diag] hydrate clip', {
-      effectId: clip.id,
-      file_hash: imported.fileHash,
-      spriteUrl: clip.filmstrip?.spriteUrl ?? null,
-      frameCount: clip.filmstrip?.frameCount ?? null,
-    })
-
     // Place a video effect for this clip and trim/position it to match the cut.
     // start/end are the SOURCE trim (used for cropping + the timeline span); they
     // are NOT used for the filmstrip. The filmstrip_* fields are custom extras
