@@ -18,6 +18,11 @@
 // tree-shake this import away. (The fresh projectId on construction below is the
 // primary ghost-clip guard for 1.1.3's per-project store; see openimago-lpjd.)
 import { cleared as omniPersistenceCleared } from './clear-omni-persistence'
+// MUST precede the upstream context import below: seeds the GLOBAL `PIXI` the vendored
+// compositor reads at module-load (filter-manager.ts:3 evaluates `PIXI.*` top-level).
+// ES modules evaluate imports depth-first in source order, so this side-effect import
+// runs before ./upstream/context/context (openimago-48ns).
+import { pixiGlobalReady } from './pixi-global'
 // Boot from the VENDORED 1.1.3 source (openimago-uatf) instead of npm `omniclip`.
 // 1.1.3's main.ts is a standalone SPA (HashRouter that takes over document.body +
 // posthog.init), so we do NOT import it; we register the editor custom elements
@@ -111,6 +116,8 @@ function twoPanelLayout() {
 // Reference the persistence-clear marker (openimago-mb66) so its module is
 // retained and runs before omniclip restored state above; no-op at runtime.
 void omniPersistenceCleared
+// Keep the PIXI-global side-effect import (openimago-48ns) from being tree-shaken.
+void pixiGlobalReady
 
 // Register the editor custom elements (the standalone app does this in its /editor
 // route). <construct-editor> hosts the layout/panels; the Omni* components are the
