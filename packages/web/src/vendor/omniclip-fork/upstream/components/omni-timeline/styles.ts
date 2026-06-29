@@ -1,4 +1,5 @@
 import {css} from "@benev/slate"
+import {GUTTER_PX} from "../../../patches/timeline-gutter"
 
 const base_styles = css`
 	:host {
@@ -159,19 +160,46 @@ const base_styles = css`
 	}
 `
 
-// ── Imago: flat-black timeline surface (openimago-wmns Pass A; folds the surface part
-// of omni-timeline-styles.patch.ts). 1.1.3 uses rgb(26,26,26); retint to the deep
-// flat-black token. The 60px track-header GUTTER restructure (.scroll-area /
-// .timeline-inner) is DEFERRED to Pass B — those elements only exist once the
-// omni-timeline COMPONENT is restructured (omni-timeline-component.patch.ts), so the
-// gutter CSS belongs with that structural change for a coherent, reviewable unit. ──
+// ── Imago: flat-black timeline surface (openimago-wmns Pass A). 1.1.3 uses
+// rgb(26,26,26); retint to the deep flat-black token. ──
 const imago_pass_a = css`
 	:host {
 		background: var(--imago-bg-deep, #0a0a0f);
 	}
 `
 
+// ── Imago: 60px track-header GUTTER (openimago-wmns Pass B.4). The 1.0.7 patches used a
+// .scroll-area/.timeline-inner + .track-header-chip restructure; 1.1.3 instead has a
+// NATIVE TrackSidebar + .track-sidebars column and aligns the ruler with clips via
+// MATCHING-WIDTH left elements in the two rows (the ruler-row spacer vs the sidebar
+// column). So we keep 1.1.3's structure and just narrow BOTH left elements to GUTTER_PX
+// (60): the .track-sidebars column (native 120px) and the ruler-row spacer that replaced
+// the add-track button. Equal width → ruler ticks stay aligned with clip x-positions. ──
+const imago_pass_b_gutter = css`
+	/* Match the native nested rule's specificity (.timeline .track-sidebars, 0,2,0) and
+	   append later so this wins — a bare .track-sidebars (0,1,0) loses to it and the column
+	   stayed 120px. */
+	.timeline .track-sidebars {
+		width: ${GUTTER_PX}px;
+	}
+
+	/* Ruler-row left spacer — same width as the sidebar column so the TimeRuler starts
+	   exactly where .timeline-relative (and thus the clips) start. Non-interactive. */
+	.ruler-gutter-spacer {
+		flex: 0 0 ${GUTTER_PX}px;
+		width: ${GUTTER_PX}px;
+		min-width: ${GUTTER_PX}px;
+		height: 100%;
+		position: sticky;
+		left: 0;
+		z-index: 800;
+		background: var(--imago-bg-deep, #0a0a0f);
+		border-right: 1px solid var(--imago-border-soft, rgba(255, 255, 255, 0.06));
+	}
+`
+
 export const styles = css`
 	${base_styles}
 	${imago_pass_a}
+	${imago_pass_b_gutter}
 `

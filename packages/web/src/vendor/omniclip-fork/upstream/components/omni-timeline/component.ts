@@ -108,7 +108,11 @@ export const OmniTimeline = shadow_component(use => {
 			style="width: ${calculate_timeline_width(state.effects, state.zoom, use.element)}px;"
 		>
 			<div class=flex>
-				<button class="add-track" @click=${() => use.context.actions.add_track()}>add track</button>
+				<!-- 60px non-interactive spacer mirroring the track-header gutter width so the
+				     TimeRuler stays aligned with clip x-positions (openimago-wmns Pass B.4). The
+				     rough-cut editor doesn't expose add-track, so the native 120px button is
+				     replaced by this gutter cell whose ONLY job is ruler↔clip alignment. -->
+				<div class="ruler-gutter-spacer" aria-hidden="true"></div>
 				${TimeRuler([timeline])}
 			</div>
 			<div class="flex">
