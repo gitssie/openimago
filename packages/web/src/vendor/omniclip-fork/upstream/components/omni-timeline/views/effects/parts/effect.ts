@@ -7,6 +7,7 @@ import {collaboration, shadow_view} from "../../../../../context/context.js"
 import {calculate_effect_width} from "../../../utils/calculate_effect_width.js"
 import {calculate_start_position} from "../../../utils/calculate_start_position.js"
 import lowQualitySvg from "../../../../../icons/material-design-icons/low-quality.svg.js"
+import {laneHeight} from "../../../../../../patches/timeline-lanes"
 import {calculate_effect_track_placement} from "../../../utils/calculate_effect_track_placement.js"
 
 export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: AnyEffect, content: TemplateResult, style?: CSSResultGroup, inline_css?: string) => {
@@ -16,6 +17,10 @@ export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: Any
 	const effect = use.context.state.effects.find(effect => effect.id === any_effect.id) ?? any_effect
 	const isVisible = state.tracks.find((_, i) => i === effect.track)?.visible
 	const isLocked = state.tracks.find((_, i) => i === effect.track)?.locked
+	// The clip box height = its lane's height (openimago-g1hb): video clips fill the
+	// 50px video lane; the BGM bar fills the 25px audio lane. Overrides the static
+	// 50px in parts/styles.ts so a clip never overflows the now-shorter audio lane.
+	const lane_height = laneHeight(state.effects.filter(e => e.track === effect.track))
 	const [[x, y], setCords] = use.state<V2 | [null, null]>([null, null])
 	const zoom = use.context.state.zoom
 	const controller = use.context.controllers.timeline
@@ -168,6 +173,7 @@ export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: Any
 				style="
 					${inline_css}
 					background-image: none;
+					height: ${lane_height}px;
 					width: ${((previewPosition.end ?? effect.end) - (previewPosition.start ?? effect.start)) * Math.pow(2, zoom)}px;
 					transform: translate(
 						${x ?? calculate_start_position(previewPosition.startAtPosition ?? effect.start_at_position, use.context.state.zoom)}px,
@@ -196,6 +202,7 @@ export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: Any
 			?data-selected=${use.context.state.selected_effect?.id === effect.id}
 			style="
 				${inline_css}
+				height: ${lane_height}px;
 				width: ${calculate_effect_width(effect, zoom)}px;
 				transform: translate(
 					${x ?? calculate_start_position(effect.start_at_position, zoom)}px,

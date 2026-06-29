@@ -4,6 +4,7 @@ import {styles} from "./styles.js"
 import {shadow_view} from "../../../../context/context.js"
 import volumeSvg from "../../../../icons/gravity-ui/volume.svg.js"
 import volumeSlashSvg from "../../../../icons/gravity-ui/volume-slash.svg.js"
+import {laneHeight} from "../../../../../patches/timeline-lanes"
 import {getEffectsOnTrack} from "../../../../context/controllers/timeline/utils/get-effects-on-track.js"
 
 // 60px flat-black TRACK-HEADER gutter (openimago-scml; folded into the vendored 1.1.3
@@ -27,29 +28,30 @@ function trackKind(effects: ReturnType<typeof getEffectsOnTrack>): TrackKind {
 }
 
 // Inline, flat, 18px, currentColor kind icons (shadow DOM can't use the host's icons).
-const clipIcon = html`
+// Glyphs traced from docs/images/cut_panel.png: video = a PLAY triangle in a rounded
+// box, narration = a symmetric voice/level waveform, BGM = a single eighth note.
+const playIcon = html`
 	<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
 		stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-		<rect x="3" y="5" width="18" height="14" rx="2" />
-		<path d="M3 9h18M3 15h18M8 5v14M16 5v14" />
+		<rect x="3" y="5" width="18" height="14" rx="3" />
+		<path d="M10 9l5 3-5 3z" />
 	</svg>
 `
 const musicIcon = html`
 	<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
 		stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-		<path d="M9 18V6l10-2v12" />
-		<circle cx="6" cy="18" r="2.4" />
-		<circle cx="16" cy="16" r="2.4" />
+		<path d="M9 18V5l8-2v4" />
+		<circle cx="6.5" cy="18" r="2.5" />
 	</svg>
 `
 const waveIcon = html`
 	<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
 		stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-		<path d="M4 12h2M9 7v10M14 4v16M19 9v6" />
+		<path d="M5 10v4M8.5 8v8M12 5v14M15.5 8v8M19 10v4" />
 	</svg>
 `
 function kindIcon(kind: TrackKind) {
-	if (kind === "video") return clipIcon
+	if (kind === "video") return playIcon
 	if (kind === "bgm") return musicIcon
 	return waveIcon
 }
@@ -68,13 +70,10 @@ export const TrackSidebar = shadow_view(use => (index: number, trackId: string) 
 	const track_effects = getEffectsOnTrack(use.context.state, index)
 	const kind = trackKind(track_effects)
 
-	// Preserve upstream's text-only-track shorter height so the gutter cell stays aligned
-	// with its track row.
-	const if_text_on_track_styles = () => {
-		return track_effects.some(effect => effect.kind === "text") && !track_effects.some(effect => effect.kind !== "text")
-			? `height: 30px;`
-			: `height: 50px;`
-	}
+	// Cell height MIRRORS the track row's lane height (shared timeline-lanes source)
+	// so the kind-icon stays vertically centered on its lane. The 8px inter-lane gap
+	// is the host's margin-bottom (sidebar/styles.ts), matching the track row's.
+	const lane_height = laneHeight(track_effects)
 
 	// The empty NARRATION lane shows ONLY its wave kind-icon — no volume/mute toggle
 	// (docs/images/cut_panel.png: middle row has the wave glyph and no speaker). The
@@ -82,7 +81,7 @@ export const TrackSidebar = shadow_view(use => (index: number, trackId: string) 
 	const showVolume = kind !== "empty"
 
 	return html`
-		<div class="switches" data-kind=${kind} role="presentation" aria-label=${kindLabel(kind)} style=${if_text_on_track_styles()}>
+		<div class="switches" data-kind=${kind} role="presentation" aria-label=${kindLabel(kind)} style="height: ${lane_height}px;">
 			<div class="items">
 				<span class="kind-icon">${kindIcon(kind)}</span>
 				${showVolume ? html`

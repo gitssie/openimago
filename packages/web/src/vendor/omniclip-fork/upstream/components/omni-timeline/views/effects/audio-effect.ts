@@ -4,6 +4,7 @@ import {Effect} from "./parts/effect.js"
 import {shadow_view} from "../../../../context/context.js"
 import {AudioEffect as XAudioEffect} from "../../../../context/types.js"
 import {calculate_effect_width} from "../../utils/calculate_effect_width.js"
+import {AUDIO_LANE_PX} from "../../../../../patches/timeline-lanes"
 import {BGM_WAVEFORM_COLORS} from "src/utils/cut/fork-contract"
 
 // Flat-green BGM bar (openimago-q4cf), rendered as a LIT-NATIVE node (openimago-ho7e).
@@ -26,7 +27,11 @@ import {BGM_WAVEFORM_COLORS} from "src/utils/cut/fork-contract"
 //
 // BROWSER-ONLY (this dir is excluded from typecheck/lint).
 
-const BAR_HEIGHT = 26
+// The flat BGM bar FILLS its short audio lane (openimago-g1hb): the lane is
+// AUDIO_LANE_PX (25) tall and the bar matches, so the bed reads as a solid green
+// band edge-to-edge like docs/images/cut_panel.png (was a 26px bar centered in the
+// old 50px lane).
+const BAR_HEIGHT = AUDIO_LANE_PX
 const MAX_BAR_WIDTH = 4000
 
 export const AudioEffect = shadow_view(use => (effect: XAudioEffect, timeline: GoldElement) => {
