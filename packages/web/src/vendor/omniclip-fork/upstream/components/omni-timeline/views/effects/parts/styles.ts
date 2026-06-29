@@ -202,14 +202,38 @@ const imago_pass_a = css`
 		display: none;
 	}
 
-	/* BGM lane stays flat: the waveform fold (Pass B) mounts a shorter .bgm-bar; kill the
-	   full-box cyan affordances that would draw a line under it. Inert until Pass B. */
-	.effect:has(.bgm-bar)::after {
+	/* BGM lane stays flat. The audio effect carries data-audio on BOTH its .effect and
+	   its sibling .trim-handles (parts/effect.ts) — a reliable hook (no :has()/sibling-
+	   combinator fragility) for the short 25px lane (openimago-g1hb). The bar fills the
+	   lane, so the clip's selection chrome must NOT draw a taller box or a line below it:
+	   - kill the full-box ::after ring + hover outline on the bar,
+	   - neutralize the .trim-handles box entirely (transparent, no border, no washout) so
+	     nothing extends into the gap below the bar (it stays a click target for select),
+	   - never let 1.1.3's selected brightness/white-overlay wash the green out. */
+	.effect[data-audio]::after {
 		display: none;
 	}
-	.effect:has(.bgm-bar):hover {
+	.effect[data-audio]:hover {
 		outline: none;
 		border-color: var(--imago-border-soft, transparent);
+	}
+	.effect[data-audio],
+	.effect[data-audio][data-selected] {
+		filter: none;
+	}
+	.trim-handles[data-audio],
+	.trim-handles[data-audio][data-selected] {
+		background: transparent;
+		border: none;
+		mix-blend-mode: normal;
+	}
+
+	/* Selected BGM: a crisp 1px cyan border ON the bar (same selection language as the
+	   video clips' cyan ring), clamped to the bar so it sits exactly on the 25px lane —
+	   no oversized/dashed box, no spill below. */
+	.effect[data-audio][data-selected] .bgm-bar {
+		outline: 1px solid var(--imago-neon-cyan, #00f0ff);
+		outline-offset: -1px;
 	}
 `
 

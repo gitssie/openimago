@@ -61,6 +61,52 @@ const imagoOverrides = css`
   .effect:hover {
     outline: 1px solid var(--imago-border-cyan, rgba(0, 240, 255, 0.35));
   }
+
+  /* ── Clean clips: NO grab/trim grip (openimago-q4cf) ──────────────────────────
+     Upstream draws a grey "||" handle (an 18px white box with two #333 .line bars)
+     on each clip edge when it is [data-selected] (effects/parts/styles.js). The
+     approved reference (docs/images/cut_panel.png) shows CLEAN clips — both the
+     filmstrip clips and the green BGM bar have NO grip chrome. Hide the handles on
+     every effect; trimming still works by dragging the clip edge, and our edit
+     pipeline derives trim from the effect-state diff (cut-effect-diff.ts), NOT
+     from these handle nodes, so nothing functional is lost. Higher specificity +
+     later position than upstream's "&[data-selected] .trim-handle-*" wins. */
+  .effect .trim-handle-left,
+  .effect .trim-handle-right,
+  .effect[data-selected] .trim-handle-left,
+  .effect[data-selected] .trim-handle-right {
+    display: none;
+  }
+
+  /* ── BGM lane stays flat (openimago-q4cf): kill the teal line under the bar ────
+     The BGM clip's visible green bar is SHORTER (26px) than its 50px effect box
+     and centered, so the full-box cyan affordances (the [data-selected]::after
+     outline and the :hover cyan outline) draw a line ~12px BELOW the green bar —
+     reading as a bright teal horizontal rule under it, which is NOT in the design
+     (flat black there). Scope those affordances OFF for the BGM effect only
+     (matched by the ".bgm-bar" content the waveform patch mounts). Selection cyan
+     stays on VIDEO clips — the constraint keeps cyan on the selected clip + the
+     active play affordance; the BGM bar simply reads as a clean flat green block. */
+  .effect:has(.bgm-bar)::after {
+    display: none;
+  }
+
+  .effect:has(.bgm-bar):hover {
+    outline: none;
+  }
+
+  /* Selected BGM stays flat (openimago-g1hb): never wash the green out with 1.1.3's
+     selected brightness filter, and put the crisp 1px cyan selection border ON the bar
+     (matching the clip selection language) rather than an oversized box. NOTE: for the
+     VENDORED editor the live equivalent lives in upstream effects/parts/styles.ts keyed
+     on [data-audio] (this patch only fires for the npm-omniclip importer). */
+  .effect:has(.bgm-bar)[data-selected] {
+    filter: none;
+  }
+  .effect:has(.bgm-bar)[data-selected] .bgm-bar {
+    outline: 1px solid var(--imago-neon-cyan, #00f0ff);
+    outline-offset: -1px;
+  }
 `
 
 // Single combined export (the consumer wraps THIS in its own use.styles array

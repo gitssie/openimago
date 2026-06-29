@@ -169,6 +169,7 @@ export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: Any
 		return html`
 			<div
 				?data-grabbed=${grabbed}
+				?data-audio=${effect.kind === "audio"}
 				?data-selected=${use.context.state.selected_effect?.id === effect.id}
 				style="
 					${inline_css}
@@ -199,6 +200,7 @@ export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: Any
 			?data-hidden=${!isVisible}
 			?data-no-file=${fileNotFound}
 			?data-grabbed=${grabbed}
+			?data-audio=${effect.kind === "audio"}
 			?data-selected=${use.context.state.selected_effect?.id === effect.id}
 			style="
 				${inline_css}
