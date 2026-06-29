@@ -61,8 +61,14 @@
       <!-- omniclip's editor custom element (registered by the fork on load). -->
       <div ref="editorHost" class="story-cut__editor" data-testid="cut-editor-host">
         <construct-editor v-if="editorReady" class="story-cut__construct" />
-        <p v-else class="story-cut__loading">
+        <p v-if="!editorReady" class="story-cut__loading">
           {{ editorError ? editorError : '正在加载剪辑器…' }}
+        </p>
+        <!-- Editor mounted but hydration in flight: cover the not-yet-placed timeline
+             with our flat-black loading state (the native "Your timeline is empty"
+             placeholder is suppressed in the vendored view; openimago-l9qs). -->
+        <p v-else-if="hydrating" class="story-cut__loading story-cut__loading--hydrating">
+          正在加载粗剪…
         </p>
       </div>
 
@@ -230,6 +236,11 @@ const emit = defineEmits<{
 
 const editorHost = ref<HTMLElement | null>(null)
 const editorReady = ref(false)
+// True while fork.hydrateFromCut runs (the ~7s import/place window). The editor is
+// mounted but clips aren't placed yet, so we cover it with a design-matching loading
+// overlay instead of letting the (now-suppressed) native empty timeline flash through
+// (openimago-l9qs).
+const hydrating = ref(false)
 const editorError = ref<string | null>(null)
 const assembling = ref(false)
 
@@ -554,7 +565,15 @@ async function mountAndHydrate(): Promise<void> {
         mediaResolver.value,
         (artifactId) => (bgmSource && bgmSource.id === artifactId ? bgmSource.source : null),
       )
-      await fork.hydrateFromCut(clips, transitions, bgm)
+      // Cover the editor with our loading overlay for the hydration window
+      // (openimago-l9qs); finally so it clears on success OR if hydrate throws
+      // (the throw still propagates to the outer catch which rolls editorReady back).
+      hydrating.value = true
+      try {
+        await fork.hydrateFromCut(clips, transitions, bgm)
+      } finally {
+        hydrating.value = false
+      }
     }
 
     // Subscribe to committed editor gestures ONLY AFTER hydration has fully
@@ -589,6 +608,7 @@ async function mountAndHydrate(): Promise<void> {
 /** Reset editor state and (re)mount once the host div is in the DOM. */
 function remountEditor(): void {
   editorReady.value = false
+  hydrating.value = false
   editorError.value = null
   // Re-seed the local clock from the (possibly newly-loaded) cut before the
   // fresh editor starts emitting edits.
@@ -710,6 +730,15 @@ defineExpose({ persistEdit, rehydrate })
   margin: 0;
   font-size: 12.5px;
   color: var(--imago-text-faint);
+}
+
+// Hydration overlay (openimago-l9qs): same flat-black loading treatment, but OPAQUE
+// (the void base) so it fully covers the mounted-but-not-yet-hydrated editor during the
+// import/place window — no native empty timeline shows through. z-index sits above the
+// <construct-editor> sibling in the same relative-positioned host.
+.story-cut__loading--hydrating {
+  background: var(--imago-bg-void);
+  z-index: 2;
 }
 
 // Quiet inline notice — NOT a loud alert. Muted pink derived from the token so no

@@ -12,7 +12,6 @@ import {TextEffect} from "./views/effects/text-effect.js"
 import {VideoEffect} from "./views/effects/video-effect.js"
 import {AudioEffect} from "./views/effects/audio-effect.js"
 import {ImageEffect} from "./views/effects/image-effect.js"
-import folderSvg from "../../icons/gravity-ui/folder.svg.js"
 import {StateHandler} from "../../views/state-handler/view.js"
 import {TransitionIndicator} from "./views/indicators/add-transition.js"
 import {ProposalIndicator} from "./views/indicators/proposal-indicator.js"
@@ -88,14 +87,13 @@ export const OmniTimeline = shadow_component(use => {
 
 	const noEffects = use.context.state.effects.length === 0
 
-	const renderTimelineInfo = () => {
-		return noEffects ? html`
-			<div class=timeline-info>
-				<h3>Your timeline is empty</h3>
-				<p>Add some media from ${folderSvg} panel to start editing!</p>
-			</div>
-		` : null
-	}
+	// Native empty-timeline placeholder ("Your timeline is empty / Add some media from
+	// [panel] panel…") is SUPPRESSED in the embedded cut editor (openimago-l9qs): it is
+	// off-design, references a media panel that doesn't exist here, and would flash through
+	// during the ~7s hydration window before clips are placed. The host (StoryCutPanel)
+	// owns both the hydration loading overlay AND the genuinely-empty-cut state
+	// ("尚未生成粗剪" via isEmptyCut), so this branch must never render.
+	const renderTimelineInfo = () => null
 
 	const timeline = use.defer(() => use.shadow.querySelector(".timeline-relative")) as GoldElement ?? use.element
 
