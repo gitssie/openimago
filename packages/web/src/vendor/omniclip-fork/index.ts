@@ -1,26 +1,41 @@
 // omniclip fork bootstrap (openimago-uyd0).
 //
-// Boots omniclip (which registers <construct-editor>/<omni-timeline>/... and the
-// global omnislate.context as an import side-effect) and returns an object that
-// satisfies the host-facing contract OmniclipForkApi
-// (src/utils/cut/fork-contract.ts). The Cut panel (openimago-4eiw) calls
-// ONLY this surface; it never reaches into omniclip internals.
+// Boots omniclip from the VENDORED 1.1.3 source under ./upstream (openimago-uatf):
+// registers <construct-editor>/<omni-timeline>/... and constructs the global
+// omnislate.context explicitly (1.1.3's main.ts is a standalone SPA we deliberately
+// do NOT run). Returns an object that satisfies the host-facing contract
+// OmniclipForkApi (src/utils/cut/fork-contract.ts). The Cut panel (openimago-4eiw)
+// calls ONLY this surface; it never reaches into omniclip internals.
 //
 // BROWSER-ONLY: this whole directory is excluded from repo typecheck/lint and is
 // validated by the user locally (see LOCAL_VALIDATION.md). The pure logic it
 // composes is unit-tested in src/utils/cut/.
 
 // MUST be first: clears omniclip's persisted state (omniclip_effects/tracks +
-// construct_layout) BEFORE omniclip's import side-effect constructs its context
-// and restores them — otherwise ghost clips from a prior session show before our
-// cut hydration (openimago-mb66). Import order = execution order for side-effects;
-// `cleared` is referenced below so Rollup can't tree-shake this import away.
+// construct_layout) BEFORE we construct the context below — otherwise ghost clips
+// from a prior session show before our cut hydration (openimago-mb66). Import order
+// = execution order for side-effects; `cleared` is referenced below so Rollup can't
+// tree-shake this import away. (The fresh projectId on construction below is the
+// primary ghost-clip guard for 1.1.3's per-project store; see openimago-lpjd.)
 import { cleared as omniPersistenceCleared } from './clear-omni-persistence'
-import 'omniclip' // side-effect: register_to_dom + setupContext() (global)
-import { omnislate, OmniContext } from 'omniclip/x/context/context.js'
-import { TimelinePanel } from 'omniclip/x/components/omni-timeline/panel.js'
-import { MediaPlayerPanel } from 'omniclip/x/components/omni-timeline/views/media-player/panel.js'
-import { freshId } from '@benev/construct/x/mini.js'
+// Boot from the VENDORED 1.1.3 source (openimago-uatf) instead of npm `omniclip`.
+// 1.1.3's main.ts is a standalone SPA (HashRouter that takes over document.body +
+// posthog.init), so we do NOT import it; we register the editor custom elements
+// ourselves and construct omnislate.context directly — exactly the subset the
+// standalone app's /editor route sets up, minus the landing-page/manager shell.
+import { register_to_dom, generate_id } from '@benev/slate'
+import { ConstructEditor, freshId } from '@benev/construct/x/mini.js'
+import { omnislate, OmniContext } from './upstream/context/context'
+import { TimelinePanel } from './upstream/components/omni-timeline/panel'
+import { MediaPlayerPanel } from './upstream/components/omni-timeline/views/media-player/panel'
+// Editor custom elements the standalone /editor route registers (main.ts). The
+// panels above render these tags, so they must be defined before the editor mounts.
+import { OmniTimeline } from './upstream/components/omni-timeline/component'
+import { OmniText } from './upstream/components/omni-text/component'
+import { OmniMedia } from './upstream/components/omni-media/component'
+import { OmniFilters } from './upstream/components/omni-filters/component'
+import { OmniTransitions } from './upstream/components/omni-transitions/component'
+import { OmniAnim } from './upstream/components/omni-anim/component'
 import type {
   OmniclipForkApi,
   OmniThemeVar,
@@ -97,9 +112,22 @@ function twoPanelLayout() {
 // retained and runs before omniclip restored state above; no-op at runtime.
 void omniPersistenceCleared
 
-// Rebuild the global context with the player+timeline layout. Only the two panels
-// we use are registered (no MediaPanel/ExportPanel — openimago-h8v6 scope).
+// Register the editor custom elements (the standalone app does this in its /editor
+// route). `soft: true` makes re-registration (e.g. dev HMR) a no-op instead of
+// throwing. <construct-editor> hosts the layout/panels; the Omni* components are
+// the tags the panels render.
+register_to_dom(
+  { ConstructEditor, OmniTimeline, OmniText, OmniMedia, OmniFilters, OmniTransitions, OmniAnim },
+  { soft: true },
+)
+
+// Build the global context with the player+timeline layout. Only the two panels
+// we use are placed (no MediaPanel/ExportPanel — openimago-h8v6 scope). 1.1.3's
+// OmniContext requires a projectId (keys per-project localStorage persistence); a
+// fresh id each boot yields an empty project (no stale/ghost clips), matching the
+// clear-on-boot intent above — hydrateFromCut then populates it.
 omnislate.context = new OmniContext({
+  projectId: generate_id(),
   panels: { TimelinePanel, MediaPlayerPanel },
   layouts: { empty: twoPanelLayout(), default: twoPanelLayout() },
 })
@@ -113,8 +141,9 @@ omnislate.context.layout.reset_to_default()
 // so our 9:16 clips render letterboxed in a landscape canvas, exposing the dark
 // .lower-canvas. Set the project to portrait 1080×1920 the same way omniclip's
 // project-settings view does: the action updates state.settings, and
-// set_canvas_resolution rebuilds the fabric canvas buffer at the new size. The
-// media-player CSS aspect-ratio is overridden to 9/16 by media-player-styles.patch.
+// set_canvas_resolution rebuilds the pixi.js canvas/renderer at the new size (1.1.3
+// migrated the compositor from fabric.js to pixi.js). The media-player CSS
+// aspect-ratio is overridden to 9/16 by media-player-styles.patch.
 const PORTRAIT_W = 1080
 const PORTRAIT_H = 1920
 omnislate.context.actions.set_project_resolution(PORTRAIT_W, PORTRAIT_H)
