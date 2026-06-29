@@ -3,6 +3,7 @@ import {
   classifyEffectDiff,
   effectsSnapshotEqual,
   advanceBaselineAfterSplit,
+  rippleStartPositions,
 } from '../cut-effect-diff'
 import type { DiffCutEdit } from '../cut-effect-diff'
 import type { OmniVideoEffect } from '../omniclip-state.types'
@@ -409,5 +410,74 @@ describe('advanceBaselineAfterSplit + drain loop (openimago-vx2t)', () => {
       working = advanceBaselineAfterSplit(working, next, edit)
     }
     expect(emitted.map((e) => (e.kind === 'split' ? e.newClipId : e.kind))).toEqual(['B', 'C', 'D'])
+  })
+})
+
+describe('rippleStartPositions (openimago-1ky8 — real-time no-gap ripple)', () => {
+  it('lays effects flush end-to-end in track order (sum of prior spans)', () => {
+    // spans 2000 / 3000 / 1500 → positions 0, 2000, 5000.
+    const effects = [
+      vfx({ id: 'a', start: 0, end: 2000, start_at_position: 0 }),
+      vfx({ id: 'b', start: 1000, end: 4000, start_at_position: 2000 }),
+      vfx({ id: 'c', start: 500, end: 2000, start_at_position: 5000 }),
+    ]
+    expect(rippleStartPositions(effects)).toEqual([
+      { id: 'a', start_at_position: 0 },
+      { id: 'b', start_at_position: 2000 },
+      { id: 'c', start_at_position: 5000 },
+    ])
+  })
+
+  it('closes a gap left by a right-edge trim (the trim black-gap bug)', () => {
+    // 'a' was trimmed shorter (end 5000 → 3000) but 'b' still sits at 5000 → a
+    // 2000ms gap. Ripple snaps 'b' flush to a.end-a.start = 3000.
+    const effects = [
+      vfx({ id: 'a', start: 0, end: 3000, start_at_position: 0 }),
+      vfx({ id: 'b', start: 0, end: 4000, start_at_position: 5000 }),
+    ]
+    expect(rippleStartPositions(effects)).toEqual([
+      { id: 'a', start_at_position: 0 },
+      { id: 'b', start_at_position: 3000 },
+    ])
+  })
+
+  it('orders by current start_at_position, not array order', () => {
+    const effects = [
+      vfx({ id: 'c', start: 0, end: 1000, start_at_position: 6000 }),
+      vfx({ id: 'a', start: 0, end: 2000, start_at_position: 0 }),
+      vfx({ id: 'b', start: 0, end: 3000, start_at_position: 2000 }),
+    ]
+    expect(rippleStartPositions(effects)).toEqual([
+      { id: 'a', start_at_position: 0 },
+      { id: 'b', start_at_position: 2000 },
+      { id: 'c', start_at_position: 5000 },
+    ])
+  })
+
+  it('absorbs an overlap (negative gap) into a flush layout too', () => {
+    // 'b' overlaps 'a' (starts at 1500 while a spans 2000) → snap to 2000.
+    const effects = [
+      vfx({ id: 'a', start: 0, end: 2000, start_at_position: 0 }),
+      vfx({ id: 'b', start: 0, end: 2000, start_at_position: 1500 }),
+    ]
+    expect(rippleStartPositions(effects)).toEqual([
+      { id: 'a', start_at_position: 0 },
+      { id: 'b', start_at_position: 2000 },
+    ])
+  })
+
+  it('is a no-op (positions unchanged) for an already-flush track', () => {
+    const effects = [
+      vfx({ id: 'a', start: 0, end: 2000, start_at_position: 0 }),
+      vfx({ id: 'b', start: 0, end: 3000, start_at_position: 2000 }),
+    ]
+    expect(rippleStartPositions(effects)).toEqual([
+      { id: 'a', start_at_position: 0 },
+      { id: 'b', start_at_position: 2000 },
+    ])
+  })
+
+  it('returns an empty array for no effects', () => {
+    expect(rippleStartPositions([])).toEqual([])
   })
 })

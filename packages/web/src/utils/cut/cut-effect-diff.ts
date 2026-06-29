@@ -205,3 +205,35 @@ export function advanceBaselineAfterSplit(
   if (!folded.some((e) => e.id === newEffect.id)) folded.push({ ...newEffect })
   return folded
 }
+
+/** An effect id paired with its target on-track position (ms). */
+export interface RippledPosition {
+  id: string
+  start_at_position: number
+}
+
+/**
+ * Compute the NO-GAP ripple layout for a set of video effects (openimago-1ky8):
+ * each effect's `start_at_position` becomes the running sum of the spans
+ * (`end - start`) of the effects before it, in current on-track order. This is the
+ * same flush placement hydrate uses (cursorMs) and the same no-gap invariant the
+ * canonical readback enforces (bd-4rdj: positions are DERIVED from order + spans,
+ * never persisted) — so applying it to the LIVE omniclip state after a right-edge
+ * trim snaps the following clips flush in real time, instead of leaving a black gap
+ * until the next hydrate.
+ *
+ * Pure: order is taken from the input effects' current `start_at_position` (ties
+ * keep input order via a stable sort); the result is returned in that track order,
+ * so the caller can set each effect's position and the relative ordering is
+ * preserved. Trim/placement of the SOURCE range (start/end) is untouched.
+ */
+export function rippleStartPositions(effects: readonly DiffEffect[]): RippledPosition[] {
+  const ordered = [...effects].sort((a, b) => a.start_at_position - b.start_at_position)
+  let cursorMs = 0
+  const out: RippledPosition[] = []
+  for (const e of ordered) {
+    out.push({ id: e.id, start_at_position: cursorMs })
+    cursorMs += e.end - e.start
+  }
+  return out
+}

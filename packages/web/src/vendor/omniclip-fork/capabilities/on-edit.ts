@@ -34,6 +34,7 @@ import { omnislate } from 'omniclip/x/context/context.js'
 import {
   classifyEffectDiff,
   advanceBaselineAfterSplit,
+  rippleStartPositions,
   effectsSnapshotEqual,
   type DiffEffect,
 } from 'src/utils/cut/cut-effect-diff'
@@ -62,6 +63,40 @@ function snapshotVideoEffects(): DiffEffect[] {
       start_at_position: e.start_at_position,
       file_hash: e.file_hash,
     }))
+}
+
+/**
+ * Snap the LIVE omniclip video track to a no-gap ripple in real time
+ * (openimago-1ky8). omniclip is non-rippling: shortening a clip's right edge
+ * (outPoint) leaves the following clips where they were → a black gap that only
+ * closed on the next hydrate/refresh. We recompute the flush positions
+ * (rippleStartPositions — the same cursorMs layout hydrate uses, the same no-gap
+ * invariant the canonical readback enforces, bd-4rdj) and write each changed
+ * effect's `start_at_position` back through omniclip's reactive action, so the gap
+ * closes immediately. Returns true if any position changed.
+ *
+ * This mutates ONLY on-track positions (never start/end/trim), and the positions it
+ * writes are exactly what the canonical cut already derives — so a follow-up diff
+ * sees no order change (orderedIds is unchanged) and never re-persists a spurious
+ * reorder. The caller re-syncs its baseline to the post-ripple snapshot so the poll
+ * does not treat this programmatic reposition as a new user gesture.
+ */
+function rippleLiveTrack(): boolean {
+  const liveEffects = omnislate.context.state.effects as Array<
+    DiffEffect & { kind: string }
+  >
+  const videos = liveEffects.filter((e) => e.kind === 'video')
+  const targets = rippleStartPositions(videos)
+  const byId = new Map(videos.map((e) => [e.id, e]))
+
+  let changed = false
+  for (const { id, start_at_position } of targets) {
+    const effect = byId.get(id)
+    if (!effect || effect.start_at_position === start_at_position) continue
+    omnislate.context.actions.set_effect_start_position(effect, start_at_position)
+    changed = true
+  }
+  return changed
 }
 
 /**
@@ -95,6 +130,7 @@ export function onEdit(cb: (edit: CutEdit) => void): () => void {
     // we stop after it. The guard bounds the loop against any unforeseen non-progress.
     let working: DiffEffect[] = baseline
     let sawSplit = false
+    let sawTrim = false
     for (let guard = 0; guard < MAX_DRAIN_EDITS; guard++) {
       const edit = classifyEffectDiff(working, next)
       if (!edit) break
@@ -104,6 +140,7 @@ export function onEdit(cb: (edit: CutEdit) => void): () => void {
         working = advanceBaselineAfterSplit(working, next, edit)
         continue
       }
+      if (edit.kind === 'trim') sawTrim = true
       break
     }
 
@@ -112,6 +149,25 @@ export function onEdit(cb: (edit: CutEdit) => void): () => void {
     // the un-emitted remainder is intentionally absorbed here — the baseline is
     // always the last committed state, keeping each future diff single-gesture-scoped.
     baseline = next
+
+    // After a TRIM, snap the live track to a no-gap ripple in real time
+    // (openimago-1ky8). omniclip is non-rippling, so shortening a clip's right edge
+    // left the following clips in place → a black gap that only closed on the next
+    // hydrate. rippleLiveTrack rewrites the changed positions through omniclip's
+    // reactive action so the gap closes immediately. We then re-sync baseline +
+    // lastSeen to the post-ripple snapshot so this programmatic reposition is NOT
+    // picked up by the poll as a new gesture (it would otherwise re-arm a commit; the
+    // positions are exactly the canonical no-gap layout so the diff is a no-op anyway,
+    // but re-syncing avoids the wasted tick + any reorder mis-fire). The trim itself
+    // is already persisted via cb above; the ripple is LOCAL-ONLY (no extra write).
+    if (sawTrim) {
+      const changed = rippleLiveTrack()
+      if (changed) {
+        const settled = snapshotVideoEffects()
+        baseline = settled
+        lastSeen = settled
+      }
+    }
 
     // After a SPLIT, repaint the preview's first frame for the freshly-created clip
     // (openimago-6imt). omniclip's split builds the new effect's <video> via
