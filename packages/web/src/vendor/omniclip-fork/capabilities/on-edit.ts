@@ -30,7 +30,7 @@
 // BROWSER-ONLY: reads omniclip's live effects via rAF; excluded from repo
 // typecheck.
 
-import { omnislate } from 'omniclip/x/context/context.js'
+import { omnislate } from '../upstream/context/context'
 import {
   classifyEffectDiff,
   advanceBaselineAfterSplit,

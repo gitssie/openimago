@@ -17,7 +17,7 @@
 //
 // BROWSER-ONLY: reads omniclip's live effects.
 
-import { omnislate } from 'omniclip/x/context/context.js'
+import { omnislate } from '../upstream/context/context'
 import type {
   ClearTransition,
   OmniTransition,

@@ -18,7 +18,7 @@
 //
 // BROWSER-ONLY: reads omniclip's live state via rAF; excluded from repo typecheck.
 
-import { omnislate } from 'omniclip/x/context/context.js'
+import { omnislate } from '../upstream/context/context'
 
 /** Read the currently-selected effect id from omniclip's live state. */
 function selectedEffectId(): string | null {

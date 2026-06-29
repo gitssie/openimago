@@ -15,7 +15,7 @@
 // BROWSER-ONLY.
 
 import { ClipMenuRegistry } from 'src/utils/cut/clip-menu-registry'
-import { omnislate } from 'omniclip/x/context/context.js'
+import { omnislate } from '../upstream/context/context'
 import type { ClipMenuContext } from 'src/utils/cut/fork-contract'
 
 export const clipMenuRegistry = new ClipMenuRegistry()
