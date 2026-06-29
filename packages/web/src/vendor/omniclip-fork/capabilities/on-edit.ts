@@ -130,7 +130,7 @@ export function onEdit(cb: (edit: CutEdit) => void): () => void {
     // we stop after it. The guard bounds the loop against any unforeseen non-progress.
     let working: DiffEffect[] = baseline
     let sawSplit = false
-    let sawTrim = false
+    let sawLayoutChange = false
     for (let guard = 0; guard < MAX_DRAIN_EDITS; guard++) {
       const edit = classifyEffectDiff(working, next)
       if (!edit) break
@@ -140,7 +140,12 @@ export function onEdit(cb: (edit: CutEdit) => void): () => void {
         working = advanceBaselineAfterSplit(working, next, edit)
         continue
       }
-      if (edit.kind === 'trim') sawTrim = true
+      // trim / reorder / delete all leave a non-rippling omniclip with a gap (or a
+      // stale position order) → they need a live no-gap ripple (openimago-uvm4).
+      // A SPLIT does not: its two halves already abut by construction.
+      if (edit.kind === 'trim' || edit.kind === 'reorder' || edit.kind === 'delete') {
+        sawLayoutChange = true
+      }
       break
     }
 
@@ -150,17 +155,19 @@ export function onEdit(cb: (edit: CutEdit) => void): () => void {
     // always the last committed state, keeping each future diff single-gesture-scoped.
     baseline = next
 
-    // After a TRIM, snap the live track to a no-gap ripple in real time
-    // (openimago-1ky8). omniclip is non-rippling, so shortening a clip's right edge
-    // left the following clips in place → a black gap that only closed on the next
-    // hydrate. rippleLiveTrack rewrites the changed positions through omniclip's
-    // reactive action so the gap closes immediately. We then re-sync baseline +
-    // lastSeen to the post-ripple snapshot so this programmatic reposition is NOT
-    // picked up by the poll as a new gesture (it would otherwise re-arm a commit; the
-    // positions are exactly the canonical no-gap layout so the diff is a no-op anyway,
-    // but re-syncing avoids the wasted tick + any reorder mis-fire). The trim itself
-    // is already persisted via cb above; the ripple is LOCAL-ONLY (no extra write).
-    if (sawTrim) {
+    // After a TRIM / REORDER / DELETE, snap the live track to a no-gap ripple in
+    // real time (openimago-1ky8, extended openimago-uvm4). omniclip is non-rippling,
+    // so trimming a clip's right edge, moving a clip, or deleting one left the
+    // following clips in place → a black gap that only closed on the next hydrate.
+    // rippleLiveTrack rewrites the changed positions through omniclip's reactive
+    // action (set_effect_start_position) so the gap closes immediately. We then
+    // re-sync baseline + lastSeen to the post-ripple snapshot so this programmatic
+    // reposition is NOT picked up by the poll as a new gesture (it would otherwise
+    // re-arm a commit; the positions are exactly the canonical no-gap layout the
+    // server already derives, so a re-diff is a no-op — re-syncing avoids the wasted
+    // tick and any spurious reorder mis-fire). The edit itself is already persisted
+    // via cb above; the ripple is LOCAL-ONLY (no extra write).
+    if (sawLayoutChange) {
       const changed = rippleLiveTrack()
       if (changed) {
         const settled = snapshotVideoEffects()
