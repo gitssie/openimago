@@ -38,24 +38,18 @@ import type {
 
 const MS_PER_S = 1000
 
-// TODO(openimago-74y8): port compose path fabric->pixi after phase-4 video-effect patch.
-// The PREVIEW-COMPOSITION machinery in this file (composePlacedClips, nudgeFirstFrame,
-// placeBgm's re-announce) was written against 1.0.7's fabric compositor and calls APIs
-// that DO NOT exist on 1.1.3's pixi compositor — compositor.canvas.getObjects()/
-// requestRenderAll(), FabricImage.getElement(), set_current_time_of_audio_or_video_and_redraw().
-// It is also coupled to the phase-4 video-effect patch (the on_media_change listener that
-// calls compositor.recreate()), which is not yet ported to pixi. Until then this path is
-// DISABLED via the flag below: clips still PLACE on the timeline (placement uses only the
-// 1.1.3-stable actions), but the player preview stays blank until openimago-74y8 lands.
-// Flipping this to `true` before the pixi compose port would throw at runtime.
-const COMPOSE_PATH_ENABLED = false
-
-// Time-to-first-paint instrumentation (DEV-only, openimago-ah1j/0if6). Set when a
-// hydrate begins; consumed once by the first nudgeFirstFrame redraw that puts a
-// decoded frame on the canvas, so the open → clip-0-frame-painted latency is
-// measurable on the REAL tab-open flow (not just forced remounts).
-let firstPaintStart: number | null = null
-let firstPaintLogged = false
+// PREVIEW COMPOSITION (openimago-74y8): the editor boots from the VENDORED 1.1.3
+// source, whose native VideoEffect / AudioEffect views already carry the compose
+// contract — each mounts an `media.on_media_change("added")` listener that, gated by
+// `!is_effect_already_composed` (videoManager/audioManager.get(effect.id)), calls
+// `compositor.recreate({...state, effects:[effect], ...}, media)`. So the fork does
+// NOT re-implement composition: it RE-ANNOUNCES the media after the effect views
+// mount (importFromUrl publishes "added" before the view exists, so the mounted
+// listener misses it) and lets the native listener recreate onto the pixi stage.
+// pixi's Application renders via its ticker and the VideoManager owns the sprite's
+// VideoResource texture, so the elaborate fabric first-frame nudge (canvas.getObjects/
+// requestRenderAll/set_current_time_..._and_redraw — all removed in 1.1.3) is gone;
+// a single compose_effects() at the current timecode is the only paint poke needed.
 
 /** Default rect — clips fill the portrait 9:16 frame (openimago-vm5v); trimming
  * is via start/end. Matches the 1080×1920 project resolution set at boot.
@@ -88,8 +82,6 @@ export async function hydrateFromCut(
 
   if (import.meta.env.DEV) {
     console.time('[omniclip-fork] hydrateFromCut total')
-    firstPaintStart = performance.now()
-    firstPaintLogged = false
   }
 
   // (effectId, fileHash) per placed clip — the filmstrip refresh needs both: the
@@ -247,47 +239,40 @@ async function placeBgm(bgm: HydrateBgm | undefined): Promise<void> {
     name: imported.name,
   })
 
-  // Re-announce so the (now-mounted) AudioEffect view composes its waveform.
-  // TODO(openimago-74y8): disabled with the rest of the compose path until the
-  // fabric->pixi port + phase-4 patch. The BGM effect is already PLACED above (the
-  // green lane shows on the track); only the live waveform re-announce is deferred.
-  // (Also note media.get() now returns an AnyMedia record, not a File — the publish
-  // payload below must be reshaped to {..., file: record.file} during the 74y8 port.)
-  if (!COMPOSE_PATH_ENABLED) return
+  // Re-announce so the (now-mounted) native AudioEffect view composes its waveform.
+  // importFromUrl publishes on_media_change("added") BEFORE add_audio_effect mounts
+  // the view, so the mounted listener (gated by !audioManager.get(id)) misses it —
+  // clear the audioManager entry, then re-publish the AnyMedia record so the gate
+  // passes and the native view runs wave.on_file_found + compositor.recreate
+  // (upstream/components/omni-timeline/views/effects/audio-effect.ts).
   const media = ctx.controllers.media
   const audioManager = ctx.controllers.compositor.managers.audioManager
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       audioManager.delete(bgm.id)
-      const file = media.get(imported.fileHash)
-      if (!file) return
-      media.on_media_change.publish({
-        files: [{ hash: imported.fileHash, file, kind: 'audio' }],
-        action: 'added',
-      })
+      // 1.1.3's media is a Map<hash, AnyMedia>; get() returns the full record (with
+      // .file), which is exactly the on_media_change payload shape (the listener
+      // reads .hash off it).
+      const record = media.get(imported.fileHash)
+      if (!record) return
+      media.on_media_change.publish({ files: [record], action: 'added' })
     })
   })
 }
 
 /**
- * Ensure each placed clip is composed into the preview compositor. The patched
- * VideoEffect view's on_media_change("added") listener does compositor.recreate
- * but is gated by `!is_effect_already_composed`; clear the effect from the
- * videoManager first so the guard passes, then re-announce the media. Deduped
- * publish per source hash (multiple clips can share one source file).
- *
- * After compositing, nudge a first-frame redraw (openimago-rgtw): omniclip's
- * preview is HTMLVideoElement-based — recreate() builds each <video> and calls
- * compose_effects synchronously, but the <video> has not decoded a frame yet
- * (only element.load() was called), so fabric draws BLACK and nothing ever
- * redraws (the media-player only composes on playhead/playing changes). We wait
- * for the on-screen clip's <video> to become drawable, then re-compose so the
- * first frame paints on open.
+ * Re-announce each placed clip's media so the NATIVE 1.1.3 VideoEffect view composes
+ * it onto the pixi stage. importFromUrl publishes on_media_change("added") while it
+ * imports — BEFORE add_video_effect mounts the effect view — so the view's own mounted
+ * listener (upstream/.../effects/video-effect.ts, gated by
+ * `!compositor.managers.videoManager.get(effect.id)`) misses that first publish. We
+ * wait for the views to mount (two rAFs), clear each placed id from the videoManager so
+ * the gate re-opens, then re-publish each unique source record — the native listener
+ * then runs `compositor.recreate({...state, effects:[effect], filters}, media)`.
+ * Fire-and-forget (never awaited — openimago-0if6): recreate is async; we do not block
+ * hydrate on it.
  */
 function composePlacedClips(placed: { id: string; fileHash: string }[]): void {
-  // TODO(openimago-74y8): disabled until the fabric->pixi compose port + phase-4
-  // video-effect patch land. Clips are already placed; this only drives the preview.
-  if (!COMPOSE_PATH_ENABLED) return
   if (placed.length === 0) return
   const ctx = omnislate.context
   const media = ctx.controllers.media
@@ -296,303 +281,47 @@ function composePlacedClips(placed: { id: string; fileHash: string }[]): void {
   // ensures the VideoEffect use.mount() listeners are attached before we publish.
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      // Clear composed entries so every view's !is_effect_already_composed passes.
+      // Clear composed entries so every native view's !is_effect_already_composed passes.
       for (const { id } of placed) {
         videoManager.delete(id)
       }
-      // Re-announce each unique source hash → listeners re-compose for playback.
+      // Re-announce each unique source hash → the native listeners recreate. The
+      // 1.1.3 Media Map stores AnyMedia records; get(hash) returns the record (the
+      // listener reads .hash off it), so publish the record directly.
       const seen = new Set<string>()
       for (const { fileHash } of placed) {
         if (seen.has(fileHash)) continue
         seen.add(fileHash)
-        const file = media.get(fileHash)
-        if (!file) continue
-        media.on_media_change.publish({ files: [{ hash: fileHash, file, kind: 'video' }], action: 'added' })
+        const record = media.get(fileHash)
+        if (!record) continue
+        media.on_media_change.publish({ files: [record], action: 'added' })
       }
-      // The video-effect listener calls compositor.recreate() (async: it awaits
-      // media.are_files_ready() before building each <video> + composing), so the
-      // <video> elements don't exist in videoManager synchronously after publish.
-      // Defer the first-frame nudge one more frame so recreate has built them.
+      // recreate() is async (awaits media.are_files_ready() + builds the pixi sprites),
+      // so defer one more frame, then poke a single paint at the current timecode.
       requestAnimationFrame(() => nudgeFirstFrame())
     })
   })
 }
 
-/** HTMLVideoElement.readyState ≥ HAVE_CURRENT_DATA → a frame can be drawImage'd. */
-const HAVE_CURRENT_DATA = 2
-
 /**
- * Paint the preview's FIRST frame once the on-screen clip's <video> can be drawn
- * (openimago-rgtw). recreate() composed the canvas while the <video> was still
- * loading, so fabric drew BLACK and nothing redraws (the media-player only
- * composes on playhead/playing changes). We re-run compose_effects + redraw once
- * the visible element reaches a drawable readyState (or its first
- * `seeked`/`loadeddata`), so the frame paints on open without pressing play.
+ * Poke a single paint of the composed scene at the current timecode (openimago-74y8).
  *
- * NOTE (openimago-ua5d): cover-fit is NO LONGER done here — it now happens at the
- * FabricImage creation point in the VideoManager patch (race-free, per clip, on
- * every recreate). This function only ensures the first frame PAINTS.
+ * On 1.1.3's PIXI compositor the elaborate fabric first-frame machinery is gone: the
+ * native VideoEffect listener already ran `compositor.recreate(...)` (which builds the
+ * sprites and adds them to the stage), the VideoManager owns each sprite's VideoResource
+ * texture, and PIXI's Application renders via its ticker. So a single
+ * `compose_effects(state.effects, timecode)` — which updates the currently-played set
+ * and calls `app.render()` — is all that is needed to surface the first frame without
+ * pressing play. `compose_effects` no-ops until the compositor has been recreated at
+ * least once (its `#recreated` guard), which is exactly the post-recreate state we are
+ * in. Also called by on-edit.ts after a split for the same single-poke repaint.
  *
- * DETERMINISTIC CONVERGENCE (openimago-sjqt): the first frame previously painted
- * only intermittently. Two races:
- *  1. recreate() is async — it adds the rebuilt FabricImage to the canvas AFTER
- *     this function's single immediate redraw ran, so that redraw composed nothing.
- *  2. omniclip's compose_effects only (re)adds effects in the `add` delta =
- *     (relative effects) − (currently_played_effects). After the fork's
- *     videoManager.delete(id) + recreate rebuilds the FabricImage, the effect id
- *     is STILL in currently_played_effects, so the delta is empty and
- *     #add_effects_to_canvas → add_video_to_canvas is never called → the rebuilt
- *     image is never put on the canvas (only the 2 transparent guideline rects are).
- * Fix: a BOUNDED rAF loop that, each tick, forces the visible video FabricImage
- * onto the canvas (by evicting its id from currently_played_effects when missing,
- * so the next compose_effects re-adds it exactly once — fabric's add does NOT
- * dedupe, so we only evict when actually off-canvas), redraws idempotently, and
- * stops once every visible video is BOTH on the canvas AND drawable (readyState≥2),
- * or after a frame cap so it can never spin forever.
+ * NOTE: first-frame paint is a BROWSER-ONLY behavior — validate locally (the pure logic
+ * is elsewhere). If a trimmed clip's in-point frame needs an explicit seek, that is a
+ * follow-up (compositor.seek skips the per-effect currentTime set at timecode 0).
  */
-// Final safety budget (ms) for the first-frame nudge. The structural part (force
-// the FabricImage onto the canvas) converges in a handful of frames; the long tail
-// is waiting for a <video> element to DECODE its first frame (readyState ≥ 2). A
-// user-split's freshly-created clip can take well over the old ~3s/180-frame cap to
-// reach that — past the cap the loop stopped redrawing, so when the media finally
-// became drawable nothing repainted → the split segment showed a BLACK first frame
-// (openimago-6imt). We now (a) drive repaints off the element's own
-// loadeddata/canplay/seeked events — which fire whenever the media becomes drawable,
-// no matter how late — re-attaching to clips that appear after the nudge starts
-// (split clips are created asynchronously by recreate()), and (b) keep the rAF loop
-// as a generous TIME-budgeted backstop instead of a tight frame cap, so a slow
-// decode is no longer abandoned early. The budget only bounds the loop so it can
-// never spin forever; convergence (or an event-driven repaint) ends it sooner.
-const NUDGE_BUDGET_MS = 15000
-
 export function nudgeFirstFrame(): void {
-  // TODO(openimago-74y8): disabled until the fabric->pixi compose port + phase-4
-  // video-effect patch land. The body below calls fabric-only compositor APIs
-  // (compositor.canvas, FabricImage.getElement, set_current_time_..._and_redraw)
-  // that don't exist on 1.1.3's pixi compositor. Also called by on-edit.ts after a
-  // split — a no-op there too until the port. (Player preview stays blank.)
-  if (!COMPOSE_PATH_ENABLED) return
   const ctx = omnislate.context
   const compositor = ctx.controllers.compositor
-
-  // Ensure the on-screen clip's first frame paints once its <video> is drawable.
-  const visible = compositor.get_effects_relative_to_timecode(
-    ctx.state.effects,
-    compositor.timecode,
-  )
-
-  // True once the on-screen video actually has a decoded frame to draw — the point
-  // at which a redraw produces a real (non-black) first frame (openimago-ah1j).
-  const visibleClipDrawable = (): boolean =>
-    visible.some((effect) => {
-      if (effect.kind !== 'video') return false
-      const fv = compositor.managers.videoManager.get(effect.id)
-      const el = fv?.getElement() as HTMLVideoElement | undefined
-      return !!el && el.readyState >= HAVE_CURRENT_DATA
-    })
-
-  // TEMPORARY DIAGNOSTIC (openimago-qsb5): dump the on-screen video FabricImage's
-  // geometry after a redraw so we can tell whether the first frame is drawn but
-  // positioned OFF the visible canvas (overflow hypothesis) vs not drawn at all.
-  // Logging ONLY — does not affect paint/positioning. Remove once root-caused.
-  const logDiag = (): void => {
-    const effect = visible.find((e) => e.kind === 'video')
-    if (!effect) {
-      console.log('[omni-diag] no visible video effect at timecode', compositor.timecode)
-      return
-    }
-    const fabricVideo = compositor.managers.videoManager.get(effect.id) as
-      | (Record<string, unknown> & { getElement?: () => HTMLVideoElement })
-      | undefined
-    const canvas = compositor.canvas as unknown as {
-      width?: number
-      height?: number
-      viewportTransform?: number[]
-      lowerCanvasEl?: HTMLCanvasElement
-    }
-    if (!fabricVideo) {
-      console.log('[omni-diag] effect', effect.id, 'has no FabricImage in videoManager', {
-        canvasW: canvas.width,
-        canvasH: canvas.height,
-      })
-      return
-    }
-
-    const left = Number(fabricVideo.left)
-    const top = Number(fabricVideo.top)
-    const scaleX = Number(fabricVideo.scaleX)
-    const scaleY = Number(fabricVideo.scaleY)
-    const width = Number(fabricVideo.width)
-    const height = Number(fabricVideo.height)
-    const originX = String(fabricVideo.originX)
-    const originY = String(fabricVideo.originY)
-    const scaledW = width * scaleX
-    const scaledH = height * scaleY
-    // Origin-aware bounding box: center origin → left/top is the CENTER; otherwise
-    // (left/top origin) left/top is the top-left edge.
-    const boundingLeft = originX === 'center' ? left - scaledW / 2 : left
-    const boundingTop = originY === 'center' ? top - scaledH / 2 : top
-    const boundingRight = boundingLeft + scaledW
-    const boundingBottom = boundingTop + scaledH
-
-    const el = fabricVideo.getElement?.()
-    let centerRGBA: number[] | string = 'n/a'
-    try {
-      const lower = canvas.lowerCanvasEl
-      const cw = Number(canvas.width) || 0
-      const ch = Number(canvas.height) || 0
-      const lctx = lower?.getContext('2d', { willReadFrequently: true })
-      if (lctx && cw > 0 && ch > 0) {
-        const px = lctx.getImageData(Math.floor(cw / 2), Math.floor(ch / 2), 1, 1).data
-        centerRGBA = [px[0]!, px[1]!, px[2]!, px[3]!]
-      }
-    } catch (err) {
-      centerRGBA = `getImageData failed: ${String(err)}`
-    }
-
-    console.log('[omni-diag] first-frame geometry', {
-      effectId: effect.id,
-      canvas: {
-        width: canvas.width,
-        height: canvas.height,
-        viewportTransform: canvas.viewportTransform,
-      },
-      object: { left, top, scaleX, scaleY, width, height, originX, originY,
-        visible: fabricVideo.visible, opacity: fabricVideo.opacity },
-      derivedBoundingBox: { boundingLeft, boundingTop, boundingRight, boundingBottom, scaledW, scaledH },
-      withinCanvas:
-        boundingLeft >= 0 &&
-        boundingTop >= 0 &&
-        boundingRight <= (Number(canvas.width) || 0) &&
-        boundingBottom <= (Number(canvas.height) || 0),
-      element: el
-        ? { readyState: el.readyState, videoWidth: el.videoWidth, videoHeight: el.videoHeight, currentTime: el.currentTime }
-        : 'no element',
-      codeSideCenterRGBA: centerRGBA,
-    })
-  }
-
-  // The video effects visible at timecode 0 — the ones that must be on the canvas.
-  const visibleVideos = visible.filter((e) => e.kind === 'video')
-
-  // True iff the effect's CURRENT FabricImage (from videoManager) is on the canvas.
-  const isOnCanvas = (effectId: string): boolean => {
-    const fabricVideo = compositor.managers.videoManager.get(effectId)
-    if (!fabricVideo) return false
-    return compositor.canvas.getObjects().includes(fabricVideo)
-  }
-
-  // Force-add the visible video's FabricImage to the canvas when it's missing.
-  // omniclip's compose_effects only re-adds effects in its `add` delta =
-  // relative − currently_played_effects; after the fork's delete+recreate the id
-  // lingers in currently_played_effects so the delta is empty and the rebuilt
-  // image is never added. Evicting the id (ONLY when off-canvas) puts it back in
-  // the delta so the next compose_effects calls add_video_to_canvas exactly once.
-  // Guarded on off-canvas because fabric's canvas.add does not dedupe.
-  const ensureOnCanvas = (): void => {
-    for (const effect of visibleVideos) {
-      if (!isOnCanvas(effect.id)) {
-        compositor.currently_played_effects.delete(effect.id)
-      }
-    }
-  }
-
-  const redraw = (): void => {
-    ensureOnCanvas()
-    const effects = ctx.state.effects
-    compositor.compose_effects(effects, compositor.timecode)
-    compositor.set_current_time_of_audio_or_video_and_redraw(true, compositor.timecode)
-    compositor.canvas.requestRenderAll()
-    if (import.meta.env.DEV) logDiag()
-    // Log time-to-first-paint exactly once, when this redraw actually puts clip 0's
-    // decoded frame on the canvas (not the earlier black/loading redraws).
-    if (
-      import.meta.env.DEV &&
-      !firstPaintLogged &&
-      firstPaintStart !== null &&
-      visibleClipDrawable()
-    ) {
-      firstPaintLogged = true
-      const ms = Math.round(performance.now() - firstPaintStart)
-      console.log(`[omniclip-fork] time-to-first-paint: ${ms}ms`)
-    }
-  }
-
-  // Converged once EVERY visible video is on the canvas AND its element is drawable.
-  // If there are no visible videos, there is nothing to paint → treat as converged.
-  const converged = (): boolean =>
-    visibleVideos.every((effect) => {
-      if (!isOnCanvas(effect.id)) return false
-      const fv = compositor.managers.videoManager.get(effect.id)
-      const el = fv?.getElement() as HTMLVideoElement | undefined
-      return !!el && el.readyState >= HAVE_CURRENT_DATA
-    })
-
-  // Media-ready listeners drive a repaint WHENEVER a clip's <video> becomes
-  // drawable — independent of the rAF loop and surviving past its budget. A user
-  // split's new clip is built asynchronously (recreate awaits media), so its
-  // element may not exist when the nudge starts AND may decode well after any frame
-  // cap; firing on its own loadeddata/canplay/seeked guarantees the first frame
-  // paints whenever it lands, no matter how late (openimago-6imt). We (re-)scan the
-  // visible videos each rAF tick and attach to any not-yet-listened element, using
-  // a WeakSet so each element is wired exactly once.
-  const wired = new WeakSet<HTMLVideoElement>()
-  const drawableEvents: Array<keyof HTMLVideoElementEventMap> = [
-    'loadeddata',
-    'canplay',
-    'seeked',
-  ]
-  const attachReadyListeners = (): void => {
-    for (const effect of visibleVideos) {
-      const fabricVideo = compositor.managers.videoManager.get(effect.id)
-      const element = fabricVideo?.getElement() as HTMLVideoElement | undefined
-      if (!element || wired.has(element)) continue
-      if (element.readyState >= HAVE_CURRENT_DATA) continue // already drawable
-      wired.add(element)
-      // A split clip emits loadeddata → (after the seek to its inPoint) seeked;
-      // redraw is idempotent so repainting on each is harmless. Detach once the
-      // element is drawable AND on the canvas — the first-frame goal is met, and we
-      // must not keep repainting on every later `seeked` (playhead scrubs).
-      const onReady = (): void => {
-        redraw()
-        if (element.readyState >= HAVE_CURRENT_DATA && isOnCanvas(effect.id)) {
-          for (const evt of drawableEvents) element.removeEventListener(evt, onReady)
-        }
-      }
-      for (const evt of drawableEvents) element.addEventListener(evt, onReady)
-    }
-  }
-
-  // rAF retry: redraw (force-adding the image when off-canvas) each frame until
-  // convergence, then stop. The TIME budget (not a tight frame cap) guarantees
-  // termination even if a <video> never decodes (e.g. Orca's embedded browser,
-  // which can't rasterize video — there the structural "image on canvas" invariant
-  // still converges). The media-ready listeners attached above outlive this loop,
-  // so a slow decode that finishes after the budget still triggers a repaint.
-  const start = performance.now()
-  let frame = 0
-  const tick = (): void => {
-    attachReadyListeners()
-    redraw()
-    frame++
-    if (converged()) {
-      if (import.meta.env.DEV) {
-        console.log(`[omni-diag] nudgeFirstFrame converged after ${frame} frame(s)`)
-      }
-      return
-    }
-    if (performance.now() - start >= NUDGE_BUDGET_MS) {
-      if (import.meta.env.DEV) {
-        const onCanvas = visibleVideos.filter((e) => isOnCanvas(e.id)).length
-        console.log(
-          `[omni-diag] nudgeFirstFrame rAF budget elapsed after ${frame} frames; ` +
-            `media-ready listeners remain armed for late decode`,
-          { visibleVideos: visibleVideos.length, onCanvas },
-        )
-      }
-      return
-    }
-    requestAnimationFrame(tick)
-  }
-  tick()
+  compositor.compose_effects(ctx.state.effects, compositor.timecode)
 }
