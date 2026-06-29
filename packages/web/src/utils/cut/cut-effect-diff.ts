@@ -103,23 +103,42 @@ export function classifyEffectDiff(
   const added = [...next.values()].filter((e) => !prev.has(e.id))
   const removed = [...prev.values()].filter((e) => !next.has(e.id))
 
-  // 1. split — exactly one new effect, total count +1, and it shares a file_hash
-  //    with a sibling that now ends exactly where the new effect starts (the
-  //    first half kept its id; the second half is the freshly-minted effect).
-  if (added.length === 1 && removed.length === 0 && nextEffects.length === prevEffects.length + 1) {
-    const newEffect = added[0]!
-    const firstHalf = [...next.values()].find(
-      (e) =>
-        e.id !== newEffect.id &&
-        e.file_hash === newEffect.file_hash &&
-        e.end === newEffect.start,
-    )
-    if (firstHalf) {
+  // 1. split — one OR MORE new effects, none removed, where EVERY added effect is
+  //    a clean split-half: it shares a file_hash with a sibling that now ends
+  //    exactly where it starts (the first half kept its id; the added effect is the
+  //    freshly-minted second half). The common case is a single split (added.length
+  //    === 1). Two splits committed inside one debounce window collapse into ONE
+  //    diff with TWO added effects (openimago-vx2t) — both still clean split-halves
+  //    — so we emit the EARLIEST-on-track split here and let on-edit drain the rest
+  //    by re-diffing against the post-split baseline. The "every added is a clean
+  //    split-half" guard preserves the 3xbg safety: a burst that ALSO contains a
+  //    non-abutting late import is NOT a pure multi-split → falls through to null.
+  if (added.length >= 1 && removed.length === 0 && nextEffects.length === prevEffects.length + added.length) {
+    /** The sibling whose end abuts this added effect's start (its first half). */
+    const firstHalfOf = (newEffect: DiffEffect): DiffEffect | undefined =>
+      [...next.values()].find(
+        (e) =>
+          e.id !== newEffect.id &&
+          e.file_hash === newEffect.file_hash &&
+          e.end === newEffect.start,
+      )
+
+    const splitPairs = added
+      .map((newEffect) => ({ newEffect, firstHalf: firstHalfOf(newEffect) }))
+      .filter((p): p is { newEffect: DiffEffect; firstHalf: DiffEffect } => p.firstHalf !== undefined)
+
+    // Emit a split ONLY when every added effect is a clean split-half (pure
+    // multi-split). Pick the earliest by on-track position so sequential splits
+    // are persisted in timeline order.
+    if (splitPairs.length === added.length) {
+      const earliest = splitPairs.reduce((a, b) =>
+        a.newEffect.start_at_position <= b.newEffect.start_at_position ? a : b,
+      )
       return {
         kind: 'split',
-        clipId: firstHalf.id,
-        atMs: newEffect.start,
-        newClipId: newEffect.id,
+        clipId: earliest.firstHalf.id,
+        atMs: earliest.newEffect.start,
+        newClipId: earliest.newEffect.id,
       }
     }
   }
@@ -153,4 +172,36 @@ export function classifyEffectDiff(
   }
 
   return null
+}
+
+/**
+ * Advance a diff baseline by ONE already-emitted split, so the next diff sees the
+ * remaining change (openimago-vx2t). When two splits collapse into one debounce
+ * window, classifyEffectDiff emits the first; on-edit calls this to fold that split
+ * into its working baseline, then re-diffs against the same `next` snapshot to emit
+ * the second — never advancing the baseline straight to `next` (which would swallow
+ * the un-persisted second-half effect into a ghost id).
+ *
+ * The folded baseline = `baseline` with the split's first half trimmed to end at
+ * `atMs`, plus the freshly-minted second-half effect (read verbatim from `next`,
+ * which already holds its real start/end/position). Both are taken from `next` so
+ * the working baseline converges to `next` once every split is drained. If the new
+ * effect isn't in `next` (shouldn't happen), the baseline is returned unchanged so
+ * the loop terminates safely.
+ */
+export function advanceBaselineAfterSplit(
+  baseline: readonly DiffEffect[],
+  next: readonly DiffEffect[],
+  split: { clipId: string; newClipId: string },
+): DiffEffect[] {
+  const newEffect = next.find((e) => e.id === split.newClipId)
+  if (!newEffect) return [...baseline]
+  const trimmedFirstHalf = next.find((e) => e.id === split.clipId)
+
+  const folded: DiffEffect[] = baseline.map((e) =>
+    e.id === split.clipId && trimmedFirstHalf ? { ...trimmedFirstHalf } : e,
+  )
+  // Insert the new second half if the working baseline doesn't have it yet.
+  if (!folded.some((e) => e.id === newEffect.id)) folded.push({ ...newEffect })
+  return folded
 }

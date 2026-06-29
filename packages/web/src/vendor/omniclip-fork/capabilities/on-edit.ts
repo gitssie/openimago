@@ -33,6 +33,7 @@
 import { omnislate } from 'omniclip/x/context/context.js'
 import {
   classifyEffectDiff,
+  advanceBaselineAfterSplit,
   effectsSnapshotEqual,
   type DiffEffect,
 } from 'src/utils/cut/cut-effect-diff'
@@ -40,6 +41,11 @@ import type { CutEdit } from 'src/utils/cut/cut-edit-dispatcher'
 
 /** Trailing window to treat a burst of state mutations as one settled gesture. */
 const COMMIT_DEBOUNCE_MS = 150
+
+/** Upper bound on edits drained from one settled snapshot (openimago-vx2t) — far
+ *  above any realistic number of splits a user lands inside one 150ms window; a
+ *  safety stop so the drain loop can never spin. */
+const MAX_DRAIN_EDITS = 32
 
 /** Project omniclip's live effects to the minimal shape the classifier reads. */
 function snapshotVideoEffects(): DiffEffect[] {
@@ -75,12 +81,34 @@ export function onEdit(cb: (edit: CutEdit) => void): () => void {
   const commit = (): void => {
     timer = null
     const next = snapshotVideoEffects()
-    const edit = classifyEffectDiff(baseline, next)
-    // Advance the baseline regardless of whether this produced an edit, so the
-    // next gesture diffs against the settled state (a no-op gesture still moves
-    // the baseline to the latest snapshot — keeps diffs single-gesture-scoped).
+
+    // DRAIN multiple edits out of one settled snapshot (openimago-vx2t). Two splits
+    // landing inside one COMMIT_DEBOUNCE window collapse into a single diff with two
+    // added effects; classifyEffectDiff emits the FIRST split, and we fold it into a
+    // working baseline (advanceBaselineAfterSplit) and re-diff to emit the rest. This
+    // is the fix for the ghost-effect bug: previously we advanced the baseline
+    // straight to `next` after one (or zero) edits, so a second un-persisted split
+    // half was swallowed into the baseline → a clip in omniclip state that was never
+    // written → later reorder sent its phantom id → server 400 → silent desync.
+    // Only SPLITS chain (each adds one effect); any other edit is one-per-gesture, so
+    // we stop after it. The guard bounds the loop against any unforeseen non-progress.
+    let working: DiffEffect[] = baseline
+    for (let guard = 0; guard < MAX_DRAIN_EDITS; guard++) {
+      const edit = classifyEffectDiff(working, next)
+      if (!edit) break
+      cb(edit)
+      if (edit.kind === 'split') {
+        working = advanceBaselineAfterSplit(working, next, edit)
+        continue
+      }
+      break
+    }
+
+    // Advance the baseline to the settled snapshot for the NEXT gesture. After a
+    // full split-drain `working` already equals `next`; for any other (or no) edit
+    // the un-emitted remainder is intentionally absorbed here — the baseline is
+    // always the last committed state, keeping each future diff single-gesture-scoped.
     baseline = next
-    if (edit) cb(edit)
   }
 
   // Poll the live effects each animation frame. A frame that differs from the

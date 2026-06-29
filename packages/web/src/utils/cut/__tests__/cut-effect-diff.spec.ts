@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { classifyEffectDiff, effectsSnapshotEqual } from '../cut-effect-diff'
+import {
+  classifyEffectDiff,
+  effectsSnapshotEqual,
+  advanceBaselineAfterSplit,
+} from '../cut-effect-diff'
+import type { DiffCutEdit } from '../cut-effect-diff'
 import type { OmniVideoEffect } from '../omniclip-state.types'
 
 // Build a minimal video effect; ms units (start/end = trim within source,
@@ -153,6 +158,60 @@ describe('classifyEffectDiff — split', () => {
     ]
     expect(classifyEffectDiff(a, b)).toBeNull()
   })
+
+  // openimago-vx2t: two splits landing in one COMMIT_DEBOUNCE window produce TWO
+  // added effects, BOTH of which are clean split-halves (each abuts a same-source
+  // sibling at its start). Previously this returned null → the effects entered
+  // omniclip state but were never persisted (ghost ids → later reorder 400). The
+  // classifier now emits the FIRST (earliest-on-track) split; on-edit drains the
+  // rest by re-diffing against the post-split baseline.
+  it('emits the FIRST split when two sequential splits collapse into one diff (vx2t)', () => {
+    // A[0,9000] split@3000 → A[0,3000] + B[3000,9000]; then B split@6000 →
+    // B[3000,6000] + B2[6000,9000]. One diff sees TWO added (B, B2), both abut.
+    const a = [vfx({ id: 'A', file_hash: 'fh', start: 0, end: 9000, start_at_position: 0 })]
+    const b = [
+      vfx({ id: 'A', file_hash: 'fh', start: 0, end: 3000, start_at_position: 0 }),
+      vfx({ id: 'B', file_hash: 'fh', start: 3000, end: 6000, start_at_position: 3000 }),
+      vfx({ id: 'B2', file_hash: 'fh', start: 6000, end: 9000, start_at_position: 6000 }),
+    ]
+    // The earliest-on-track split-half is B (its first half is A).
+    expect(classifyEffectDiff(a, b)).toEqual({
+      kind: 'split',
+      clipId: 'A',
+      atMs: 3000,
+      newClipId: 'B',
+    })
+  })
+
+  it('treats >1 added as a split ONLY when EVERY added effect is a clean split-half', () => {
+    // Mixed case (a split-half + a non-abutting late import) must stay null so the
+    // 3xbg safety holds — only the all-split-halves burst is a multi-split.
+    const a = [vfx({ id: 's1', file_hash: 'h1', start: 0, end: 6840, start_at_position: 0 })]
+    const b = [
+      vfx({ id: 's1', file_hash: 'h1', start: 0, end: 6840, start_at_position: 0 }),
+      // split-half of s1 (abuts s1.end):
+      vfx({ id: 's1-new', file_hash: 'h1', start: 6840, end: 15069, start_at_position: 6840 }),
+      // late import — NO sibling ends at its start (0) → NOT a split-half:
+      vfx({ id: 's2', file_hash: 'h2', start: 0, end: 15069, start_at_position: 20000 }),
+    ]
+    expect(classifyEffectDiff(a, b)).toBeNull()
+  })
+
+  it('emits the lowest-position split first for three sequential splits', () => {
+    const a = [vfx({ id: 'A', file_hash: 'fh', start: 0, end: 12000, start_at_position: 0 })]
+    const b = [
+      vfx({ id: 'A', file_hash: 'fh', start: 0, end: 3000, start_at_position: 0 }),
+      vfx({ id: 'B', file_hash: 'fh', start: 3000, end: 6000, start_at_position: 3000 }),
+      vfx({ id: 'C', file_hash: 'fh', start: 6000, end: 9000, start_at_position: 6000 }),
+      vfx({ id: 'D', file_hash: 'fh', start: 9000, end: 12000, start_at_position: 9000 }),
+    ]
+    expect(classifyEffectDiff(a, b)).toEqual({
+      kind: 'split',
+      clipId: 'A',
+      atMs: 3000,
+      newClipId: 'B',
+    })
+  })
 })
 
 describe('classifyEffectDiff — delete', () => {
@@ -280,5 +339,75 @@ describe('effectsSnapshotEqual — poll-loop change detection (openimago-rcuw)',
     const a = [vfx({ id: 'a', file_hash: 'fh1' })]
     const b = [vfx({ id: 'a', file_hash: 'fh2' })]
     expect(effectsSnapshotEqual(a, b)).toBe(false)
+  })
+})
+
+describe('advanceBaselineAfterSplit + drain loop (openimago-vx2t)', () => {
+  it('folds one split into the baseline (first half trimmed + new half inserted)', () => {
+    const baseline = [vfx({ id: 'A', file_hash: 'fh', start: 0, end: 9000, start_at_position: 0 })]
+    const next = [
+      vfx({ id: 'A', file_hash: 'fh', start: 0, end: 3000, start_at_position: 0 }),
+      vfx({ id: 'B', file_hash: 'fh', start: 3000, end: 6000, start_at_position: 3000 }),
+      vfx({ id: 'B2', file_hash: 'fh', start: 6000, end: 9000, start_at_position: 6000 }),
+    ]
+    const folded = advanceBaselineAfterSplit(baseline, next, { clipId: 'A', newClipId: 'B' })
+    const byId = Object.fromEntries(folded.map((e) => [e.id, e]))
+    // A trimmed to [0,3000]; B inserted [3000,6000]; B2 NOT yet folded.
+    expect(byId.A).toMatchObject({ start: 0, end: 3000 })
+    expect(byId.B).toMatchObject({ start: 3000, end: 6000 })
+    expect(byId.B2).toBeUndefined()
+  })
+
+  it('returns the baseline unchanged when the new effect is absent (loop-safe)', () => {
+    const baseline = [vfx({ id: 'A', file_hash: 'fh', start: 0, end: 9000, start_at_position: 0 })]
+    const folded = advanceBaselineAfterSplit(baseline, baseline, { clipId: 'A', newClipId: 'ghost' })
+    expect(folded).toHaveLength(1)
+    expect(folded[0]).toMatchObject({ id: 'A', end: 9000 })
+  })
+
+  it('drains TWO sequential splits into TWO split edits against one settled snapshot', () => {
+    // This mirrors on-edit.commit()'s drain loop: classify → advance → classify,
+    // proving both split halves get persisted (no ghost effect).
+    const baseline = [vfx({ id: 'A', file_hash: 'fh', start: 0, end: 9000, start_at_position: 0 })]
+    const next = [
+      vfx({ id: 'A', file_hash: 'fh', start: 0, end: 3000, start_at_position: 0 }),
+      vfx({ id: 'B', file_hash: 'fh', start: 3000, end: 6000, start_at_position: 3000 }),
+      vfx({ id: 'B2', file_hash: 'fh', start: 6000, end: 9000, start_at_position: 6000 }),
+    ]
+    const emitted: DiffCutEdit[] = []
+    let working = baseline as ReturnType<typeof advanceBaselineAfterSplit>
+    for (let guard = 0; guard < 10; guard++) {
+      const edit = classifyEffectDiff(working, next)
+      if (!edit) break
+      emitted.push(edit)
+      if (edit.kind === 'split') {
+        working = advanceBaselineAfterSplit(working, next, edit)
+      } else {
+        break
+      }
+    }
+    expect(emitted).toEqual([
+      { kind: 'split', clipId: 'A', atMs: 3000, newClipId: 'B' },
+      { kind: 'split', clipId: 'B', atMs: 6000, newClipId: 'B2' },
+    ])
+  })
+
+  it('drains THREE sequential splits in order', () => {
+    const baseline = [vfx({ id: 'A', file_hash: 'fh', start: 0, end: 12000, start_at_position: 0 })]
+    const next = [
+      vfx({ id: 'A', file_hash: 'fh', start: 0, end: 3000, start_at_position: 0 }),
+      vfx({ id: 'B', file_hash: 'fh', start: 3000, end: 6000, start_at_position: 3000 }),
+      vfx({ id: 'C', file_hash: 'fh', start: 6000, end: 9000, start_at_position: 6000 }),
+      vfx({ id: 'D', file_hash: 'fh', start: 9000, end: 12000, start_at_position: 9000 }),
+    ]
+    const emitted: DiffCutEdit[] = []
+    let working = baseline as ReturnType<typeof advanceBaselineAfterSplit>
+    for (let guard = 0; guard < 10; guard++) {
+      const edit = classifyEffectDiff(working, next)
+      if (!edit || edit.kind !== 'split') break
+      emitted.push(edit)
+      working = advanceBaselineAfterSplit(working, next, edit)
+    }
+    expect(emitted.map((e) => (e.kind === 'split' ? e.newClipId : e.kind))).toEqual(['B', 'C', 'D'])
   })
 })

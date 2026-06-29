@@ -214,6 +214,10 @@ const emit = defineEmits<{
   (e: 'cut-changed'): void
   /** surface a conflict that lost after one retry. */
   (e: 'cut-conflict'): void
+  /** a write failed for a NON-conflict reason (e.g. 400 from a stale/phantom id,
+   *  openimago-vx2t): the editor is now out of sync with the server, so the page
+   *  must show a visible error AND force a re-hydrate back to the server's truth. */
+  (e: 'cut-error'): void
   /** clip menu (openimago-e0n3): regenerate the source shot's media. */
   (e: 'clip-regenerate', sourceShotId: string): void
   /** clip menu: edit the source shot's description. */
@@ -282,29 +286,54 @@ async function onAssemble(): Promise<void> {
 
 /** Persist one editor edit through the cut endpoints (tested dispatcher). */
 async function persistEdit(edit: CutEdit): Promise<void> {
-  const outcome = await dispatchCutEdit(
-    {
-      api,
-      projectId: props.projectId,
-      episodeId: props.episodeId,
-      // Read the LOCAL clock (decision 3): structural edits chain off each
-      // other's returned updatedAt without a refetch between them.
-      currentUpdatedAt: () => lastUpdatedAt.value,
-      refetch: async () => {
-        const fresh = await api.projectStoryCut(props.projectId, props.episodeId)
-        lastUpdatedAt.value = fresh?.updatedAt
-        return fresh?.updatedAt
+  let outcome
+  try {
+    outcome = await dispatchCutEdit(
+      {
+        api,
+        projectId: props.projectId,
+        episodeId: props.episodeId,
+        // Read the LOCAL clock (decision 3): structural edits chain off each
+        // other's returned updatedAt without a refetch between them.
+        currentUpdatedAt: () => lastUpdatedAt.value,
+        refetch: async () => {
+          const fresh = await api.projectStoryCut(props.projectId, props.episodeId)
+          lastUpdatedAt.value = fresh?.updatedAt
+          return fresh?.updatedAt
+        },
+        // Advance the local clock from each write so the next edit's expected
+        // updatedAt is current — no re-hydration, no per-edit refetch.
+        onWritten: (updatedAt) => {
+          lastUpdatedAt.value = updatedAt
+        },
       },
-      // Advance the local clock from each write so the next edit's expected
-      // updatedAt is current — no re-hydration, no per-edit refetch.
-      onWritten: (updatedAt) => {
-        lastUpdatedAt.value = updatedAt
-      },
-    },
-    edit,
-  )
+      edit,
+    )
+  } catch (err) {
+    // A NON-conflict write failure (e.g. 400 from a stale/phantom clip id, or a
+    // network error) means the editor's omniclip state has diverged from the
+    // server. runCutMutation only retries 409s; everything else used to reject
+    // here and be SILENTLY swallowed by the fire-and-forget onEdit caller
+    // (openimago-vx2t). Surface it to the page, which shows a visible error AND
+    // refetches+rehydrates the editor back to the server's truth (via the exposed
+    // `rehydrate`) so the user never keeps editing against a phantom timeline.
+    console.error('StoryCutPanel: cut write failed (non-conflict)', err)
+    emit('cut-error')
+    return
+  }
   if (outcome === 'conflict') emit('cut-conflict')
   else emit('cut-changed')
+}
+
+/**
+ * Rebuild the editor from the CURRENT props.cut (openimago-vx2t reconcile). The
+ * page calls this AFTER it has refetched the canonical cut on a `cut-error`, so
+ * props.cut already holds the server truth; remounting drops any phantom/un-saved
+ * omniclip effect. Re-seeds the local concurrency clock from the fresh cut.
+ */
+function rehydrate(): void {
+  lastUpdatedAt.value = props.cut?.updatedAt
+  remountEditor()
 }
 
 // ── HOST-DRIVEN transition + BGM controls (ADR 0008 #1b, openimago-ofdw) ──
@@ -594,7 +623,7 @@ onBeforeUnmount(() => {
 })
 
 // Expose persistEdit for the editor event bridge (wired during local validation).
-defineExpose({ persistEdit })
+defineExpose({ persistEdit, rehydrate })
 </script>
 
 <style lang="scss" scoped>

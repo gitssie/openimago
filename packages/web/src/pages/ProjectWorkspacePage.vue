@@ -178,6 +178,7 @@
           <!-- 时间线 tab → NLE Cut editor (omniclip) for the current episode -->
           <StoryCutPanel
             v-else-if="activeWorkspaceTab === 'timeline' && currentStoryEpisodeId"
+            ref="storyCutPanelRef"
             class="project-workspace-page__story-view"
             :project-id="projectId"
             :episode-id="currentStoryEpisodeId"
@@ -187,6 +188,7 @@
             @request-assemble="onRequestAssemble"
             @cut-changed="onCutChanged"
             @cut-conflict="onCutConflict"
+            @cut-error="onCutError"
             @clip-regenerate="onClipRegenerate"
             @clip-manual-edit="onClipManualEdit"
             @clip-delete="onClipDelete"
@@ -461,6 +463,9 @@ const storyRuns = ref<OpenimagoStoryRuns | null>(null)
 // Episode Cut (ADR 0006/0007) — the 时间线 tab's NLE editor state, canonical
 // in cut.json. Loaded alongside the episode's runs (openimago-4eiw).
 const storyCut = ref<EpisodeCut | null>(null)
+// Handle to the cut editor panel so a write-desync (openimago-vx2t) can force a
+// re-hydrate after the page refetches the canonical cut.
+const storyCutPanelRef = ref<{ rehydrate: () => void } | null>(null)
 const storyPanelLoading = ref(false)
 const storyPanelError = ref<string | null>(null)
 const showArtifactsPanel = ref(false)
@@ -929,6 +934,20 @@ function onCutChanged(): void {
 function onCutConflict(): void {
   $q.notify({ color: 'warning', message: '该粗剪已被更新，请重试', icon: 'sync_problem', timeout: 2000 })
   void refreshStoryCut()
+}
+
+/**
+ * A cut write failed for a non-conflict reason (e.g. 400 — the editor sent a
+ * phantom/stale clip id, openimago-vx2t). Show a visible error, refetch the
+ * canonical cut, then force the editor to re-hydrate from it so it is back in
+ * sync with the server (never leaves the user editing a phantom timeline).
+ */
+function onCutError(): void {
+  $q.notify({ color: 'negative', message: '剪辑保存失败，已与服务器重新同步', icon: 'error', timeout: 2500 })
+  void (async () => {
+    await refreshStoryCut()
+    storyCutPanelRef.value?.rehydrate()
+  })()
 }
 
 function onRequestAssemble(): void {
