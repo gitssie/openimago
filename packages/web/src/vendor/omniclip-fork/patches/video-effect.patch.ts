@@ -217,7 +217,18 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
       tileCount,
       spriteUrl,
     })
-    return html`<div class="filmstrip">${tiles}</div>`
+
+    // CANCEL the parent .content shift (openimago-fsyz). omniclip's Effect view wraps
+    // our filmstrip in `<span class="content" style="transform: translateX(
+    // -effect.start * 2^zoom)px)">` (effect.js:115) — it assumes content spans the WHOLE
+    // source and uses width+overflow to window into the [start,end] trim range. Our
+    // strip is already sized to the trim WINDOW only (tileCount from (end-start)*2^zoom),
+    // so the inherited -inPoint*2^zoom pushes any inPoint>0 clip (a split's second half,
+    // or any trimmed segment) entirely out of the visible lane → blank. Apply the exact
+    // inverse here so the window-width strip lands back inside the lane for ANY inPoint.
+    // Uses `live` (post-split start) and reads state.zoom directly (no subscribe).
+    const contentShiftPx = live.start * Math.pow(2, use.context.state.zoom)
+    return html`<div class="filmstrip" style="transform: translateX(${contentShiftPx}px);">${tiles}</div>`
   }
 
   return html`${Effect([
