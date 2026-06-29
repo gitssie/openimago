@@ -27,6 +27,14 @@
 // BROWSER-ONLY (this dir is excluded from typecheck/lint).
 
 import { html, css } from '@benev/slate'
+// lit's `guard` directive memoizes a subtree: it only re-renders the value when the
+// dependency array changes (by ===). SAFE to mix with @benev/slate's `html` here —
+// slate's html is a thin wrapper that calls lit's own `html` (slate/x/nexus/html.js:
+// `import { html as lit_html } from "lit"`), and there is a SINGLE hoisted lit@3.3.3
+// in node_modules (no nested copy under slate), so `guard` and slate's `html` share
+// the same lit-html instance (cross-instance directives would silently no-op).
+// (openimago-tatc)
+import { guard } from 'lit/directives/guard.js'
 import { Effect } from 'omniclip/x/components/omni-timeline/views/effects/parts/effect.js'
 import { shadow_view } from 'omniclip/x/context/context.js'
 import {
@@ -152,25 +160,40 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
       return html`<div class="filmstrip"></div>`
     }
 
-    // PERCENTAGE crop so the FIRST frame fills each fixed tile (background-size-x =
-    // frameCount*100%, background-position-x = 0). Tile and frame are both 9:16.
-    const bgSizeX = spriteBackgroundSizeX(frameCount)
-    const tiles = []
-    for (let i = 0; i < tileCount; i++) {
-      tiles.push(html`
-        <div
-          class="sprite-cell"
-          style="
-            width: ${FILMSTRIP_TILE_W}px;
-            height: ${CELL_H}px;
-            background-image: url('${spriteUrl}');
-            background-repeat: no-repeat;
-            background-size: ${bgSizeX} ${CELL_H}px;
-            background-position: 0 0;
-          "
-        ></div>
-      `)
-    }
+    // MEMOIZE the tile subtree (openimago-tatc). The omniclip OmniTimeline parent
+    // (component.js:18 watches the whole state, :56 `repeat(state.effects … VideoEffect)`)
+    // re-renders on EVERY drag mousemove — each move writes `effect_drag.hovering` into
+    // state — so it re-invokes THIS view every frame and our child `use.watch` cannot
+    // stop it. The tiles depend ONLY on `spriteUrl`, `tileCount` and `frameCount` (via
+    // bgSizeX); none of those change while dragging/scrubbing. `guard([…], () => tiles)`
+    // rebuilds the (up to MAX_CELLS) `<div>`s ONLY when one of those keys changes — so a
+    // drag/playhead frame reuses the cached subtree instead of rebuilding ~290 nodes ×N
+    // clips. split/trim/zoom legitimately change tileCount (and/or spriteUrl) → the key
+    // changes → tiles rebuild correctly. The cheap outer `.filmstrip` div keeps its live
+    // `contentShiftPx` transform (one node — re-evaluating it per frame is negligible and
+    // it must stay live so the strip tracks zoom/start).
+    const tiles = guard([spriteUrl, tileCount, frameCount], () => {
+      // PERCENTAGE crop so the FIRST frame fills each fixed tile (background-size-x =
+      // frameCount*100%, background-position-x = 0). Tile and frame are both 9:16.
+      const bgSizeX = spriteBackgroundSizeX(frameCount)
+      const cells = []
+      for (let i = 0; i < tileCount; i++) {
+        cells.push(html`
+          <div
+            class="sprite-cell"
+            style="
+              width: ${FILMSTRIP_TILE_W}px;
+              height: ${CELL_H}px;
+              background-image: url('${spriteUrl}');
+              background-repeat: no-repeat;
+              background-size: ${bgSizeX} ${CELL_H}px;
+              background-position: 0 0;
+            "
+          ></div>
+        `)
+      }
+      return cells
+    })
     // CANCEL the parent .content shift (openimago-fsyz). omniclip's Effect view wraps
     // our filmstrip in `<span class="content" style="transform: translateX(
     // -effect.start * 2^zoom)px)">` (effect.js:115) — it assumes content spans the WHOLE
