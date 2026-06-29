@@ -10,9 +10,10 @@ export async function demuxer(
 ) {
 	let queue = 0
 	const webdemuxer = new WebDemuxer({
-		// ⚠️ you need to put the dist/wasm-files file in the npm package into a static directory like public
-		// making sure that the js and wasm in wasm-files are in the same directory
-		wasmLoaderPath: "https://cdn.jsdelivr.net/npm/web-demuxer@1.0.5/dist/wasm-files/ffmpeg.min.js",
+		// Self-hosted wasm-files copied to public/web-demuxer/ (offline; was a jsdelivr
+		// CDN url — openimago-gijd). The loader js + its .wasm sibling are co-located in
+		// that dir, as web-demuxer requires.
+		wasmLoaderPath: `${window.location.origin}/web-demuxer/ffmpeg.js`,
 	})
 	await webdemuxer.load(file)
 	const config = await webdemuxer.getVideoDecoderConfig()

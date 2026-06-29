@@ -1,8 +1,8 @@
 import {Connection} from "sparrow-rtc"
 import {FileHandler} from "./file-handler"
 import type {file as File, dir as Dir, write as Write} from "opfs-tools"
-//@ts-ignore
-import * as opfs from 'https://cdn.jsdelivr.net/npm/opfs-tools@0.7.0/+esm'
+// Local package (offline; was a jsdelivr CDN import — openimago-gijd).
+import * as opfs from 'opfs-tools'
 const file = opfs.file as typeof File
 const dir = opfs.dir as typeof Dir
 const write = opfs.write as typeof Write

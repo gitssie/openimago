@@ -3,6 +3,13 @@ import {FFprobeWorker} from "ffprobe-wasm/browser.mjs"
 import {FFmpeg} from "@ffmpeg/ffmpeg/dist/esm/index.js"
 import {toBlobURL} from "@ffmpeg/util/dist/esm/index.js"
 import {fetchFile} from "@ffmpeg/util/dist/esm/index.js"
+// Self-hosted @ffmpeg/core via Vite ?url asset imports (offline; was an unpkg CDN
+// baseURL — openimago-gijd). ?url serves the file from node_modules in dev and copies
+// it into the build output, so no CDN fetch and no committing the ~31MB wasm.
+//@ts-ignore — Vite ?url asset import
+import ffmpegCoreURL from "@ffmpeg/core?url"
+//@ts-ignore — Vite ?url asset import (the ./wasm export condition)
+import ffmpegCoreWasmURL from "@ffmpeg/core/wasm?url"
 
 import {Actions} from "../../../../actions.js"
 import {Media} from "../../../media/controller.js"
@@ -22,10 +29,9 @@ export class FFmpegHelper {
 	}
 
 	async #load_ffmpeg() {
-		const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.5/dist/esm'
 		await this.ffmpeg.load({
-			coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-			wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+			coreURL: await toBlobURL(ffmpegCoreURL, 'text/javascript'),
+			wasmURL: await toBlobURL(ffmpegCoreWasmURL, 'application/wasm'),
 		})
 	}
 
