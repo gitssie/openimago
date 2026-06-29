@@ -1,6 +1,6 @@
 import {css} from "@benev/slate"
 
-export const styles = css`
+const base_styles = css`
 	:host {}
 
 	.flex {
@@ -158,4 +158,35 @@ export const styles = css`
 	.controls progress::-webkit-progress-value {
 		background-color: #0095dd;
 	}
+`
+
+// ── Imago: portrait 9:16 preview + hide in-figure controls (openimago-wmns Pass A;
+// folds media-player-styles.patch.ts). 1.1.3 hardcodes 16/9 on figure + .canvas-container;
+// the playback transport moves to the combined control bar (Pass B), so the in-figure
+// .controls overlay is hidden to avoid a duplicate. Appended after base_styles. ──
+const imago_pass_a = css`
+	figure {
+		aspect-ratio: 9/16;
+		min-height: 0;
+		max-height: 100%;
+		max-width: 100%;
+		/* The .flex parent is column flex; default align-self:stretch would blow the
+		   figure to full panel width and the 9:16 box would sit with wide dark side
+		   gaps. Center it so width is derived from height × 9/16 (= the canvas width). */
+		align-self: center;
+		margin: 4px auto;
+	}
+	.canvas-container {
+		aspect-ratio: 9/16;
+	}
+	/* Transport moves to the combined bar (Pass B) — hide the in-figure overlay so
+	   play/fullscreen are not rendered twice. */
+	.controls {
+		display: none !important;
+	}
+`
+
+export const styles = css`
+	${base_styles}
+	${imago_pass_a}
 `

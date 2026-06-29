@@ -1,6 +1,6 @@
 import {css} from "@benev/slate"
 
-export const styles = css`
+const base_styles = css`
 
 	::part(scroll) {
 		overflow-x: visible;
@@ -149,4 +149,71 @@ export const styles = css`
 			border: 1px solid white;
 		}
 	}
+`
+
+// ── Imago flat-black clip styling (openimago-wmns Pass A; folds effect-styles.patch.ts,
+// adapted to 1.1.3's effects/parts/styles.ts DOM). Appended after base_styles so the
+// equal/higher-specificity rules win the cascade. Tokens cross the shadow boundary from
+// applyImagoTheme; fallbacks reproduce a sane default for an un-themed mount. ──
+const imago_pass_a = css`
+	/* Flat clip fill + soft border (was #201f1f / 1px #111). */
+	.effect {
+		background: var(--imago-bg-surface, #201f1f);
+		border: 1px solid var(--imago-border-soft, transparent);
+		border-radius: var(--imago-radius-md, 5px);
+	}
+
+	/* Selected clip → FLAT: 1.1.3 darkens it (filter:brightness(.5)), whitens it
+	   (.trim-handles[data-selected] white overlay) and draws a 2px white ::after ring
+	   with an inset black shadow. Approved look = a single thin 1px cyan border, no
+	   darkening, no halo. Neutralize all three affordances. */
+	.effect[data-selected] {
+		filter: none;
+	}
+	.effect[data-selected]::after {
+		outline: 1px solid var(--imago-neon-cyan, #00f0ff);
+		outline-offset: -1px;
+		box-shadow: none;
+		border-radius: var(--imago-radius-md, 5px);
+	}
+	.trim-handles[data-selected] {
+		background: transparent;
+		mix-blend-mode: normal;
+	}
+
+	/* Hover: subtle cyan instead of solid white. */
+	.effect:hover {
+		border: 1px solid var(--imago-border-cyan, rgba(0, 240, 255, 0.35));
+	}
+
+	/* Orphan / missing-source → theme pink (1.1.3 puts data-no-file on .trim-handles). */
+	.trim-handles[data-no-file] {
+		border: 2px dotted var(--imago-neon-pink, #ff2d95);
+		color: var(--imago-neon-pink, #ff2d95);
+	}
+
+	/* Clean clips: hide the grey grab/trim grip (18px white box + #333 .line bars).
+	   Trimming still works by dragging the edge; the edit pipeline derives trim from the
+	   effect-state diff, not these nodes. */
+	.trim-handle-left,
+	.trim-handle-right,
+	.trim-handles[data-selected] .trim-handle-left,
+	.trim-handles[data-selected] .trim-handle-right {
+		display: none;
+	}
+
+	/* BGM lane stays flat: the waveform fold (Pass B) mounts a shorter .bgm-bar; kill the
+	   full-box cyan affordances that would draw a line under it. Inert until Pass B. */
+	.effect:has(.bgm-bar)::after {
+		display: none;
+	}
+	.effect:has(.bgm-bar):hover {
+		outline: none;
+		border-color: var(--imago-border-soft, transparent);
+	}
+`
+
+export const styles = css`
+	${base_styles}
+	${imago_pass_a}
 `

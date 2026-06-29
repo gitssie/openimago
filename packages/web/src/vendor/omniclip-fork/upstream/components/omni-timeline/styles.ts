@@ -1,6 +1,6 @@
 import {css} from "@benev/slate"
 
-export const styles = css`
+const base_styles = css`
 	:host {
 		display: flex;
 		flex-direction: column;
@@ -157,4 +157,21 @@ export const styles = css`
 			}
 		}
 	}
+`
+
+// ── Imago: flat-black timeline surface (openimago-wmns Pass A; folds the surface part
+// of omni-timeline-styles.patch.ts). 1.1.3 uses rgb(26,26,26); retint to the deep
+// flat-black token. The 60px track-header GUTTER restructure (.scroll-area /
+// .timeline-inner) is DEFERRED to Pass B — those elements only exist once the
+// omni-timeline COMPONENT is restructured (omni-timeline-component.patch.ts), so the
+// gutter CSS belongs with that structural change for a coherent, reviewable unit. ──
+const imago_pass_a = css`
+	:host {
+		background: var(--imago-bg-deep, #0a0a0f);
+	}
+`
+
+export const styles = css`
+	${base_styles}
+	${imago_pass_a}
 `
