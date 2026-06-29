@@ -27,32 +27,21 @@
 // BROWSER-ONLY (this dir is excluded from typecheck/lint).
 
 import { html, css } from '@benev/slate'
-// lit's `guard` directive memoizes a subtree: it only re-renders the value when the
-// dependency array changes (by ===). SAFE to mix with @benev/slate's `html` here —
-// slate's html is a thin wrapper that calls lit's own `html` (slate/x/nexus/html.js:
-// `import { html as lit_html } from "lit"`), and there is a SINGLE hoisted lit@3.3.3
-// in node_modules (no nested copy under slate), so `guard` and slate's `html` share
-// the same lit-html instance (cross-instance directives would silently no-op).
-// (openimago-tatc)
-import { guard } from 'lit/directives/guard.js'
 import { Effect } from 'omniclip/x/components/omni-timeline/views/effects/parts/effect.js'
 import { shadow_view } from 'omniclip/x/context/context.js'
-import {
-  spriteBackgroundSizeX,
-  effectWidthPx,
-  filmstripTileCount,
-  FILMSTRIP_TILE_W,
-} from './filmstrip-sprite-css'
-import { perfWrap, perfCount } from './perf-diag' // TEMP perf diagnostic (openimago-v2mm)
+// Single-div repeat-x filmstrip (openimago-6aew) needs only the width formula + tile
+// size; the per-tile loop (spriteBackgroundSizeX / filmstripTileCount) and the lit
+// `guard` memoization (openimago-tatc) are gone — one node has nothing to memoize.
+import { effectWidthPx, FILMSTRIP_TILE_W } from './filmstrip-sprite-css'
+import { ensureFrame0 } from './filmstrip-frame0'
+import { perfWrap } from './perf-diag' // TEMP perf diagnostic (openimago-v2mm)
 
 // Cell height = full omniclip lane height (lanes are 50px; the sprite frames are
-// 9:16 portrait, 28×50, matching result.filmstrip.frameW/H). Tiles are a FIXED
-// FILMSTRIP_TILE_W×CELL_H box; their COUNT fills the effect's real rendered width
-// (density follows the timeline zoom), so the 9:16 first frame never stretches
-// (openimago-jmcp).
+// 9:16 portrait, 28×50, matching result.filmstrip.frameW/H). The first-frame image is
+// tiled at a FIXED FILMSTRIP_TILE_W×CELL_H cell via CSS `background-repeat: repeat-x`,
+// so density follows the clip width (the strip fills the lane) and the 9:16 frame never
+// stretches (openimago-jmcp/6aew).
 const CELL_H = 50
-// Bound the DOM tile count for very long / zoomed-in clips (each tile is a cheap div).
-const MAX_CELLS = 800
 
 export const VideoEffect = shadow_view((use) => (effect, timeline) => {
   const media = use.context.controllers.media
@@ -96,6 +85,16 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
   // width and the filmstrip tile count in lockstep.
   const live = use.context.state.effects.find((e) => e.id === effect.id) ?? effect
 
+  // Re-render trigger for when the async frame-0 crop lands (openimago-6aew). The
+  // single-div filmstrip tiles the sprite's cropped FIRST FRAME, produced once per
+  // sprite by an offscreen canvas (filmstrip-frame0.ts). The crop is async (image
+  // load); when it resolves we bump this counter so the view re-renders and swaps the
+  // transient sprite-repeat fallback for the exact frame. Cached by sprite URL, so this
+  // fires at most once per source — never on the drag hot path. (slate's state setter
+  // takes a value, not an updater, and always re-renders — so we read the current count
+  // and set count+1.)
+  const [frame0Tick, setFrame0Tick] = use.state(0)
+
   // Compose the clip into the WebCodecs preview compositor when its media lands.
   // (Same trigger as upstream; the filmstrip recalc that used to follow is gone.)
   use.mount(() => {
@@ -111,24 +110,20 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
     return () => dispose()
   })
 
-  // ── Static sprite filmstrip — fixed-width 9:16 FIRST-frame tiles, tiled across ──
-  // (openimago-jmcp) The strip is a "which video is this" marker: every tile shows
-  // the video's FIRST frame at NATIVE 9:16 aspect (no time→frame mapping). We lay
-  // down FIXED 28×50 (9:16) tiles and CONTINUOUSLY fill the effect's real rendered
-  // width — so tile density follows the timeline zoom and the lane has no gaps; the
-  // frame never stretches (stretching one frame across a wide cell distorted it
-  // into a horizontal bar — openimago-ugli). The top SECONDS come from omniclip's
-  // own TimeRuler (same 2^zoom scale + scroll origin) — we add NO per-cell labels.
-  // Static CSS background; no decode/seek.
+  // ── Static single-div filmstrip — source FIRST frame tiled via repeat-x ──────────
+  // (openimago-jmcp first-frame semantic; openimago-6aew single-div perf). The strip is
+  // a "which video is this" marker showing the video's FIRST frame at NATIVE 9:16 aspect
+  // (no time→frame mapping). ONE <div> sized to the trim window tiles a fixed
+  // FILMSTRIP_TILE_W×CELL_H (28×50, 9:16) cell of frame 0 via `background-repeat:
+  // repeat-x` — density follows the clip width (repeat fills it), the frame never
+  // stretches, and there are NO per-tile child nodes (the ~290-div subtree was the
+  // paint/composite hotspot — openimago-6aew). The top SECONDS come from omniclip's own
+  // TimeRuler (same 2^zoom scale + scroll origin). Static CSS background; no decode/seek.
   //
-  //   - tileWidth = FILMSTRIP_TILE_W (28px = 50*9/16) — native portrait aspect.
-  //   - tileCount = ceil(effectWidthPx / tileWidth), clamped to MAX_CELLS; the
-  //     lane (`overflow:hidden`) clips the trailing overflow tile.
-  //   - effectWidthPx = (end - start) * 2^zoom — the upstream calculate_effect_width
-  //     formula. Read state.zoom directly; NEVER subscribe the editor here.
-  //   - every tile shows frame 0, cropped to fill the tile by PERCENTAGE
-  //     (background-size-x = frameCount*100%, background-position-x = 0 —
-  //     filmstrip-sprite-css). Tile is 9:16 and the frame is 9:16 → no distortion.
+  //   - widthPx = (end - start) * 2^zoom — the upstream calculate_effect_width formula.
+  //     Read state.zoom directly; NEVER subscribe the editor here.
+  //   - the tiled cell is frame 0, cropped ONCE per sprite to a standalone dataURL
+  //     (filmstrip-frame0.ts) so repeat-x tiles only that frame, not the whole strip.
   const render_filmstrip = () => {
     // The filmstrip sprite is a property of the SOURCE media (file_hash), not of the
     // individual clip segment. A native omniclip SPLIT creates the new half and may
@@ -153,64 +148,64 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
     }
 
     // Effect's real rendered width via the upstream zoom formula (SAME live start/end
-    // the inner Effect span uses), then how many fixed-width tiles cover it. 0 width →
-    // empty lane (never NaN tiles).
+    // the inner Effect span uses). 0 width → empty lane (never a NaN-sized div).
     const widthPx = effectWidthPx(live.start, live.end, use.context.state.zoom)
-    const tileCount = filmstripTileCount(widthPx, FILMSTRIP_TILE_W, MAX_CELLS)
-    if (tileCount < 1) {
+    if (widthPx <= 0) {
       return html`<div class="filmstrip"></div>`
     }
 
-    // MEMOIZE the tile subtree (openimago-tatc). The omniclip OmniTimeline parent
-    // (component.js:18 watches the whole state, :56 `repeat(state.effects … VideoEffect)`)
-    // re-renders on EVERY drag mousemove — each move writes `effect_drag.hovering` into
-    // state — so it re-invokes THIS view every frame and our child `use.watch` cannot
-    // stop it. The tiles depend ONLY on `spriteUrl`, `tileCount` and `frameCount` (via
-    // bgSizeX); none of those change while dragging/scrubbing. `guard([…], () => tiles)`
-    // rebuilds the (up to MAX_CELLS) `<div>`s ONLY when one of those keys changes — so a
-    // drag/playhead frame reuses the cached subtree instead of rebuilding ~290 nodes ×N
-    // clips. split/trim/zoom legitimately change tileCount (and/or spriteUrl) → the key
-    // changes → tiles rebuild correctly. The cheap outer `.filmstrip` div keeps its live
-    // `contentShiftPx` transform (one node — re-evaluating it per frame is negligible and
-    // it must stay live so the strip tracks zoom/start).
-    const tiles = guard([spriteUrl, tileCount, frameCount], () => {
-      // TEMP perf diagnostic (openimago-v2mm): this callback runs ONLY on a guard
-      // cache-MISS, i.e. a REAL tile rebuild. If `filmstrip-rebuild` calls stay ~0 while
-      // dragging, the tatc memoization is working; if it ticks every frame, the guard is
-      // not holding (e.g. an unstable key) and the filmstrip is still a hotspot.
-      perfCount('filmstrip-rebuild')
-      // PERCENTAGE crop so the FIRST frame fills each fixed tile (background-size-x =
-      // frameCount*100%, background-position-x = 0). Tile and frame are both 9:16.
-      const bgSizeX = spriteBackgroundSizeX(frameCount)
-      const cells = []
-      for (let i = 0; i < tileCount; i++) {
-        cells.push(html`
-          <div
-            class="sprite-cell"
-            style="
-              width: ${FILMSTRIP_TILE_W}px;
-              height: ${CELL_H}px;
-              background-image: url('${spriteUrl}');
-              background-repeat: no-repeat;
-              background-size: ${bgSizeX} ${CELL_H}px;
-              background-position: 0 0;
-            "
-          ></div>
-        `)
-      }
-      return cells
-    })
+    // SINGLE-DIV filmstrip (openimago-6aew). perf-diag proved JS render is NOT the
+    // bottleneck (all labels <0.2ms/s, filmstrip-rebuild=0 — the tatc guard held); the
+    // jank is browser PAINT/COMPOSITE of ~290 background-image <div>s × 7+ clips ≈ 2000
+    // nodes repainting on every drag frame. Collapse the whole strip to ONE <div> that
+    // tiles the source FIRST FRAME with `background-repeat: repeat-x` at a fixed
+    // FILMSTRIP_TILE_W×CELL_H cell — visually identical (same first-frame tiling, density
+    // follows width since repeat fills it), ~290× fewer nodes per clip.
+    //
+    // `repeat-x` repeats the WHOLE image, so it cannot pick frame 0 out of the N-frame
+    // sprite strip. We crop the sprite's leftmost frame to a standalone dataURL ONCE per
+    // sprite (offscreen canvas, cached by URL — filmstrip-frame0.ts) and tile THAT. The
+    // crop is async; until it lands we tile the FULL sprite as a transient fallback
+    // (`background-size = frameCount*tile × cell` so each frame maps to one cell — the
+    // strip's frames briefly repeat instead of just frame 0), then bump state to swap in
+    // the exact first frame. By drag time the cache is warm (hydrate ran first), so the
+    // fallback is only ever seen on the very first paint of a new source.
+    const frame0 = ensureFrame0(spriteUrl, frameCount, () => setFrame0Tick(frame0Tick + 1))
+
+    let bgImage: string
+    let bgSize: string
+    if (frame0) {
+      // EXACT first frame, one cell wide, tiled across the lane.
+      bgImage = frame0
+      bgSize = `${FILMSTRIP_TILE_W}px ${CELL_H}px`
+    } else {
+      // Transient fallback before the crop resolves (or null = crop failed): tile the
+      // sprite itself, scaling so each of its `frameCount` frames is one cell wide.
+      bgImage = spriteUrl
+      bgSize = `${FILMSTRIP_TILE_W * Math.max(1, frameCount)}px ${CELL_H}px`
+    }
+
     // CANCEL the parent .content shift (openimago-fsyz). omniclip's Effect view wraps
     // our filmstrip in `<span class="content" style="transform: translateX(
     // -effect.start * 2^zoom)px)">` (effect.js:115) — it assumes content spans the WHOLE
     // source and uses width+overflow to window into the [start,end] trim range. Our
-    // strip is already sized to the trim WINDOW only (tileCount from (end-start)*2^zoom),
-    // so the inherited -inPoint*2^zoom pushes any inPoint>0 clip (a split's second half,
-    // or any trimmed segment) entirely out of the visible lane → blank. Apply the exact
-    // inverse here so the window-width strip lands back inside the lane for ANY inPoint.
-    // Uses `live` (post-split start) and reads state.zoom directly (no subscribe).
+    // strip is sized to the trim WINDOW only (widthPx = (end-start)*2^zoom), so the
+    // inherited -inPoint*2^zoom pushes any inPoint>0 clip (a split's second half, or any
+    // trimmed segment) entirely out of the visible lane → blank. Apply the exact inverse
+    // here so the window-width strip lands back inside the lane for ANY inPoint. Uses
+    // `live` (post-split start) and reads state.zoom directly (no subscribe).
     const contentShiftPx = live.start * Math.pow(2, use.context.state.zoom)
-    return html`<div class="filmstrip" style="transform: translateX(${contentShiftPx}px);">${tiles}</div>`
+    return html`<div
+      class="filmstrip"
+      style="
+        width: ${widthPx}px;
+        transform: translateX(${contentShiftPx}px);
+        background-image: url('${bgImage}');
+        background-repeat: repeat-x;
+        background-size: ${bgSize};
+        background-position: 0 0;
+      "
+    ></div>`
   }
 
   // TEMP perf diagnostic (openimago-v2mm). This whole arrow re-runs once PER VIDEO
@@ -223,30 +218,23 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
   //                      (×N). effect.patch.ts is NOT a render view (it only exports the
   //                      context-menu helpers), so the real inner Effect view is upstream;
   //                      this call site is the faithful place to measure its ×N cost.
-  // `video-effect` − `effect-inner` ≈ our filmstrip build cost; compare `filmstrip-rebuild`
-  // to see whether that cost is real rebuilds or just guard/template overhead.
+  // `video-effect` − `effect-inner` ≈ our (now single-div) filmstrip build cost.
   return perfWrap('video-effect', () => {
     const filmstrip = html`${render_filmstrip()}`
     const styleBlock = css`
       .content {
         width: 100%;
       }
+      /* SINGLE-DIV filmstrip (openimago-6aew): one node tiling the source first frame
+         via background-repeat:repeat-x at a fixed FILMSTRIP_TILE_W×CELL_H cell (set
+         inline). overflow:hidden clips the trailing partial tile and any translateX
+         (fsyz) overflow; the inline width is the trim-window width. No flex / no
+         per-tile .sprite-cell children anymore — that ~290-node-per-clip subtree was the
+         paint/composite hotspot. */
       .filmstrip {
         height: ${CELL_H}px;
-        display: flex;
-        flex-wrap: nowrap;
         overflow: hidden;
-        width: 100%;
         pointer-events: none;
-      }
-      /* FIXED-width 9:16 tiles (openimago-jmcp): each tile is exactly
-         FILMSTRIP_TILE_W×CELL_H so the portrait first frame shows at native
-         aspect — NOT stretched across a flex cell. flex:0 0 auto keeps the
-         inline width; the count fills the effect width and the lane's
-         overflow:hidden clips the trailing tile. */
-      .sprite-cell {
-        flex: 0 0 auto;
-        image-rendering: auto;
       }
     `
     return html`${perfWrap('effect-inner', () => Effect([timeline, live, filmstrip, styleBlock]))}`
