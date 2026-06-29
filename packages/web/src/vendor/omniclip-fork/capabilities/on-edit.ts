@@ -38,6 +38,7 @@ import {
   type DiffEffect,
 } from 'src/utils/cut/cut-effect-diff'
 import type { CutEdit } from 'src/utils/cut/cut-edit-dispatcher'
+import { nudgeFirstFrame } from './hydrate-from-cut'
 
 /** Trailing window to treat a burst of state mutations as one settled gesture. */
 const COMMIT_DEBOUNCE_MS = 150
@@ -93,11 +94,13 @@ export function onEdit(cb: (edit: CutEdit) => void): () => void {
     // Only SPLITS chain (each adds one effect); any other edit is one-per-gesture, so
     // we stop after it. The guard bounds the loop against any unforeseen non-progress.
     let working: DiffEffect[] = baseline
+    let sawSplit = false
     for (let guard = 0; guard < MAX_DRAIN_EDITS; guard++) {
       const edit = classifyEffectDiff(working, next)
       if (!edit) break
       cb(edit)
       if (edit.kind === 'split') {
+        sawSplit = true
         working = advanceBaselineAfterSplit(working, next, edit)
         continue
       }
@@ -109,6 +112,18 @@ export function onEdit(cb: (edit: CutEdit) => void): () => void {
     // the un-emitted remainder is intentionally absorbed here — the baseline is
     // always the last committed state, keeping each future diff single-gesture-scoped.
     baseline = next
+
+    // After a SPLIT, repaint the preview's first frame for the freshly-created clip
+    // (openimago-6imt). omniclip's split builds the new effect's <video> via
+    // recreate/add_video_effect but the media-player only re-composes on
+    // playhead/playing changes — so the new segment's first frame stayed BLACK until
+    // play/seek. nudgeFirstFrame force-composes the visible clip AND arms media-ready
+    // listeners that survive a slow decode, so the split half paints whenever its
+    // <video> becomes drawable. Deferred two rAFs so the new element exists first
+    // (recreate is async), mirroring composePlacedClips' deferral.
+    if (sawSplit) {
+      requestAnimationFrame(() => requestAnimationFrame(() => nudgeFirstFrame()))
+    }
   }
 
   // Poll the live effects each animation frame. A frame that differs from the

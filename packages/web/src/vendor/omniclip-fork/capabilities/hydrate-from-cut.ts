@@ -288,9 +288,22 @@ const HAVE_CURRENT_DATA = 2
  * stops once every visible video is BOTH on the canvas AND drawable (readyState≥2),
  * or after a frame cap so it can never spin forever.
  */
-const MAX_NUDGE_FRAMES = 180 // ~3s at 60fps — hard cap so the loop can't spin forever
+// Final safety budget (ms) for the first-frame nudge. The structural part (force
+// the FabricImage onto the canvas) converges in a handful of frames; the long tail
+// is waiting for a <video> element to DECODE its first frame (readyState ≥ 2). A
+// user-split's freshly-created clip can take well over the old ~3s/180-frame cap to
+// reach that — past the cap the loop stopped redrawing, so when the media finally
+// became drawable nothing repainted → the split segment showed a BLACK first frame
+// (openimago-6imt). We now (a) drive repaints off the element's own
+// loadeddata/canplay/seeked events — which fire whenever the media becomes drawable,
+// no matter how late — re-attaching to clips that appear after the nudge starts
+// (split clips are created asynchronously by recreate()), and (b) keep the rAF loop
+// as a generous TIME-budgeted backstop instead of a tight frame cap, so a slow
+// decode is no longer abandoned early. The budget only bounds the loop so it can
+// never spin forever; convergence (or an event-driven repaint) ends it sooner.
+const NUDGE_BUDGET_MS = 15000
 
-function nudgeFirstFrame(): void {
+export function nudgeFirstFrame(): void {
   const ctx = omnislate.context
   const compositor = ctx.controllers.compositor
 
@@ -447,28 +460,51 @@ function nudgeFirstFrame(): void {
       return !!el && el.readyState >= HAVE_CURRENT_DATA
     })
 
-  // Keep the one-shot loadeddata/seeked listeners as an extra redraw trigger; the
-  // bounded rAF loop below is what GUARANTEES convergence (redraw is idempotent).
-  for (const effect of visibleVideos) {
-    const fabricVideo = compositor.managers.videoManager.get(effect.id)
-    const element = fabricVideo?.getElement() as HTMLVideoElement | undefined
-    if (!element) continue
-    if (element.readyState >= HAVE_CURRENT_DATA) continue // already drawable
-    const onReady = (): void => {
-      element.removeEventListener('loadeddata', onReady)
-      element.removeEventListener('seeked', onReady)
-      redraw()
+  // Media-ready listeners drive a repaint WHENEVER a clip's <video> becomes
+  // drawable — independent of the rAF loop and surviving past its budget. A user
+  // split's new clip is built asynchronously (recreate awaits media), so its
+  // element may not exist when the nudge starts AND may decode well after any frame
+  // cap; firing on its own loadeddata/canplay/seeked guarantees the first frame
+  // paints whenever it lands, no matter how late (openimago-6imt). We (re-)scan the
+  // visible videos each rAF tick and attach to any not-yet-listened element, using
+  // a WeakSet so each element is wired exactly once.
+  const wired = new WeakSet<HTMLVideoElement>()
+  const drawableEvents: Array<keyof HTMLVideoElementEventMap> = [
+    'loadeddata',
+    'canplay',
+    'seeked',
+  ]
+  const attachReadyListeners = (): void => {
+    for (const effect of visibleVideos) {
+      const fabricVideo = compositor.managers.videoManager.get(effect.id)
+      const element = fabricVideo?.getElement() as HTMLVideoElement | undefined
+      if (!element || wired.has(element)) continue
+      if (element.readyState >= HAVE_CURRENT_DATA) continue // already drawable
+      wired.add(element)
+      // A split clip emits loadeddata → (after the seek to its inPoint) seeked;
+      // redraw is idempotent so repainting on each is harmless. Detach once the
+      // element is drawable AND on the canvas — the first-frame goal is met, and we
+      // must not keep repainting on every later `seeked` (playhead scrubs).
+      const onReady = (): void => {
+        redraw()
+        if (element.readyState >= HAVE_CURRENT_DATA && isOnCanvas(effect.id)) {
+          for (const evt of drawableEvents) element.removeEventListener(evt, onReady)
+        }
+      }
+      for (const evt of drawableEvents) element.addEventListener(evt, onReady)
     }
-    element.addEventListener('loadeddata', onReady, { once: true })
-    element.addEventListener('seeked', onReady, { once: true })
   }
 
-  // Bounded rAF retry: redraw (force-adding the image when off-canvas) each frame
-  // until convergence, then stop. The frame cap guarantees termination even if a
-  // <video> never decodes (e.g. Orca's embedded browser, which can't rasterize
-  // video — there the structural "image on canvas" invariant still converges).
+  // rAF retry: redraw (force-adding the image when off-canvas) each frame until
+  // convergence, then stop. The TIME budget (not a tight frame cap) guarantees
+  // termination even if a <video> never decodes (e.g. Orca's embedded browser,
+  // which can't rasterize video — there the structural "image on canvas" invariant
+  // still converges). The media-ready listeners attached above outlive this loop,
+  // so a slow decode that finishes after the budget still triggers a repaint.
+  const start = performance.now()
   let frame = 0
   const tick = (): void => {
+    attachReadyListeners()
     redraw()
     frame++
     if (converged()) {
@@ -477,11 +513,12 @@ function nudgeFirstFrame(): void {
       }
       return
     }
-    if (frame >= MAX_NUDGE_FRAMES) {
+    if (performance.now() - start >= NUDGE_BUDGET_MS) {
       if (import.meta.env.DEV) {
         const onCanvas = visibleVideos.filter((e) => isOnCanvas(e.id)).length
         console.log(
-          `[omni-diag] nudgeFirstFrame timed out after ${frame} frames`,
+          `[omni-diag] nudgeFirstFrame rAF budget elapsed after ${frame} frames; ` +
+            `media-ready listeners remain armed for late decode`,
           { visibleVideos: visibleVideos.length, onCanvas },
         )
       }
