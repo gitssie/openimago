@@ -43,6 +43,7 @@ import {
   filmstripTileCount,
   FILMSTRIP_TILE_W,
 } from './filmstrip-sprite-css'
+import { perfWrap, perfCount } from './perf-diag' // TEMP perf diagnostic (openimago-v2mm)
 
 // Cell height = full omniclip lane height (lanes are 50px; the sprite frames are
 // 9:16 portrait, 28×50, matching result.filmstrip.frameW/H). Tiles are a FIXED
@@ -173,6 +174,11 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
     // `contentShiftPx` transform (one node — re-evaluating it per frame is negligible and
     // it must stay live so the strip tracks zoom/start).
     const tiles = guard([spriteUrl, tileCount, frameCount], () => {
+      // TEMP perf diagnostic (openimago-v2mm): this callback runs ONLY on a guard
+      // cache-MISS, i.e. a REAL tile rebuild. If `filmstrip-rebuild` calls stay ~0 while
+      // dragging, the tatc memoization is working; if it ticks every frame, the guard is
+      // not holding (e.g. an unstable key) and the filmstrip is still a hotspot.
+      perfCount('filmstrip-rebuild')
       // PERCENTAGE crop so the FIRST frame fills each fixed tile (background-size-x =
       // frameCount*100%, background-position-x = 0). Tile and frame are both 9:16.
       const bgSizeX = spriteBackgroundSizeX(frameCount)
@@ -207,11 +213,21 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
     return html`<div class="filmstrip" style="transform: translateX(${contentShiftPx}px);">${tiles}</div>`
   }
 
-  return html`${Effect([
-    timeline,
-    live,
-    html`${render_filmstrip()}`,
-    css`
+  // TEMP perf diagnostic (openimago-v2mm). This whole arrow re-runs once PER VIDEO
+  // EFFECT every time the omniclip parent re-renders (drag mousemove → parent watches
+  // whole state → repeat(state.effects → VideoEffect)). Two nested labels:
+  //  - `video-effect`  : the full per-effect build (filmstrip + the inner Effect view).
+  //                      calls ≈ (#video clips) × (frames dragged).
+  //  - `effect-inner`  : ONLY the upstream omniclip Effect([...]) view construction
+  //                      (the span/trim-handle/transform layer) — point 3's `effect-inner`
+  //                      (×N). effect.patch.ts is NOT a render view (it only exports the
+  //                      context-menu helpers), so the real inner Effect view is upstream;
+  //                      this call site is the faithful place to measure its ×N cost.
+  // `video-effect` − `effect-inner` ≈ our filmstrip build cost; compare `filmstrip-rebuild`
+  // to see whether that cost is real rebuilds or just guard/template overhead.
+  return perfWrap('video-effect', () => {
+    const filmstrip = html`${render_filmstrip()}`
+    const styleBlock = css`
       .content {
         width: 100%;
       }
@@ -232,6 +248,7 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
         flex: 0 0 auto;
         image-rendering: auto;
       }
-    `,
-  ])}`
+    `
+    return html`${perfWrap('effect-inner', () => Effect([timeline, live, filmstrip, styleBlock]))}`
+  })
 })

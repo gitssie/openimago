@@ -49,6 +49,7 @@ import { html, watch, css } from '@benev/slate'
 import { styles as upstreamStyles } from 'omniclip/x/components/omni-timeline/views/time-ruler/styles.js'
 import { shadow_view } from 'omniclip/x/context/context.js'
 import { GUTTER_PX } from './timeline-gutter'
+import { perfWrap } from './perf-diag' // TEMP perf diagnostic (openimago-v2mm)
 
 // Upstream `.time` ticks are position:absolute but `.time-ruler` is unpositioned,
 // so they fall back to `:host` (outside the padded `.timeline`). Position the
@@ -172,7 +173,15 @@ export const TimeRuler = shadow_view((use) => (timeline: AnyTimeline) => {
     }
   }
 
+  // TEMP perf diagnostic (openimago-v2mm): `time-ruler-gen` times the tick-generation
+  // loop (the heavy make_increments-style scan). It runs on zoom change + scroll (not
+  // every drag frame), so during a pure clip-drag its `calls` should stay ~0 — if it
+  // spikes, scroll-driven regeneration is part of the jank.
   function generate_time_codes(zoom: number) {
+    return perfWrap('time-ruler-gen', () => generate_time_codes_impl(zoom))
+  }
+
+  function generate_time_codes_impl(zoom: number) {
     const time_codes: Array<{ time: string; offset: number; kind: string }> = []
     const ms = 1000 / use.context.state.timebase
     const el = scrollEl()
@@ -247,7 +256,12 @@ export const TimeRuler = shadow_view((use) => (timeline: AnyTimeline) => {
     use.context.actions.set_timecode(milliseconds)
   }
 
-  return html`
+  // TEMP perf diagnostic (openimago-v2mm): `time-ruler` times the ruler's render build
+  // (mapping the cached timeCodes to tick divs). Nested INSIDE `timeline-component`
+  // (the parent invokes TimeRuler in its render), so its ms is a SUBSET of that label.
+  return perfWrap(
+    'time-ruler',
+    () => html`
     <div
       @pointerenter=${() => setIndicator(true)}
       @pointerleave=${() => setIndicator(false)}
@@ -270,5 +284,6 @@ export const TimeRuler = shadow_view((use) => (timeline: AnyTimeline) => {
         `,
       )}
     </div>
-  `
+  `,
+  )
 })

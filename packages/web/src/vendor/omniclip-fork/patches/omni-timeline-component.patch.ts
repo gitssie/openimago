@@ -65,6 +65,7 @@ import { Track } from './track-view.patch'
 import { Toolbar } from './toolbar.patch'
 import { TimeRuler } from './time-ruler-view.patch'
 import { VideoEffect } from './video-effect.patch'
+import { perfWrap } from './perf-diag' // TEMP perf diagnostic (openimago-v2mm)
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyEvent = any
@@ -130,9 +131,18 @@ export const OmniTimeline = shadow_component((use) => {
         }
       },
     )
+  // TEMP perf diagnostic (openimago-v2mm): time the WHOLE parent render build —
+  // including render_tracks() + render_effects() (the per-effect children) — under the
+  // `timeline-component` label. This fires once per OmniTimeline re-render, i.e. once
+  // per drag mousemove, so its `calls` ≈ frames dragged and its `ms` ≈ the dominant
+  // parent cost. Child stages (time-ruler / video-effect / filmstrip-rebuild) are
+  // timed separately, so subtracting them isolates the parent's own overhead.
   return StateHandler(
     Op.all(use.context.helpers.ffmpeg.is_loading.value, use.context.helpers.ffmpeg.is_loading.value),
-    () => html`
+    () =>
+      perfWrap(
+        'timeline-component',
+        () => html`
       <div class="timeline">
         ${Toolbar([use.element])}
         <div class="scroll-area">
@@ -148,5 +158,6 @@ export const OmniTimeline = shadow_component((use) => {
         </div>
       </div>
     `,
+      ),
   )
 })
