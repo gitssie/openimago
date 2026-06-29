@@ -48,19 +48,19 @@ export class OmniContext extends Context {
 		})
 	}
 
-	#save_to_storage(state: HistoricalState) {
-		if(collaboration.client || collaboration.isJoining) {return} // do not save for client in collaboration
-		if(state.projectId) {
-			this.#store[state.projectId] = {
-				projectName: state.projectName,
-				projectId: state.projectId,
-				effects: state.effects,
-				tracks: state.tracks,
-				filters: state.filters,
-				animations: state.animations,
-				transitions: state.transitions
-			}
-		}
+	// DISABLED — omniclip's localStorage self-persistence is a NO-OP in the imago
+	// fork (openimago-v6m6). Ownership model A: cut.json is the single source of
+	// truth, we clear omniclip's localStorage on boot (clear-omni-persistence.ts) and
+	// re-hydrate from cut.json on every mount — so persisting omniclip's own state is
+	// both unwanted AND the source of a console-spamming crash: this wrote to the
+	// json_storage_proxy on EVERY state mutation (~42x per hydrate), and its set trap
+	// returns false when JSON.stringify/setItem throws (localStorage quota / a
+	// non-serializable value), which a Proxy set returning falsish turns into a
+	// strict-mode TypeError. Not writing at all removes the throw entirely.
+	// Undo/redo is unaffected (it replays the in-memory historical_state, not
+	// localStorage); #updateAnimationTimeline still runs from #listen_for_state_changes.
+	#save_to_storage(_state: HistoricalState) {
+		return
 	}
 
 	#updateAnimationTimeline(state: HistoricalState) {
