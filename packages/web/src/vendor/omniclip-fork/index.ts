@@ -113,13 +113,33 @@ function twoPanelLayout() {
 void omniPersistenceCleared
 
 // Register the editor custom elements (the standalone app does this in its /editor
-// route). `soft: true` makes re-registration (e.g. dev HMR) a no-op instead of
-// throwing. <construct-editor> hosts the layout/panels; the Omni* components are
-// the tags the panels render.
-register_to_dom(
-  { ConstructEditor, OmniTimeline, OmniText, OmniMedia, OmniFilters, OmniTransitions, OmniAnim },
-  { soft: true },
-)
+// route). <construct-editor> hosts the layout/panels; the Omni* components are the
+// tags the panels render.
+//
+// @benev/slate 0.1.x's register_to_dom(elements) takes NO `soft` option and calls
+// customElements.define unconditionally — it throws NotSupportedError if a tag is
+// already defined (openimago-j82k; 0.3.x's register(elements,{soft}) is gone now
+// that the fork is pinned to slate 0.1.2 to dedupe with @benev/construct). Register
+// each element individually and swallow the "already defined" error so dev HMR
+// re-evaluation (or a tag defined elsewhere) is a no-op instead of a hard throw.
+function registerEditorElements(elements: Record<string, { new (): HTMLElement }>): void {
+  for (const [name, element] of Object.entries(elements)) {
+    try {
+      register_to_dom({ [name]: element })
+    } catch (err) {
+      if (!(err instanceof DOMException) || err.name !== 'NotSupportedError') throw err
+    }
+  }
+}
+registerEditorElements({
+  ConstructEditor,
+  OmniTimeline,
+  OmniText,
+  OmniMedia,
+  OmniFilters,
+  OmniTransitions,
+  OmniAnim,
+})
 
 // Build the global context with the player+timeline layout. Only the two panels
 // we use are placed (no MediaPanel/ExportPanel — openimago-h8v6 scope). 1.1.3's
