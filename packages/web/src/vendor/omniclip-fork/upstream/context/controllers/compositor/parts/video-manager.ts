@@ -71,6 +71,14 @@ export class VideoManager extends Map<string, {sprite: PIXI.Sprite, transformer:
 		sprite.eventMode = "static"
 		sprite.cursor = "pointer"
 		sprite.filters = []
+		// COVER-FIT (openimago-wmns Pass B.6; pixi adaptation of video-manager.patch.ts).
+		// The lines above size the sprite to effect.rect (the 1080×1920 portrait canvas for a
+		// hydrated cut clip), which non-uniformly scales a 16:9 source (letterbox/stretch).
+		// The approved design FILLS the 9:16 frame, so uniformly scale the sprite to COVER the
+		// canvas (scale = max(canvasW/vidW, canvasH/vidH)) centered — overriding the rect
+		// width/height scaling above. Uses the <video>'s INTRINSIC size, so it runs once
+		// metadata is known (this is the single creation point → race-free on add + recreate).
+		this.#cover_fit(sprite, element)
 		//@ts-ignore
 		const transformer = new PIXI.Transformer({
 			boxRotationEnabled: true,
@@ -97,6 +105,31 @@ export class VideoManager extends Map<string, {sprite: PIXI.Sprite, transformer:
 		this.#effect_canvas.set(effect.id, canvas)
 		if(recreate) {return}
 		this.actions.add_video_effect(effect)
+	}
+
+	// Uniformly scale `sprite` to COVER the project canvas, centered (openimago-wmns B.6).
+	// Reads the <video>'s INTRINSIC size; if metadata isn't loaded yet (videoWidth 0), defers
+	// once to `loadedmetadata` (the HTML-spec guarantee that videoWidth/Height are populated).
+	#cover_fit(sprite: PIXI.Sprite, element: HTMLVideoElement) {
+		const apply = () => {
+			const vidW = element.videoWidth
+			const vidH = element.videoHeight
+			if(!vidW || !vidH) {return}
+			const canvasW = this.compositor.app.screen.width
+			const canvasH = this.compositor.app.screen.height
+			// COVER = the larger ratio so the smaller dimension still fills the canvas; uniform
+			// (same X and Y) so the source aspect is preserved (no distortion). Overflow is
+			// cropped by the renderer. Center via texture-space pivot + canvas-center position.
+			const scale = Math.max(canvasW / vidW, canvasH / vidH)
+			sprite.pivot.set(vidW / 2, vidH / 2)
+			sprite.position.set(canvasW / 2, canvasH / 2)
+			sprite.scale.set(scale, scale)
+		}
+		if(element.videoWidth && element.videoHeight) {
+			apply()
+		} else {
+			element.addEventListener("loadedmetadata", apply, {once: true})
+		}
 	}
 
 	add_video_to_canvas(effect: VideoEffect) {
