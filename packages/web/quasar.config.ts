@@ -3,7 +3,8 @@
 
 import { defineConfig } from '#q-app/wrappers';
 import { fileURLToPath } from 'node:url';
-import { existsSync, realpathSync, readdirSync } from 'node:fs';
+import { existsSync, realpathSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve as pathResolve } from 'node:path';
 
 // ── omniclip vendor dependency set (ADR 0007, openimago-ulkx/y90v/g015) ──────
 // The vendored omniclip fork pulls these. They ship pre-built bundles + sibling
@@ -23,6 +24,18 @@ const OMNICLIP_VENDOR_PKGS = [
   // the dep optimizer + resolved via the subpath resolver like the rest of the
   // omniclip vendor set (openimago-r7to).
   'wavesurfer.js',
+  // ── vendored omniclip 1.1.3 SOURCE transitive deps (openimago-lo9v) ──────────
+  // The vendored upstream (src/vendor/omniclip-fork/upstream) imports these via
+  // physical sub-path files whose `exports` maps omit the path key, so Vite 8
+  // strict-exports rejects them (same class of bug as the rest of this set):
+  //   @zip.js/zip.js  → "@zip.js/zip.js/index.js"        (exports lacks ./index.js)
+  //   web-demuxer     → "web-demuxer/dist/web-demuxer.js" (exports only ".")
+  //   @floating-ui/dom→ ".../dist/floating-ui.dom.browser.mjs" (exports only ".")
+  // Listed here so the subpath resolver rewrites the bare-sub-path specifier to
+  // the physical file and the dep optimizer leaves them un-prebundled.
+  '@zip.js/zip.js',
+  'web-demuxer',
+  '@floating-ui/dom',
 ] as const;
 
 /**
@@ -76,6 +89,112 @@ function omniclipSubpathResolver() {
           );
           if (existsSync(storePath)) return realpathSync(storePath);
         }
+      }
+      return undefined;
+    },
+  };
+}
+
+/**
+ * Locate the @benev/slate 0.1.x line in the bun store. The vendored omniclip
+ * 1.1.3 SOURCE is written against slate ^0.1.0-x.14 (bun installs 0.1.2 nested
+ * under omniclip), whose API + on-disk `x/...` layout differ from web's
+ * top-level @benev/slate@0.3.10. Returns the realpath'd package dir (outside the
+ * Vite root → served via /@fs) or undefined if not present. (openimago-lo9v)
+ */
+function resolveSlateOneXBase(): string | undefined {
+  const bunStore = fileURLToPath(new URL('../../node_modules/.bun/', import.meta.url));
+  if (!existsSync(bunStore)) return undefined;
+  const match = readdirSync(bunStore)
+    .filter((d) => d.startsWith('@benev+slate@0.1.'))
+    .sort()
+    .pop();
+  if (!match) return undefined;
+  const base = fileURLToPath(
+    new URL(`../../node_modules/.bun/${match}/node_modules/@benev/slate`, import.meta.url),
+  );
+  return existsSync(base) ? realpathSync(base) : undefined;
+}
+
+/**
+ * Resolve a bare vendor package's ESM `.` entry from the workspace-root bun store
+ * for packages hoisted OUT of packages/web/node_modules (so not node-resolvable
+ * from the web package). Mirrors omniclipSubpathResolver's store discovery, but
+ * for the BARE specifier: honours the package's `exports["."].import` (falling
+ * back to `module`/`main`). realpathSync → served via /@fs (outside the Vite
+ * root). Returns undefined if the package or entry is absent. (openimago-lo9v)
+ */
+function resolveBunStoreBareEntry(pkg: string): string | undefined {
+  const bunStore = fileURLToPath(new URL('../../node_modules/.bun/', import.meta.url));
+  if (!existsSync(bunStore)) return undefined;
+  const flat = pkg.replace('/', '+');
+  const match = readdirSync(bunStore)
+    .filter((d) => d.startsWith(`${flat}@`))
+    .sort()
+    .pop();
+  if (!match) return undefined;
+  const base = join(bunStore, match, 'node_modules', pkg);
+  if (!existsSync(base)) return undefined;
+  const manifest = JSON.parse(
+    readFileSync(join(base, 'package.json'), 'utf8'),
+  ) as { exports?: { '.'?: { import?: string } }; module?: string; main?: string };
+  const rel =
+    manifest.exports?.['.']?.import ?? manifest.module ?? manifest.main ?? 'index.js';
+  const entry = join(base, rel);
+  return existsSync(entry) ? realpathSync(entry) : undefined;
+}
+
+/**
+ * Vite plugin: resolve the vendored omniclip 1.1.3 SOURCE tree
+ * (src/vendor/omniclip-fork/upstream — a raw TS source copy, turtle convention).
+ * SCOPED to importers UNDER that dir so nothing else in the app is affected
+ * (openimago-lo9v). Two resolutions Vite can't do for it out of the box:
+ *   (a) relative `./foo.js` specifiers point at `./foo.ts` siblings — map them to
+ *       the `.ts` when it exists. The one real bundled `.js`
+ *       (./tools/mp4boxjs/mp4box.js) has no `.ts` sibling, so it falls through to
+ *       normal resolution untouched.
+ *   (b) bare `@benev/slate` (+ its `x/...` sub-paths) must resolve to the 0.1.x
+ *       line omniclip 1.1.3 is written against, NOT web's top-level 0.3.10 (a
+ *       major-API-incompatible version the web app uses elsewhere). Routed to the
+ *       nested copy bun already installs; web's 0.3.10 is left untouched. Runs
+ *       before omniclipSubpathResolver (which would otherwise send slate sub-paths
+ *       to 0.3.10), so it must be unshifted ahead of it.
+ */
+function omniclipUpstreamResolver() {
+  const slateBase = resolveSlateOneXBase();
+  // wavesurfer.js is hoisted to the workspace bun store only (not web-local), so
+  // the source's bare `import WaveSurfer from "wavesurfer.js"` is not
+  // node-resolvable from the upstream dir — resolve it to the store ESM entry.
+  const wavesurferEntry = resolveBunStoreBareEntry('wavesurfer.js');
+  const UPSTREAM_SEG = 'src/vendor/omniclip-fork/upstream/';
+  return {
+    name: 'omniclip-upstream-resolver',
+    enforce: 'pre' as const,
+    resolveId(source: string, importer?: string) {
+      if (!importer) return undefined;
+      const normImporter = importer.split('\\').join('/');
+      if (!normImporter.includes(UPSTREAM_SEG)) return undefined;
+
+      // bare wavesurfer.js (hoisted out of web node_modules) → store ESM entry
+      if (source === 'wavesurfer.js' && wavesurferEntry) {
+        return wavesurferEntry;
+      }
+
+      // (b) @benev/slate → the 0.1.x line omniclip 1.1.3 needs
+      if (slateBase) {
+        if (source === '@benev/slate') {
+          return realpathSync(join(slateBase, 'x/index.js'));
+        }
+        if (source.startsWith('@benev/slate/')) {
+          const file = join(slateBase, source.slice('@benev/slate/'.length));
+          if (existsSync(file)) return realpathSync(file);
+        }
+      }
+
+      // (a) relative turtle `*.js` → its `.ts` sibling when present
+      if ((source.startsWith('./') || source.startsWith('../')) && source.endsWith('.js')) {
+        const ts = pathResolve(dirname(importer), source).replace(/\.js$/, '.ts');
+        if (existsSync(ts)) return ts;
       }
       return undefined;
     },
@@ -649,6 +768,13 @@ export default defineConfig((ctx) => {
         // other package is untouched.
         viteConf.plugins = viteConf.plugins || []
         viteConf.plugins.push(omniclipSubpathResolver())
+        // Resolve the vendored omniclip 1.1.3 SOURCE tree (openimago-lo9v):
+        // `.js`→`.ts` turtle specifiers + route its @benev/slate imports to the
+        // 0.1.x line (not web's top-level 0.3.10). Unshifted below so it runs
+        // BEFORE omniclipSubpathResolver, which would otherwise route slate
+        // sub-paths to 0.3.10. Importer-scoped to the upstream dir → no effect on
+        // the npm omniclip patch path or the rest of the web app.
+        viteConf.plugins.unshift(omniclipUpstreamResolver())
         // Swap omniclip's VideoEffect view for the fork's static sprite-sheet
         // filmstrip (openimago-78m9) and its clip styles for the imago-themed
         // ones (openimago-fhnz). unshift so these enforce:'pre' redirects run
