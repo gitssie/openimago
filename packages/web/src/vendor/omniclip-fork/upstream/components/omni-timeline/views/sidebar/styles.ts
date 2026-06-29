@@ -10,22 +10,25 @@ import {LANE_GAP_PX} from "../../../../../patches/timeline-lanes"
 export const styles = css`
 	/* The TrackSidebar custom-element host is display:inline/width:auto by default, so it
 	   sized to its content (~107px) and blew out the column. Pin the host to a GUTTER_PX
-	   block so the .track-sidebars column is exactly the gutter width (openimago-wmns B.4).
-	   margin-bottom renders the 8px inter-lane gap so each gutter cell stays row-aligned
-	   with its (now variable-height) track row (openimago-g1hb). */
+	   block so the .track-sidebars column is exactly the gutter width (openimago-wmns B.4). */
 	:host {
 		display: block;
 		box-sizing: border-box;
 		width: ${GUTTER_PX}px;
-		margin-bottom: ${LANE_GAP_PX}px;
 	}
 
+	/* TrackSidebar is a shadow_VIEW — its .switches <div> renders directly into the
+	   omni-timeline shadow root (no per-row host), so :host here is the shared timeline
+	   element, NOT each row. The 8px inter-lane gap therefore goes on .switches itself
+	   (exactly like .track in the lane column) so each gutter row's TOP matches its lane
+	   (50+8 / 25+8) and the icons stay centered on their lanes (openimago-g1hb). */
 	.switches {
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		box-sizing: border-box;
 		width: ${GUTTER_PX}px;
+		margin-bottom: ${LANE_GAP_PX}px;
 		background: var(--imago-bg-deep, #0a0a0f);
 		border-right: 1px solid var(--imago-border-soft, rgba(255, 255, 255, 0.06));
 		color: var(--imago-text-muted, #989898);
