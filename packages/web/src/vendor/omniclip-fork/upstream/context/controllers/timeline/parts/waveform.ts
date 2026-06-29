@@ -1,64 +1,91 @@
-import WaveSurfer from 'wavesurfer.js'
-import {fetchFile} from "@ffmpeg/util/dist/esm/index.js"
-
 import {Media} from '../../media/controller.js'
 import {AudioEffect, State} from '../../../types.js'
 import {calculate_effect_width} from '../../../../components/omni-timeline/utils/calculate_effect_width.js'
+import {BGM_WAVEFORM_COLORS} from 'src/utils/cut/fork-contract'
+
+// Flat GREEN BGM bar — NO waveform (openimago-q4cf; folded into the vendored source in
+// openimago-wmns Pass B.2, replacing waveform.patch.ts's resolveId redirect).
+//
+// USER DECISION ("声音不需要去解析，不需要有波浪线"): the BGM lane must NOT decode audio and
+// must NOT draw a sampled waveform. The approved reference (docs/images/cut_panel.png)
+// shows the BGM lane as a SOLID flat rounded GREEN block. So this DROPS WaveSurfer, the
+// @ffmpeg/util fetchFile, media.get_file(), and the Blob/URL decode path entirely, and
+// renders `this.wave` as a flat green <div> sized to the effect's width. Zero audio I/O.
+//
+// PUBLIC INTERFACE PRESERVED so the vendored AudioEffect view (audio-effect.ts) is
+// unchanged: constructor(effect, media, state), the `wave` element, on_file_found(state),
+// update_waveform(state), dispose() — each just (re)sizes or tears down the green block.
+// WIDTH still comes from calculate_effect_width(effect, zoom) so the bar tracks clip
+// length on zoom (same sizing math as upstream, minus the decode).
+//
+// GREEN: BGM_WAVEFORM_COLORS.wave (#4ec273) from fork-contract, applied as an inline CSS
+// background (a flat fill, no <canvas>). NON-FATAL: a sizing failure warns + leaves the
+// lane blank, never throwing out of the AudioEffect view's mount.
+//
+// NOTE: wavesurfer.js is no longer imported here; the dep stays installed (harmless;
+// removal is phase-5 cleanup, openimago-ln7d).
+//
+// BROWSER-ONLY (this dir is excluded from typecheck/lint).
+
+/** Green-bar height (px). The audio `.effect` block is 50px tall with align-items:center,
+ *  so a SHORTER bar reads as the thin green clip the reference shows — a flat green strip
+ *  centered in its lane, visibly shorter than the filmstrip clips above it. */
+const BAR_HEIGHT = 26
+/** Upstream capped the rendered width at 4000px; keep the same clamp so very long beds at
+ *  high zoom don't blow out the lane element. */
+const MAX_BAR_WIDTH = 4000
 
 export class Waveform {
 	wave = document.createElement("div")
-	#wavesurfer: WaveSurfer
-	#isReady = false
 
 	constructor(private effect: AudioEffect, private media: Media, state: State) {
-		this.#wavesurfer = this.#create_waveform()
-		this.#load_audio_file(state)
-		this.#wavesurfer.on("ready", () => {
-			this.#isReady = true
-		})
-	}
-	
-	#create_waveform() {
-		return WaveSurfer.create({
-			container: this.wave,
-			backend: "MediaElement",
-			autoScroll: true,
-			hideScrollbar: true,
-			interact: false,
-			height: 50
-		})
+		// Tag the bar so the shared effect stylesheet can scope AUDIO-only rules via
+		// `.effect:has(.bgm-bar)` (the effect shadow root carries no kind attribute) — keeps
+		// the BGM clip CLEAN (no selection/hover outline bleeding below the shorter green bar
+		// as a teal line, no grey grab/trim grip). See effects/parts/styles.ts imago overrides.
+		this.wave.className = "bgm-bar"
+		this.#style_bar()
+		this.#resize(state)
 	}
 
+	/** Paint `this.wave` as a flat, rounded, soft-green block (no canvas, no audio). Width is
+	 *  set per-state by #resize; everything else is static. */
+	#style_bar() {
+		const s = this.wave.style
+		s.height = `${BAR_HEIGHT}px`
+		s.background = BGM_WAVEFORM_COLORS.wave
+		s.borderRadius = "4px"
+		s.boxSizing = "border-box"
+		s.pointerEvents = "none"
+	}
+
+	/** Re-derive the bar width from the effect length + current zoom and apply it. Same
+	 *  sizing math as upstream's #load_audio_file / update_waveform, minus the decode.
+	 *  NON-FATAL: a failure warns and leaves the lane blank. */
+	#resize(state: State) {
+		try {
+			const live = (state.effects?.find(e => e.id === this.effect.id) ?? this.effect) as AudioEffect
+			const raw = calculate_effect_width(live, state.zoom)
+			const width = Number.isFinite(raw) ? Math.min(raw, MAX_BAR_WIDTH) : 0
+			this.wave.style.width = `${Math.max(0, width)}px`
+		} catch (err) {
+			console.warn("[omniclip-fork] BGM green bar sizing failed — lane left blank", err)
+		}
+	}
+
+	/** Media became available — nothing to decode, just (re)size the green bar. */
 	async on_file_found(state: State) {
-		await this.#load_audio_file(state)
+		this.#resize(state)
 	}
 
-	async #load_audio_file(state: State) {
-		this.#wavesurfer.setOptions({width: calculate_effect_width(this.effect, state.zoom)})
-		const file = await this.media.get_file(this.effect.file_hash)!
-		if(file) {
-			const uint = await fetchFile(file)
-			const blob = new Blob([uint])
-			const url = URL.createObjectURL(blob)
-			await this.#wavesurfer.load(url)
-			this.update_waveform(state)
-		}
-	}
-
+	/** Zoom / effect changed — resize the green bar to the new clip width. */
 	update_waveform(state: State) {
-		if(this.#isReady) {
-			const get_effect = state.effects.find(e => e.id === this.effect.id)! as AudioEffect
-			const width = get_effect.duration * Math.pow(2, state.zoom)
-			if(width < 4000) {
-				this.#wavesurfer.setOptions({width})
-			} else {
-				this.#wavesurfer.setOptions({width: 4000})
-			}
-			this.#wavesurfer.zoom(width / this.#wavesurfer.getDuration())
-		}
+		this.#resize(state)
 	}
 
+	/** Tear down — no WaveSurfer instance to destroy now; clear the bar fill. */
 	dispose() {
-		this.#wavesurfer.destroy()
+		this.wave.replaceChildren()
+		this.wave.removeAttribute("style")
 	}
 }
