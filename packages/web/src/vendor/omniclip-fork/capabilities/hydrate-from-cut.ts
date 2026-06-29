@@ -10,21 +10,45 @@
 // omniclip has no single set-state call, so we compose add_video_effect +
 // set_effect_* from its action surface. BROWSER-ONLY.
 //
-// IMPORT ORDERING (openimago-0if6): the import loop is SERIAL and the compose is
-// fire-and-forget. An earlier attempt to parallelize imports (openimago-ah1j) and
-// then to AWAIT clip 0's first-paint signal before importing the rest
-// (openimago-ac52) regressed the NORMAL tab-open: on a real open clip 0's
-// drawable signal never fired, so awaiting it left the preview blank (canvas all
-// 0,0,0,0). A slow-but-visible preview beats a fast-but-blank one, so the proven
-// serial-import + fire-and-forget compose path is restored. DEV timing logs are
-// kept (non-blocking) so first-paint can still be measured on the real flow.
+// IMPORT ORDERING (openimago-0if6 / openimago-ns5o): media import is now TWO-PHASE
+// — (A) import each UNIQUE source url ONCE in PARALLEL (Promise.all), then (B) place
+// the effects synchronously in clip order. The old loop imported serially AND
+// re-imported the same source per clip, so an N-clip cut (with a source split into
+// k halves) paid roughly Σ of every clip's fetch+decode → ~17.6s first paint; the
+// two-phase form collapses it to ≈ the slowest single source (openimago-ns5o).
+//
+// CRITICAL — this does NOT reintroduce the openimago-0if6 regression: the compose
+// stays FIRE-AND-FORGET (composePlacedClips is never awaited). That regression was
+// caused by openimago-ac52 AWAITING clip 0's first-paint/drawable signal before
+// importing the rest — on a normal tab-open that signal never fired, so the await
+// left the canvas blank (all 0,0,0,0). We only parallelize the IMPORTS (which
+// importFromUrl was already built to do safely — the shared FFprobeWorker is mutexed,
+// openimago-ah1j); we never await a paint signal. DEV timing logs are kept
+// (non-blocking) so first-paint can still be measured on the real flow.
 
-import { omnislate } from 'omniclip/x/context/context.js'
+import { omnislate } from '../upstream/context/context'
 import { importFromUrl } from './import-from-url'
 import { setTransition, resetTransitions } from './transitions'
-import type { HydrateBgm, HydrateClip, OmniTransition } from 'src/utils/cut/fork-contract'
+import type {
+  HydrateBgm,
+  HydrateClip,
+  ImportedMedia,
+  OmniTransition,
+} from 'src/utils/cut/fork-contract'
 
 const MS_PER_S = 1000
+
+// TODO(openimago-74y8): port compose path fabric->pixi after phase-4 video-effect patch.
+// The PREVIEW-COMPOSITION machinery in this file (composePlacedClips, nudgeFirstFrame,
+// placeBgm's re-announce) was written against 1.0.7's fabric compositor and calls APIs
+// that DO NOT exist on 1.1.3's pixi compositor — compositor.canvas.getObjects()/
+// requestRenderAll(), FabricImage.getElement(), set_current_time_of_audio_or_video_and_redraw().
+// It is also coupled to the phase-4 video-effect patch (the on_media_change listener that
+// calls compositor.recreate()), which is not yet ported to pixi. Until then this path is
+// DISABLED via the flag below: clips still PLACE on the timeline (placement uses only the
+// 1.1.3-stable actions), but the player preview stays blank until openimago-74y8 lands.
+// Flipping this to `true` before the pixi compose port would throw at runtime.
+const COMPOSE_PATH_ENABLED = false
 
 // Time-to-first-paint instrumentation (DEV-only, openimago-ah1j/0if6). Set when a
 // hydrate begins; consumed once by the first nudgeFirstFrame redraw that puts a
@@ -34,7 +58,10 @@ let firstPaintStart: number | null = null
 let firstPaintLogged = false
 
 /** Default rect — clips fill the portrait 9:16 frame (openimago-vm5v); trimming
- * is via start/end. Matches the 1080×1920 project resolution set at boot. */
+ * is via start/end. Matches the 1080×1920 project resolution set at boot.
+ * `pivot` is REQUIRED by 1.1.3's EffectRect — the pixi VideoManager reads
+ * effect.rect.pivot.x/y when building the sprite (openimago-lpjd); omitting it
+ * (the 1.0.7 fabric shape) would crash sprite creation. */
 function fullFrameRect() {
   return {
     width: 1080,
@@ -43,6 +70,7 @@ function fullFrameRect() {
     scaleY: 1,
     position_on_canvas: { x: 0, y: 0 },
     rotation: 0,
+    pivot: { x: 0, y: 0 },
   }
 }
 
@@ -68,10 +96,35 @@ export async function hydrateFromCut(
   // effect id to clear from the compositor's videoManager, the hash to re-announce.
   const placed: { id: string; fileHash: string }[] = []
 
+  // ── PHASE A: import each UNIQUE source url ONCE, in PARALLEL (openimago-ns5o) ──
+  //
+  // The old loop awaited importFromUrl serially AND re-imported the same url for
+  // every clip — so an N-clip cut paid N × (fetch + WebCodecs decode), and a source
+  // split into k halves was decoded k times (e.g. s01 imported 4×) → ~17.6s first
+  // paint. Media in omniclip is shared by content-hash, so one import per source is
+  // sufficient for any number of effects on it. Dedup by url BEFORE the parallel
+  // import so the same url is never imported twice concurrently (which would double
+  // the IndexedDB write + decode). importFromUrl is already concurrency-safe — the
+  // shared FFprobeWorker is mutexed (openimago-ah1j) — so Promise.all collapses the
+  // total to roughly the SLOWEST single source instead of their sum.
+  const uniqueUrls = [...new Set(clips.map((c) => c.url))]
+  const importedByUrl = new Map<string, ImportedMedia>()
+  await Promise.all(
+    uniqueUrls.map(async (url) => {
+      // All clips sharing a url share a source shot → the same name; take the first.
+      const name = clips.find((c) => c.url === url)?.name
+      importedByUrl.set(url, await importFromUrl(url, { name }))
+    }),
+  )
+
+  // ── PHASE B: place the video effects in the clips' ORIGINAL order ──
+  // Synchronous now that every source is imported — keeps cursorMs flush placement,
+  // per-clip filmstrip_* mounting, and 1:1 clip-id → effect-id. Multiple effects
+  // sharing one fileHash is correct (composePlacedClips dedups compose per hash).
   let cursorMs = 0
   for (const clip of clips) {
-    // Import the clip's media (fetch → File → omniclip content-hash/IndexedDB).
-    const imported = await importFromUrl(clip.url, { name: clip.name })
+    const imported = importedByUrl.get(clip.url)
+    if (!imported) continue // import failed for this source — skip (defensive)
     placed.push({ id: clip.id, fileHash: imported.fileHash })
 
     const startMs = clip.inPointSeconds * MS_PER_S
@@ -195,6 +248,12 @@ async function placeBgm(bgm: HydrateBgm | undefined): Promise<void> {
   })
 
   // Re-announce so the (now-mounted) AudioEffect view composes its waveform.
+  // TODO(openimago-74y8): disabled with the rest of the compose path until the
+  // fabric->pixi port + phase-4 patch. The BGM effect is already PLACED above (the
+  // green lane shows on the track); only the live waveform re-announce is deferred.
+  // (Also note media.get() now returns an AnyMedia record, not a File — the publish
+  // payload below must be reshaped to {..., file: record.file} during the 74y8 port.)
+  if (!COMPOSE_PATH_ENABLED) return
   const media = ctx.controllers.media
   const audioManager = ctx.controllers.compositor.managers.audioManager
   requestAnimationFrame(() => {
@@ -226,6 +285,9 @@ async function placeBgm(bgm: HydrateBgm | undefined): Promise<void> {
  * first frame paints on open.
  */
 function composePlacedClips(placed: { id: string; fileHash: string }[]): void {
+  // TODO(openimago-74y8): disabled until the fabric->pixi compose port + phase-4
+  // video-effect patch land. Clips are already placed; this only drives the preview.
+  if (!COMPOSE_PATH_ENABLED) return
   if (placed.length === 0) return
   const ctx = omnislate.context
   const media = ctx.controllers.media
@@ -304,6 +366,12 @@ const HAVE_CURRENT_DATA = 2
 const NUDGE_BUDGET_MS = 15000
 
 export function nudgeFirstFrame(): void {
+  // TODO(openimago-74y8): disabled until the fabric->pixi compose port + phase-4
+  // video-effect patch land. The body below calls fabric-only compositor APIs
+  // (compositor.canvas, FabricImage.getElement, set_current_time_..._and_redraw)
+  // that don't exist on 1.1.3's pixi compositor. Also called by on-edit.ts after a
+  // split — a no-op there too until the port. (Player preview stays blank.)
+  if (!COMPOSE_PATH_ENABLED) return
   const ctx = omnislate.context
   const compositor = ctx.controllers.compositor
 
