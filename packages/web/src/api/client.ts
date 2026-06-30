@@ -867,22 +867,23 @@ export const api = {
       },
     ),
 
-  // ── Rerun (stub, openimago-xkn / ADR 0003) ────────────────────────────
+  // ── Rerun (ADR 0003, openimago-wc96) ──────────────────────────────────
   //
-  // Future: wire to backend rerun endpoint when the generation-run execution
-  // path is implemented. For MVP, the WorkspaceArtifactsPanel emits "rerun"
-  // events; pages handle the event with this stub.
-  rerunArtifact: (_payload: {
-    artifactId: string
-    prompt?: string
-    model?: string
-    aspectRatio?: string
-    duration?: number
-    seed?: number
-    inputArgs?: Record<string, unknown>
-  }) =>
-    // Stub — returns a dummy response so callers can proceed
-    Promise.resolve({ ok: false, message: "Rerun endpoint not yet implemented — openimago-xkn placeholder" }),
+  // Artifact-panel rerun: re-execute the prior GenerationRun behind `artifactId`
+  // (located by its result.artifactId in the episode's runs.json) with its
+  // persisted params; the optional `overrides` win per field. Appends a NEW run
+  // and returns it — immutable, so the source run/shot are untouched. Media-gen
+  // cost is billed inline by the media service (openimago-xqr), not via CDC.
+  rerunArtifact: (
+    projectId: string,
+    episodeId: string,
+    artifactId: string,
+    overrides?: { prompt?: string; model?: string; aspectRatio?: string; durationSeconds?: number },
+  ) =>
+    request<{ run: OpenimagoGenerationRun }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/runs/rerun`,
+      { method: 'POST', body: JSON.stringify({ artifactId, ...(overrides ?? {}) }) },
+    ),
 
   // ── Gallery ──────────────────────────────────────────────────────────────────
 

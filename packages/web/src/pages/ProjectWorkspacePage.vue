@@ -307,8 +307,8 @@
       @generate="onClipGenerate"
     />
 
-    <!-- ── Output context menu (Download + Delete) — openimago-oy1l ─────────── -->
-    <!-- Seeded at the click position; Rerun is intentionally omitted (openimago-wc96). -->
+    <!-- ── Output context menu (Rerun + Download + Delete) — openimago-oy1l/wc96 ── -->
+    <!-- Seeded at the click position. Rerun re-executes the run behind the output. -->
     <div
       v-if="outputMenu.open"
       class="output-menu-anchor"
@@ -316,6 +316,12 @@
     >
       <q-menu v-model="outputMenu.open" anchor="bottom left" self="top left">
         <q-list dense style="min-width: 148px">
+          <q-item v-close-popup clickable @click="onOutputMenuRerun">
+            <q-item-section avatar>
+              <q-icon name="refresh" size="18px" />
+            </q-item-section>
+            <q-item-section>重新生成</q-item-section>
+          </q-item>
           <q-item v-close-popup clickable @click="onOutputMenuDownload">
             <q-item-section avatar>
               <q-icon name="download" size="18px" />
@@ -657,6 +663,7 @@ import WorkspaceArtifactsPanel from 'src/components/session-workspace/WorkspaceA
 import { UILayout, UILayoutDrawer, UILayoutPage, UILayoutPageContainer } from 'src/components/ui/layout'
 import type {
   WorkspaceArtifact,
+  ArtifactRerunPayload,
   GenerationRunMetadata,
   StoryBibleSummary,
   StoryEpisodeSummary,
@@ -1663,6 +1670,22 @@ function onOutputMenuDownload() {
   if (url) window.open(url, '_blank', 'noopener')
 }
 
+// Rerun the output's generation (ADR 0003, openimago-wc96). Re-executes the run
+// behind the item via its id (the run's result.artifactId), carrying the item's
+// prompt/model as overrides; the rest inherit from the source run.
+async function onOutputMenuRerun() {
+  const item = outputMenu.value.item
+  const episodeId = currentStoryEpisodeId.value
+  if (!item || !episodeId) {
+    $q.notify({ color: 'info', message: '重新生成需要选择剧集', icon: 'info', timeout: 1800 })
+    return
+  }
+  await rerunArtifactById(episodeId, item.id, {
+    ...(item.prompt ? { prompt: item.prompt } : {}),
+    ...(item.model ? { model: item.model } : {}),
+  })
+}
+
 async function onOutputMenuDelete() {
   const item = outputMenu.value.item
   if (!item) return
@@ -2074,23 +2097,40 @@ function onArtifactEditParams(_id: string) {
 }
 
 async function onArtifactRerun(payload: unknown) {
+  const p = (payload ?? {}) as ArtifactRerunPayload
+  const episodeId = currentStoryEpisodeId.value
+  if (!episodeId || !p.artifactId) {
+    $q.notify({ color: 'info', message: '重新生成需要选择剧集与制品', icon: 'info', timeout: 1800 })
+    return
+  }
+  // Map the panel's payload (duration in seconds) to the backend override shape;
+  // omitted fields inherit from the source run's persisted params.
+  await rerunArtifactById(episodeId, p.artifactId, {
+    ...(p.prompt !== undefined ? { prompt: p.prompt } : {}),
+    ...(p.model !== undefined ? { model: p.model } : {}),
+    ...(p.aspectRatio !== undefined ? { aspectRatio: p.aspectRatio } : {}),
+    ...(p.duration !== undefined ? { durationSeconds: p.duration } : {}),
+  })
+}
+
+/** Re-execute the run behind `artifactId` (ADR 0003 artifact rerun), then refresh
+ *  the episode so the new run surfaces in the storyboard/timeline. Shared by the
+ *  WorkspaceArtifactsPanel rerun event and the output context menu. */
+async function rerunArtifactById(
+  episodeId: string,
+  artifactId: string,
+  overrides: { prompt?: string; model?: string; aspectRatio?: string; durationSeconds?: number },
+) {
+  const pid = projectId.value
+  if (!pid) return
   try {
-    const result = await api.rerunArtifact(payload as {
-      artifactId: string
-      prompt?: string
-      model?: string
-      aspectRatio?: string
-      duration?: number
-      seed?: number
-      inputArgs?: Record<string, unknown>
-    })
-    if (result.ok) {
-      $q.notify({ color: 'positive', message: '重新生成已提交', icon: 'check', timeout: 1500 })
-    } else {
-      $q.notify({ color: 'info', message: result.message || '重新生成即将上线（项目作用域）', icon: 'refresh', timeout: 2000 })
-    }
-  } catch {
-    $q.notify({ color: 'info', message: '重新生成即将上线（项目作用域）', icon: 'refresh', timeout: 1500 })
+    await api.rerunArtifact(pid, episodeId, artifactId, overrides)
+    $q.notify({ color: 'positive', message: '重新生成已提交', icon: 'check', timeout: 1500 })
+    await refreshEpisode(episodeId)
+  } catch (err) {
+    const status = err instanceof ApiError ? err.status : 0
+    const message = status === 404 ? '未找到该制品的生成记录，无法重新生成' : '重新生成失败'
+    $q.notify({ color: 'negative', message, icon: 'error', timeout: 2200 })
   }
 }
 
