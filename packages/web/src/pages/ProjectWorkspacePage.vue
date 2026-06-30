@@ -53,6 +53,33 @@
       </template>
     </WorkspaceTopBar>
 
+    <!-- ── AI 产出 kind filter (openimago-oy1l / Step 5c) — small client-side popup ── -->
+    <q-dialog v-model="outputFilterOpen" position="top">
+      <q-card
+        style="min-width: 248px; margin-top: 12vh; background: var(--imago-bg-panel); color: var(--imago-text-primary); border: 1px solid var(--imago-border-dim);"
+      >
+        <q-card-section style="font-size: 13px; font-weight: 600; padding-bottom: 4px;">按类型筛选产出</q-card-section>
+        <q-list>
+          <q-item
+            v-for="opt in OUTPUT_FILTER_OPTIONS"
+            :key="opt.value"
+            v-close-popup
+            clickable
+            :active="outputKindFilter === opt.value"
+            @click="outputKindFilter = opt.value"
+          >
+            <q-item-section avatar>
+              <q-icon :name="opt.icon" size="18px" />
+            </q-item-section>
+            <q-item-section>{{ opt.label }}</q-item-section>
+            <q-item-section v-if="outputKindFilter === opt.value" side>
+              <q-icon name="check" size="18px" />
+            </q-item-section>
+          </q-item>
+        </q-list>
+      </q-card>
+    </q-dialog>
+
     <!-- ════ Project / Story shell (project, or a session whose dir has story) ════ -->
     <template v-if="storyShell">
     <UILayout class="project-workspace-layout relative full-height" view="lhr lpr lfr" container>
@@ -209,10 +236,10 @@
           <ProjectWorkspaceRightPanel
             v-else-if="activeWorkspaceTab === 'outputs'"
             class="project-workspace-page__story-view"
-            :items="aiOutputItems"
+            :items="filteredAiOutputItems"
             :selected-id="selectedOutputId"
             :layout="outputLayout"
-            :show-view-all="aiOutputItems.length > 6"
+            :show-view-all="filteredAiOutputItems.length > 6"
             :project-name="projectName"
             @item-select="onGridOutputSelect"
             @item-menu="onOutputMenu"
@@ -234,10 +261,10 @@
         @update:model-value="rightPanelOpen = $event"
       >
         <ProjectWorkspaceRightPanel
-          :items="aiOutputItems"
+          :items="filteredAiOutputItems"
           :selected-id="selectedOutputId"
           :layout="'grid'"
-          :show-view-all="aiOutputItems.length > 6"
+          :show-view-all="filteredAiOutputItems.length > 6"
           :project-name="projectName"
           @item-select="onGridOutputSelect"
           @item-menu="onOutputMenu"
@@ -570,10 +597,10 @@
         <AIOutputsPanel
           :title="'AI 产出'"
           :subtitle="'当前会话的生成结果'"
-          :items="aiOutputItems"
+          :items="filteredAiOutputItems"
           :selected-id="selectedResultId"
           :layout="'grid'"
-          :show-view-all="aiOutputItems.length > 6"
+          :show-view-all="filteredAiOutputItems.length > 6"
           :view-all-label="'查看全部'"
           :aria-label="'会话 AI 产出面板'"
           @item-select="handleSelectResult"
@@ -1644,12 +1671,39 @@ async function onOutputMenuDelete() {
   if (ok && selectedOutputId.value === item.id) selectedOutputId.value = null
 }
 
+// ── Outputs filter + view-all (openimago-oy1l / Step 5c) ─────────────────────
+//
+// Filter: a small popup that filters the AI 产出 items client-side by media kind
+// (image/video/audio). View-all: switch to the existing full-width `outputs`
+// workspace tab rather than navigating to a new page.
+
+type OutputKindFilter = 'all' | 'image' | 'video' | 'audio'
+
+const OUTPUT_FILTER_OPTIONS: ReadonlyArray<{ value: OutputKindFilter; label: string; icon: string }> = [
+  { value: 'all', label: '全部', icon: 'apps' },
+  { value: 'image', label: '图片', icon: 'image' },
+  { value: 'video', label: '视频', icon: 'movie' },
+  { value: 'audio', label: '音频', icon: 'music_note' },
+]
+
+const outputKindFilter = ref<OutputKindFilter>('all')
+const outputFilterOpen = ref(false)
+
+/** The AI 产出 items after applying the client-side kind filter. */
+const filteredAiOutputItems = computed<AIOutputItem[]>(() =>
+  outputKindFilter.value === 'all'
+    ? aiOutputItems.value
+    : aiOutputItems.value.filter((item) => item.kind === outputKindFilter.value),
+)
+
 function onOutputFilter() {
-  $q.notify({ color: 'info', message: '筛选面板即将上线', icon: 'filter_list', timeout: 1200 })
+  outputFilterOpen.value = true
 }
 
+/** View all → switch to the existing full-width outputs tab (project shell). The
+ *  tab watcher collapses the right drawer while it is active. */
 function onOutputViewAll() {
-  $q.notify({ color: 'info', message: '全部结果视图即将上线', icon: 'list', timeout: 1200 })
+  activeWorkspaceTab.value = 'outputs'
 }
 
 /** Resolve which accordion section an id belongs to (for PreviewPane). */
@@ -2229,12 +2283,14 @@ function handleItemMenu(id: string, _event: MouseEvent) {
   $q.notify({ color: 'info', message: `对 ${id} 打开菜单（待接入）`, icon: 'info', timeout: 1200 })
 }
 
+// Session shell: same filter popup. The session shell has no full-width outputs
+// tab (its drawer already lists every item), so view-all is a no-op there.
 function handleFilterOutputs() {
-  $q.notify({ color: 'info', message: '筛选面板即将上线', icon: 'filter_list', timeout: 1200 })
+  outputFilterOpen.value = true
 }
 
 function handleViewAll() {
-  $q.notify({ color: 'info', message: '全部结果视图即将上线', icon: 'list', timeout: 1200 })
+  $q.notify({ color: 'info', message: '已在右侧面板展示全部产出', icon: 'list', timeout: 1200 })
 }
 
 // ── Lifecycle ───────────────────────────────────────────────────────────────
