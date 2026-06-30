@@ -111,6 +111,20 @@ const base_styles = css`
 			   Gated on [data-grabbed] so the layer (and its GPU memory) exists ONLY for
 			   the duration of the drag, never for all clips at once. */
 			will-change: transform;
+			/* openimago-eomu: even composited, the grabbed .effect drags its full
+			   multi-thousand-px tiled filmstrip bitmap (a >12000px layer can exceed
+			   efficient GPU texture size), so the move is heavier than a plain div. While
+			   grabbed, drop the filmstrip paint so the clip drags as a flat lightweight box
+			   — restored instantly on drop when [data-grabbed] is removed (no relayout: the
+			   filmstrip's inline width/transform are untouched, only its bitmap is hidden,
+			   so it just repaints). The .trim-handles preview already renders
+			   background-image:none; this mirrors that on the moving .effect + its child. */
+			background-image: none !important;
+
+			& .filmstrip {
+				background-image: none !important;
+				background-color: var(--imago-bg-surface, #201f1f);
+			}
 		}
 
 		&[data-selected] {
