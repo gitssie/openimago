@@ -129,12 +129,7 @@ export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: Any
 		effect_drag_listener() {
 			const dispose = effectDragHandler.onEffectDrag((e) => {
 				const isDragged = e.grabbed.effect.id === effect.id
-				// openimago-sdin: the grabbed node's VISUAL transform is now driven DIRECTLY +
-				// SYNCHRONOUSLY in the pointermove handler (component.ts) for zero-latency
-				// tracking. This reactive setCords path arrives 1-2 frames late (rAF + slate
-				// re-render), so it would clobber the direct transform with a stale value —
-				// only run it as a defensive FALLBACK when the direct node ref wasn't cached.
-				if(isDragged && !effectDragHandler.directNodes) {
+				if(isDragged) {
 					const center_of_effect: V2 = [
 						e.position.coordinates[0] - e.grabbed.offset.x,
 						e.position.coordinates[1] - e.grabbed.offset.y
@@ -153,16 +148,6 @@ export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: Any
 				const y = event.clientY - bounds.top
 				const at = {coordinates: [x >= 0 ? x : 0, y >= 0 ? y : 0], indicator: null} satisfies At
 				effectDragHandler.start({effect, offset: {x: event.offsetX, y: event.offsetY}}, at)
-				// openimago-sdin: cache this clip's real DOM nodes so component.ts can drive
-				// their transform directly + synchronously on pointermove (zero latency). Both
-				// .effect and its sibling .trim-handles live in THIS Effect view's shadow root,
-				// reachable from the pointerdown target via getRootNode().
-				const root = (event.target as Node).getRootNode() as ShadowRoot
-				const effectNode = root.querySelector(".effect") as HTMLElement | null
-				const previewNode = root.querySelector(".trim-handles") as HTMLElement | null
-				if(effectNode && previewNode) {
-					effectDragHandler.directNodes = {effect: effectNode, preview: previewNode}
-				}
 			}
 		},
 		drop(e: PointerEvent) {

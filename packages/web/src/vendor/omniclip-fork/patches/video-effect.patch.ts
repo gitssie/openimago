@@ -32,7 +32,7 @@ import { shadow_view } from 'omniclip/x/context/context.js'
 // Single-div repeat-x filmstrip (openimago-6aew) needs only the width formula + tile
 // size; the per-tile loop (spriteBackgroundSizeX / filmstripTileCount) and the lit
 // `guard` memoization (openimago-tatc) are gone — one node has nothing to memoize.
-import { effectWidthPx, FILMSTRIP_TILE_W, filmstripVisibleSlice } from './filmstrip-sprite-css'
+import { effectWidthPx, FILMSTRIP_TILE_W } from './filmstrip-sprite-css'
 import { ensureFrame0 } from './filmstrip-frame0'
 import { perfWrap } from './perf-diag' // TEMP perf diagnostic (openimago-v2mm)
 
@@ -95,33 +95,6 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
   // and set count+1.)
   const [frame0Tick, setFrame0Tick] = use.state(0)
 
-  // openimago-fg8y: filmstrip virtualization needs the visible viewport, so track the
-  // timeline scroll container's scrollLeft + clientWidth reactively (mirrors effect.ts's
-  // own scroll listener). rAF-coalesced so a burst of scroll/resize events is at most one
-  // re-render per frame. Local use.state → re-renders ONLY this clip (not the narrowed
-  // use.watch above, which still excludes scroll from the state key).
-  const [scrollLeft, setScrollLeft] = use.state(0)
-  const [viewportW, setViewportW] = use.state(0)
-  use.mount(() => {
-    let raf: number | null = null
-    const sync = () => {
-      if (raf !== null) return
-      raf = requestAnimationFrame(() => {
-        raf = null
-        setScrollLeft(timeline.scrollLeft)
-        setViewportW(timeline.clientWidth)
-      })
-    }
-    sync() // initial measure
-    timeline.addEventListener('scroll', sync)
-    window.addEventListener('resize', sync)
-    return () => {
-      timeline.removeEventListener('scroll', sync)
-      window.removeEventListener('resize', sync)
-      if (raf !== null) cancelAnimationFrame(raf)
-    }
-  })
-
   // Compose the clip into the WebCodecs preview compositor when its media lands.
   // (Same trigger as upstream; the filmstrip recalc that used to follow is gone.)
   use.mount(() => {
@@ -181,18 +154,6 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
       return html`<div class="filmstrip"></div>`
     }
 
-    // openimago-fg8y: VIRTUALIZE — paint only the clip's intersection with the visible
-    // viewport, not its full (up to ~16954px) width. clip left = start_at_position * 2^zoom
-    // (= upstream calculate_start_position); the half-viewport overscan keeps the strip from
-    // showing a blank edge while the coalesced scroll re-render catches up. A fully-offscreen
-    // clip — and the offscreen part of the 64s/8100px clip — paints no bitmap; the on-screen
-    // tiling is unchanged because every tile is the SAME first frame (phase-invariant).
-    const clipLeftPx = live.start_at_position * Math.pow(2, use.context.state.zoom)
-    const slice = filmstripVisibleSlice(clipLeftPx, widthPx, scrollLeft, viewportW, viewportW * 0.5)
-    if (!slice.visible) {
-      return html`<div class="filmstrip"></div>`
-    }
-
     // SINGLE-DIV filmstrip (openimago-6aew). perf-diag proved JS render is NOT the
     // bottleneck (all labels <0.2ms/s, filmstrip-rebuild=0 — the tatc guard held); the
     // jank is browser PAINT/COMPOSITE of ~290 background-image <div>s × 7+ clips ≈ 2000
@@ -233,16 +194,12 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
     // trimmed segment) entirely out of the visible lane → blank. Apply the exact inverse
     // here so the window-width strip lands back inside the lane for ANY inPoint. Uses
     // `live` (post-split start) and reads state.zoom directly (no subscribe).
-    // openimago-fg8y: shift the (now viewport-sized) strip right by the slice's clip-local
-    // offset so the painted slice lands over the visible region; contentShiftPx still cancels
-    // the parent .content's -inPoint*2^zoom shift (openimago-fsyz). repeat-x of one identical
-    // first frame is translation-invariant, so the visible tiling is unchanged.
     const contentShiftPx = live.start * Math.pow(2, use.context.state.zoom)
     return html`<div
       class="filmstrip"
       style="
-        width: ${slice.widthPx}px;
-        transform: translateX(${contentShiftPx + slice.offsetPx}px);
+        width: ${widthPx}px;
+        transform: translateX(${contentShiftPx}px);
         background-image: url('${bgImage}');
         background-repeat: repeat-x;
         background-size: ${bgSize};

@@ -18,13 +18,6 @@ export class EffectDragHandler {
 	onEffectDrag = pub<EffectDrag>()
 	onDrop = pub<EffectDrop>()
 
-	// openimago-sdin: the grabbed clip's real DOM nodes (.effect + its sibling .trim-handles
-	// preview), cached at drag start by effect.ts. While grabbed, component.ts writes their
-	// transform DIRECTLY + SYNCHRONOUSLY on each pointermove (zero-latency tracking),
-	// bypassing the rAF coalescing + reactive setCords round-trip. Cleared on drop so the
-	// reactive render owns final placement.
-	directNodes: {effect: HTMLElement; preview: HTMLElement} | null = null
-
 	move(position: At) {
 		if (this.#isGrabbed && this.grabbed) {
 			this.onEffectDrag.publish({ position, grabbed: this.grabbed })
@@ -60,13 +53,6 @@ export class EffectDragHandler {
 	}
 
 	#resetState() {
-		// openimago-sdin: drop the cached node refs. We do NOT manually clear their inline
-		// transform here — the grabbed Effect view re-renders on drop (setCords([null,null])
-		// + the committed start_at_position), and lit's style-attribute write atomically
-		// REPLACES the inline transform with the final placement, so there is no
-		// double-offset jump or flash. (Clearing it here would briefly revert to the OLD
-		// resting position before that re-render applies.)
-		this.directNodes = null
 		this.grabbed = null
 		this.#isGrabbed = false
 		this.at = null
