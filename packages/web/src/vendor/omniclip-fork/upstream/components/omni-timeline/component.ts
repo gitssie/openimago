@@ -27,15 +27,25 @@ export const OmniTimeline = shadow_component(use => {
 	// SET/geometry of effects, the track count, or zoom changes (these drive the child list
 	// and the timeline width); `timecode`/selection/scroll are handled by the Playhead and
 	// the per-clip Effect views' own subscriptions, so they no longer rebuild the whole
-	// timeline. Keying on each effect's [id,start,end,start_at_position,track] still fires a
-	// re-render on add/remove/split/reorder/move.
+	// timeline.
+	//
+	// openimago-uwcc: DROP start_at_position from the per-effect key — a pure reorder must NOT
+	// re-render the whole timeline (the redundant ~30/2-pass effect-inner-render at drop):
+	//   (a) the moved/pushed clips already reposition via their OWN inner-Effect watch (which
+	//       KEEPS start_at_position) — the parent rebuild is redundant;
+	//   (b) calculate_timeline_width = furthest start_at_position+duration = TOTAL duration,
+	//       invariant under a no-gap ripple reorder, so the width doesn't change;
+	//   (c) the repeat() is keyed by id and apply_reorder changes position VALUES not array
+	//       order, so the keyed DOM order is unchanged.
+	// trim (start/end → width), add/remove (effects.length → list+width), track and zoom STILL
+	// re-render the timeline; only a pure position reorder no longer does.
 	use.watch(() => {
 		const s = use.context.state
 		return [
 			s.zoom,
 			s.tracks.length,
 			s.effects.length,
-			s.effects.map(e => `${e.id}:${e.start}:${e.end}:${e.start_at_position}:${e.track}`).join("|"),
+			s.effects.map(e => `${e.id}:${e.start}:${e.end}:${e.track}`).join("|"),
 		]
 	})
 	perfCount("omni-timeline-render") // openimago-oyv0 (perf-diag; DEV-only). REMOVE after verification.
