@@ -35,7 +35,16 @@ export class Compositor {
 	timebase = 25
 	currently_played_effects = new Map<string, AnyEffect>()
 
-	app = new PIXI.Application({width: 1920, height: 1080, backgroundColor: "black", preference: "webgl"})
+	// openimago-pfho: autoStart:false stops PIXI v7's shared-ticker continuous render of
+	// the full 1920x1080 WebGL stage (display-refresh-paced — the user measured 101/sec at
+	// idle). Rendering is now ON-DEMAND via #render(): playback renders each frame through
+	// the #on_playing rAF loop → compose_effects; every other canvas-visible change either
+	// calls #render() explicitly (drag/seek/selection/resize/init/clear) or is caught by
+	// the state-dispatch → request_render() coalesced render (covers all the text/style/
+	// transition property editors that mutate a sprite without rendering). With the ticker
+	// stopped, pixi-ticker-render now fires 0/sec at idle.
+	app = new PIXI.Application({width: 1920, height: 1080, backgroundColor: "black", preference: "webgl", autoStart: false})
+	#render_scheduled = false
 	#seekedResolve: ((value: unknown) => void) | null = null
 	#recreated = false
 	
@@ -96,6 +105,8 @@ export class Compositor {
 				}
 			}
 		)
+
+		this.#render() // openimago-pfho: initial paint — the stopped ticker no longer draws the first frame.
 	}
 
 	#on_playing = () => {
@@ -119,6 +130,7 @@ export class Compositor {
 			sprite.pivot.set(position.x, position.y)
 			sprite.position.set(e.global.x, e.global.y)
 			this.app.stage.on('pointermove', (e) => this.canvasElementDrag.onDragMove(e))
+			this.#render() // openimago-pfho: paint the transformer removal + sprite re-pivot.
 		},
 		onDragEnd: () => {
 			if (this.selectedElement) {
@@ -131,7 +143,12 @@ export class Compositor {
 				this.selectedElement?.sprite.parent.toLocal(event.global, undefined, this.selectedElement.sprite.position)
 				if(this.guidelines) {
 					this.guidelines.on_object_move_or_scale(event)
+					// openimago-pfho (BLOCKER A): AlignGuidelines.watchRender() redraws the
+					// alignment lines off app.ticker, which is stopped under autoStart:false —
+					// so draw them on demand here, then render the moved sprite + lines.
+					this.guidelines.redrawLines()
 				}
+				this.#render()
 			}
 		}
 	}
@@ -148,6 +165,7 @@ export class Compositor {
 		})
 		this.currently_played_effects.clear()
 		this.app.renderer.clear()
+		this.#render() // openimago-pfho: paint the cleared stage.
 	}
 
 	clear(omit?: boolean) {
@@ -159,6 +177,7 @@ export class Compositor {
 		this.managers.animationManager.clearAnimations(omit)
 		this.managers.transitionManager.clearTransitions(omit)
 		this.actions.set_selected_effect(null)
+		this.#render() // openimago-pfho: paint the cleared stage + fresh guidelines.
 	}
 	
 	#calculate_elapsed_time() {
@@ -168,12 +187,33 @@ export class Compositor {
 		return elapsed_time
 	}
 
+	// openimago-pfho: the single on-demand render entry (autoStart:false). perfWrap so
+	// every paint is visible in [perf-diag]; at idle this fires 0/sec. REMOVE the perfWrap
+	// after diagnosis — keep the render.
+	#render() {
+		perfWrap("app.render", () => this.app.render())
+	}
+
+	// openimago-pfho: coalesced render for state-driven canvas mutations. Any #core.state
+	// dispatch (text/style/transition/filter property editors, clip add/move/trim/delete,
+	// BGM) schedules ONE render on the NEXT frame — which runs AFTER the synchronous sprite
+	// mutation, so the new value is painted. Skipped during playback (the #on_playing loop
+	// already renders every frame) and never scheduled at idle (no dispatch → no render).
+	request_render = () => {
+		if(this.#render_scheduled || this.#is_playing.value) {return}
+		this.#render_scheduled = true
+		requestAnimationFrame(() => {
+			this.#render_scheduled = false
+			if(!this.#is_playing.value) {this.#render()}
+		})
+	}
+
 	compose_effects(effects: AnyEffect[], timecode: number, exporting?: boolean) {
 		if(!this.#recreated) {return}
 		perfCount("compose_effects") // openimago-7ca2 (perf-diag; DEV-only). REMOVE after diagnosis.
 		this.timecode = timecode
 		this.#update_currently_played_effects(effects, timecode, exporting)
-		perfWrap("app.render", () => this.app.render()) // openimago-7ca2
+		this.#render()
 	}
 
 	get_effect_current_time_relative_to_timecode(effect: AnyEffect, timecode: number) {
@@ -240,6 +280,9 @@ export class Compositor {
 				}
 			}
 		}
+		// openimago-pfho: paint the seeked frame (the stopped ticker no longer does).
+		// Skipped during playback — #on_playing renders each frame via compose_effects.
+		if(!this.#is_playing.value) {this.#render()}
 	}
 
 	#onSeeked(element: HTMLVideoElement | HTMLAudioElement) {
@@ -420,7 +463,7 @@ export class Compositor {
 					object.scale.x = effect.rect.scaleX
 					object.scale.y = effect.rect.scaleY
 					object.pivot.set(effect.rect.pivot.x, effect.rect.pivot.y)
-					perfWrap("app.render", () => this.app.render()) // openimago-7ca2
+					this.#render()
 				}
 			}
 		})
@@ -431,6 +474,7 @@ export class Compositor {
 		this.#guidelineRect.width = width
 		this.#guidelineRect.height = height
 		this.managers.transitionManager.refreshTransitions()
+		this.#render() // openimago-pfho: repaint after the resize (ticker is stopped).
 	}
 
 	set_timebase(value: number) {
@@ -455,9 +499,10 @@ export class Compositor {
 			if(this.selectedElement) {
 				this.app.stage.removeChild(this.selectedElement?.transformer)
 			}
+			this.#render() // openimago-pfho: paint the transformer removal (deselect).
 			return
 		}
-		
+
 		const effect = state.effects.find(e => e.id === selectedEffect.id) ?? selectedEffect // getting again to ensure newest props
 		const isEffectOnCanvas = get_effect_at_timestamp(effect, state.timecode)
 
@@ -466,6 +511,7 @@ export class Compositor {
 				this.app.stage.addChild(this.selectedElement?.transformer)
 			}
 		}
+		this.#render() // openimago-pfho: paint the selection transformer add/remove.
 	}
 
 	set_video_playing = (playing: boolean) => {

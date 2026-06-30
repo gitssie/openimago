@@ -390,6 +390,20 @@ private snap({
 		})
 	}
 
+	// openimago-pfho (BLOCKER A): on-demand version of the watchRender() loop above. Under
+	// PIXI autoStart:false the shared ticker is stopped, so watchRender's ticker callback
+	// never fires — the compositor calls this directly after on_object_move_or_scale (which
+	// recomputes + clears the line arrays/graphics) and then renders, so canvas-element-drag
+	// alignment lines still draw.
+	redrawLines() {
+		for (let i = this.verticalLines.length; i--; ) {
+			this.drawVerticalLine(this.verticalLines[i])
+		}
+		for (let i = this.horizontalLines.length; i--; ) {
+			this.drawHorizontalLine(this.horizontalLines[i])
+		}
+	}
+
 	init() {
 		this.watchObjectMoving();
 		this.watchRender();

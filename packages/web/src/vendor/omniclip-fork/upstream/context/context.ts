@@ -37,6 +37,13 @@ export class OmniContext extends Context {
 			perfCount("state-dispatch") // openimago-7ca2 (perf-diag; DEV-only). Fires once per historical-state dispatch — should NOT tick per frame during a drag. REMOVE after diagnosis.
 			this.#save_to_storage(state)
 			this.#updateAnimationTimeline(state)
+			// openimago-pfho (BLOCKER B): with PIXI autoStart:false the shared ticker no
+			// longer paints state-driven canvas mutations (text/style/transition/filter
+			// property editors, clip add/move/trim/delete, BGM). Schedule ONE coalesced
+			// render on the next frame — it runs AFTER the synchronous sprite mutation, so
+			// the new value is painted. No-op at idle (no dispatch) and during playback
+			// (#on_playing renders every frame), so it does NOT reintroduce the idle render.
+			this.controllers.compositor.request_render()
 		})
 		watch.track(() => this.#core.state.effects, async () => {
 			queue = queue.then(async () => {
