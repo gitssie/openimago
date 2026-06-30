@@ -63,6 +63,55 @@ export const OmniTimeline = shadow_component(use => {
 	let __perfProcessed = 0
 	let __perfWindowStart = 0
 
+	// ── openimago-7ca2: DRAG-SCOPED FRAME MONITOR (opt-in: window.__cutPerf) ──────────
+	// The perf-diag JS-render counters came back ~0ms yet the user still feels heavy
+	// jank, so the cost is in browser PAINT/COMPOSITE (PIXI 1920x1080 WebGL canvas, or
+	// GPU paint of a multi-thousand-px tiled filmstrip), which JS timers don't capture.
+	// While a clip/trim is grabbed a rAF loop records the inter-frame delta; on drop we
+	// log frame count, max, mean, and #frames over 16/32/50ms — proving whether the main
+	// thread is blowing the frame budget and how badly. REMOVE after the hot path is
+	// localized. (Implemented inline rather than in perf-diag because this is a one-shot
+	// per-drag summary, not perf-diag's once-per-second bucket flush.)
+	let frame_raf: number | null = null
+	let frame_last = 0
+	let frame_count = 0
+	let frame_max = 0
+	let frame_sum = 0
+	let frame_over16 = 0
+	let frame_over32 = 0
+	let frame_over50 = 0
+
+	const frame_tick = (now: number) => {
+		if(frame_last > 0) {
+			const dt = now - frame_last
+			frame_count++
+			frame_sum += dt
+			if(dt > frame_max) {frame_max = dt}
+			if(dt > 16.7) {frame_over16++}
+			if(dt > 32) {frame_over32++}
+			if(dt > 50) {frame_over50++}
+		}
+		frame_last = now
+		frame_raf = requestAnimationFrame(frame_tick)
+	}
+
+	const start_frame_monitor = () => {
+		if(!__cutPerf() || frame_raf !== null) {return}
+		frame_last = 0; frame_count = 0; frame_max = 0; frame_sum = 0
+		frame_over16 = 0; frame_over32 = 0; frame_over50 = 0
+		frame_raf = requestAnimationFrame(frame_tick)
+	}
+
+	const stop_frame_monitor = () => {
+		if(frame_raf === null) {return}
+		cancelAnimationFrame(frame_raf)
+		frame_raf = null
+		if(__cutPerf() && frame_count > 0) {
+			const mean = frame_sum / frame_count
+			console.log(`[cutPerf] DRAG FRAMES: count=${frame_count} max=${frame_max.toFixed(1)}ms mean=${mean.toFixed(1)}ms over16=${frame_over16} over32=${frame_over32} over50=${frame_over50}`)
+		}
+	}
+
 	let cached_bounds: DOMRect | null = null
 	let pending_event: PointerEvent | null = null
 	let raf_id: number | null = null
@@ -128,11 +177,14 @@ export const OmniTimeline = shadow_component(use => {
 		}
 		// Only do layout work while an interaction is active.
 		if(!effectTrim.grabbed && !effectDrag.grabbed && !playheadDrag.grabbed) {return}
+		// openimago-7ca2: start the drag-scoped frame monitor for clip/trim drags only.
+		if(effectDrag.grabbed || effectTrim.grabbed) {start_frame_monitor()}
 		pending_event = event
 		if(raf_id === null) {raf_id = requestAnimationFrame(process_pending_dragover)}
 	}
 
 	const end_drag_interaction = () => {
+		stop_frame_monitor() // openimago-7ca2: log the per-drag frame summary on drop.
 		if(raf_id !== null) {
 			cancelAnimationFrame(raf_id)
 			raf_id = null
@@ -157,6 +209,7 @@ export const OmniTimeline = shadow_component(use => {
 			removeEventListener("resize", invalidate_bounds)
 			removeEventListener("scroll", invalidate_bounds, true)
 			if(raf_id !== null) {cancelAnimationFrame(raf_id)}
+			stop_frame_monitor() // openimago-7ca2
 		}
 	})
 

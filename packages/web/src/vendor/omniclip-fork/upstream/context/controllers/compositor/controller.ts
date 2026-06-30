@@ -14,6 +14,7 @@ import {compare_arrays} from "../../../utils/compare_arrays.js"
 import {TransitionManager} from "./parts/transition-manager.js"
 import {get_effect_at_timestamp} from "../video-export/utils/get_effect_at_timestamp.js"
 import {AnyEffect, AudioEffect, ImageEffect, State, TextEffect, VideoEffect} from "../../types.js"
+import {perfWrap, perfCount} from "../../../../patches/perf-diag" // openimago-7ca2 (DEV-only). REMOVE after diagnosis.
 
 export interface Managers {
 	videoManager: VideoManager
@@ -156,9 +157,10 @@ export class Compositor {
 
 	compose_effects(effects: AnyEffect[], timecode: number, exporting?: boolean) {
 		if(!this.#recreated) {return}
+		perfCount("compose_effects") // openimago-7ca2 (perf-diag; DEV-only). REMOVE after diagnosis.
 		this.timecode = timecode
 		this.#update_currently_played_effects(effects, timecode, exporting)
-		this.app.render()
+		perfWrap("app.render", () => this.app.render()) // openimago-7ca2
 	}
 
 	get_effect_current_time_relative_to_timecode(effect: AnyEffect, timecode: number) {
@@ -201,6 +203,7 @@ export class Compositor {
 	}
 
 	async seek(timecode: number, redraw?: boolean) {
+		perfCount("seek") // openimago-7ca2 (perf-diag; DEV-only). REMOVE after diagnosis.
 		this.managers.animationManager.seek(timecode)
 		this.managers.transitionManager.seek(timecode)
 		for(const effect of this.currently_played_effects.values()) {
@@ -353,6 +356,7 @@ export class Compositor {
 	}
 
 	async recreate(state: State, media: Media) {
+		perfCount("recreate") // openimago-7ca2 (perf-diag; DEV-only). REMOVE after diagnosis.
 		await media.are_files_ready()
 		for(const effect of state.effects) {
 			if(effect.kind === "image") {
@@ -390,6 +394,7 @@ export class Compositor {
 	}
 
 	update_canvas_objects(state: State) {
+		perfCount("update_canvas_objects") // openimago-7ca2 (perf-diag; DEV-only). REMOVE after diagnosis.
 		this.app.stage.children.forEach(object => {
 			if(!(object instanceof PIXI.Rectangle)) {
 				//@ts-ignore
@@ -402,7 +407,7 @@ export class Compositor {
 					object.scale.x = effect.rect.scaleX
 					object.scale.y = effect.rect.scaleY
 					object.pivot.set(effect.rect.pivot.x, effect.rect.pivot.y)
-					this.app.render()
+					perfWrap("app.render", () => this.app.render()) // openimago-7ca2
 				}
 			}
 		})
