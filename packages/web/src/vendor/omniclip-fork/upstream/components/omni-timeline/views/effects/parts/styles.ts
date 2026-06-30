@@ -95,6 +95,14 @@ const base_styles = css`
 		   overflow:hidden + position:absolute (its own containing block), and the
 		   .trim-handles live in a SIBLING node so they are never clipped by this. */
 		contain: layout paint;
+		/* openimago-yhl8: promote EVERY clip (not just the grabbed one — 6807) to its own GPU
+		   compositor layer, so the RIPPLE re-align after a drop COMPOSITES the transform move
+		   instead of REPAINTING the clip's (up to 8096px) tiled filmstrip bitmap — the residual
+		   "重新对齐卡". contain:paint above already isolates each clip's paint, so this only adds
+		   the layer; the filmstrip child rides THIS layer (no separate will-change needed — that
+		   would add a nested layer per wide clip and waste GPU memory). Permanent on the ≤15
+		   thin (50px-tall) clips: the widest (s07, 8096px) stays under the 16384px max texture. */
+		will-change: transform;
 
 		& .not-found {
 			background: repeating-linear-gradient(45deg, #5D5D5D, #5D5D5D 10px, #858585 10px, #858585 20px);
