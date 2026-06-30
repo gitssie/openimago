@@ -169,6 +169,10 @@ export const OmniTimeline = shadow_component(use => {
 	let pending_event: PointerEvent | null = null
 	let raf_id: number | null = null
 
+	// openimago-u7kw: NLE edge auto-scroll state.
+	let autoscroll_raf: number | null = null
+	let autoscroll_pointer: PointerEvent | null = null
+
 	const invalidate_bounds = () => {cached_bounds = null}
 
 	const get_timeline_bounds = (): DOMRect | null => {
@@ -198,6 +202,74 @@ export const OmniTimeline = shadow_component(use => {
 			// indicator:null. The committed drop in effect-drag.ts forces the same.
 			effectDrag.move({coordinates: [x >= 0 ? x : 0, y >= 0 ? y : 0], indicator: null})
 		}
+	}
+
+	// ── openimago-u7kw: NLE edge auto-scroll ──────────────────────────────────────────
+	// While a clip/trim is grabbed and the pointer is within EDGE_PX of the host viewport
+	// edge, scroll the timeline that way (speed ramps with proximity). This runs its OWN rAF
+	// loop so it keeps scrolling even when the pointer is held STILL at the edge. Each scroll
+	// step reprocesses the LAST pointer (y8qw direct transform on the grabbed nodes +
+	// republished effectDrag.move / trim) so the grabbed clip + proposal indicator track the
+	// newly-revealed position. The host (use.element, styles.ts :host{overflow:scroll}) is the
+	// scroll viewport; setting scrollLeft synchronously moves the content, so we invalidate the
+	// cached .timeline-relative bounds and re-measure for the position recompute.
+	const AUTOSCROLL_EDGE_PX = 48
+	const AUTOSCROLL_MAX_SPEED = 25
+
+	const autoscroll_tick = () => {
+		autoscroll_raf = null
+		const ev = autoscroll_pointer
+		if(!ev || (!effectDrag.grabbed && !effectTrim.grabbed)) {return}
+		const host = use.element as HTMLElement
+		const rect = host.getBoundingClientRect()
+		const maxScroll = host.scrollWidth - host.clientWidth
+		let dir = 0
+		let dist = 0
+		if(ev.clientX < rect.left + AUTOSCROLL_EDGE_PX) {
+			dir = -1; dist = (rect.left + AUTOSCROLL_EDGE_PX) - ev.clientX
+		} else if(ev.clientX > rect.right - AUTOSCROLL_EDGE_PX) {
+			dir = 1; dist = ev.clientX - (rect.right - AUTOSCROLL_EDGE_PX)
+		}
+		if(dir !== 0) {
+			const proximity = Math.min(1, dist / AUTOSCROLL_EDGE_PX) // 0..1 ramp toward the edge
+			const speed = Math.max(1, Math.round(proximity * AUTOSCROLL_MAX_SPEED))
+			const before = host.scrollLeft
+			const next = Math.max(0, Math.min(maxScroll, before + dir * speed))
+			if(next !== before) {
+				host.scrollLeft = next
+				// scrollLeft moves the content synchronously; the host 'scroll' event +
+				// invalidate_bounds fire async, so re-measure NOW for a correct position calc.
+				invalidate_bounds()
+				const bounds = get_timeline_bounds()
+				if(bounds) {
+					// keep the grabbed clip tracking the cursor in CONTENT coords (y8qw direct write)
+					const dn = effectDrag.directNodes
+					if(dn && effectDrag.grabbed) {
+						const coordX = Math.max(0, ev.clientX - bounds.left)
+						const coordY = Math.max(0, ev.clientY - bounds.top)
+						const t = `translate(${coordX - effectDrag.grabbed.offset.x}px, ${coordY - effectDrag.grabbed.offset.y}px)`
+						dn.effect.style.transform = t
+						dn.preview.style.transform = t
+					}
+					// republish so the proposal indicator (and trim) follow the new scroll position
+					if(effectTrim.grabbed) {
+						effectTrim.effect_dragover(ev.clientX, use.context.state)
+					} else {
+						effect_drag_over(ev)
+					}
+				}
+			}
+		}
+		autoscroll_raf = requestAnimationFrame(autoscroll_tick)
+	}
+
+	const start_autoscroll = () => {
+		if(autoscroll_raf === null) {autoscroll_raf = requestAnimationFrame(autoscroll_tick)}
+	}
+
+	const stop_autoscroll = () => {
+		if(autoscroll_raf !== null) {cancelAnimationFrame(autoscroll_raf); autoscroll_raf = null}
+		autoscroll_pointer = null
 	}
 
 	const process_pending_dragover = () => {
@@ -252,6 +324,13 @@ export const OmniTimeline = shadow_component(use => {
 		}
 		// openimago-7ca2: start the drag-scoped frame monitor for clip/trim drags only.
 		if(effectDrag.grabbed || effectTrim.grabbed) {start_frame_monitor()}
+		// openimago-u7kw: track the latest pointer + run the edge auto-scroll loop during a
+		// clip/trim drag (not playhead). The loop reads autoscroll_pointer every frame, so it
+		// keeps scrolling even if the pointer is then held still at the edge.
+		if(effectDrag.grabbed || effectTrim.grabbed) {
+			autoscroll_pointer = event
+			start_autoscroll()
+		}
 		pending_event = event
 		if(raf_id === null) {raf_id = requestAnimationFrame(process_pending_dragover)}
 	}
@@ -263,6 +342,7 @@ export const OmniTimeline = shadow_component(use => {
 		const was_dragging = frame_raf !== null
 		stop_frame_monitor() // openimago-7ca2: log the per-drag frame summary on drop.
 		if(was_dragging) {start_commit_monitor()} // openimago-fgec: measure the commit window.
+		stop_autoscroll() // openimago-u7kw: stop edge auto-scroll on pointerup/cancel.
 		if(raf_id !== null) {
 			cancelAnimationFrame(raf_id)
 			raf_id = null
@@ -289,6 +369,7 @@ export const OmniTimeline = shadow_component(use => {
 			if(raf_id !== null) {cancelAnimationFrame(raf_id)}
 			stop_frame_monitor() // openimago-7ca2
 			if(commit_raf !== null) {cancelAnimationFrame(commit_raf); commit_raf = null} // openimago-fgec
+			stop_autoscroll() // openimago-u7kw
 		}
 	})
 
