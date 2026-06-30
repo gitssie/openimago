@@ -671,6 +671,43 @@ export const api = {
       .then(() => null)
       .catch(() => null),
 
+  // ── Story Data, session-reachable (ADR 0009, openimago-zaet) ─────────────────
+  //
+  // Mirrors the projectStory* reads above but resolves the directory from a
+  // SESSION key instead of a project. The backend mounts the SAME handlers at
+  // `/api/platform/sessions/:id/story/*` (story is directory-scoped, not
+  // project-scoped). Used by the unified Workspace page when it only has a
+  // sessionId (standalone session whose directory was scaffolded with story
+  // files). Same null-on-missing semantics as the project reads.
+  sessionStoryManifest: (sessionId: string) =>
+    request<{ manifest: OpenimagoStoryManifest }>(`/api/platform/sessions/${sessionId}/story/manifest`)
+      .then((r) => r.manifest)
+      .catch(() => null),
+  sessionStoryBible: (sessionId: string) =>
+    request<{ bible: OpenimagoStoryBible }>(`/api/platform/sessions/${sessionId}/story/bible`)
+      .then((r) => r.bible)
+      .catch(() => null),
+  sessionStorySeries: (sessionId: string) =>
+    request<{ series: OpenimagoStorySeries }>(`/api/platform/sessions/${sessionId}/story/series`)
+      .then((r) => r.series)
+      .catch(() => null),
+  sessionStoryEpisode: (sessionId: string, episodeId: string) =>
+    request<{ episode: OpenimagoStoryEpisode }>(`/api/platform/sessions/${sessionId}/story/episodes/${episodeId}`)
+      .then((r) => r.episode)
+      .catch(() => null),
+  sessionStoryWorkflow: (sessionId: string, episodeId: string) =>
+    request<{ workflow: OpenimagoStoryWorkflow }>(`/api/platform/sessions/${sessionId}/story/episodes/${episodeId}/workflow`)
+      .then((r) => r.workflow)
+      .catch(() => null),
+  sessionStoryRuns: (sessionId: string, episodeId: string) =>
+    request<{ runs: OpenimagoStoryRuns }>(`/api/platform/sessions/${sessionId}/story/episodes/${episodeId}/runs`)
+      .then((r) => r.runs)
+      .catch(() => null),
+  sessionStoryCut: (sessionId: string, episodeId: string) =>
+    request<{ cut: OpenimagoEpisodeCut }>(`/api/platform/sessions/${sessionId}/story/episodes/${episodeId}/cut`)
+      .then((r) => r.cut)
+      .catch(() => null),
+
   // ── Episode Cut (ADR 0006 — edit layer) ──────────────────────────────────────
   //
   // Reads/writes story/cuts/ep_NNN.cut.json. The reader lazily returns an empty
