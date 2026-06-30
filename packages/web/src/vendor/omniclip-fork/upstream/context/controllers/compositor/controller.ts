@@ -14,15 +14,6 @@ import {compare_arrays} from "../../../utils/compare_arrays.js"
 import {TransitionManager} from "./parts/transition-manager.js"
 import {get_effect_at_timestamp} from "../video-export/utils/get_effect_at_timestamp.js"
 import {AnyEffect, AudioEffect, ImageEffect, State, TextEffect, VideoEffect} from "../../types.js"
-import {perfWrap, perfCount} from "../../../../patches/perf-diag" // openimago-7ca2 (DEV-only). REMOVE after diagnosis.
-
-// openimago-6hmb DIAGNOSTIC (DEV-only, reversible): window.__noPreview = true hides the PIXI
-// 1920x1080 WebGL canvas (display:none) so it is not composited while dragging — bisects
-// whether the WebGL preview is the drag cost. Synced live each frame in #on_playing; no
-// behaviour change when unset. REMOVE once the culprit is identified.
-const __DEV_6hmb =
-	typeof import.meta !== 'undefined' &&
-	(import.meta as unknown as {env?: {DEV?: boolean}}).env?.DEV === true
 
 export interface Managers {
 	videoManager: VideoManager
@@ -50,7 +41,7 @@ export class Compositor {
 	// calls #render() explicitly (drag/seek/selection/resize/init/clear) or is caught by
 	// the state-dispatch → request_render() coalesced render (covers all the text/style/
 	// transition property editors that mutate a sprite without rendering). With the ticker
-	// stopped, pixi-ticker-render now fires 0/sec at idle.
+	// stopped, the 1080p WebGL stage is no longer re-rendered ~60/sec at idle.
 	app = new PIXI.Application({width: 1920, height: 1080, backgroundColor: "black", preference: "webgl", autoStart: false})
 	#render_scheduled = false
 	#seekedResolve: ((value: unknown) => void) | null = null
@@ -85,18 +76,6 @@ export class Compositor {
 
 		this.#on_playing()
 
-		// openimago-pfho PROOF (perf-diag; DEV-only). PIXI v7's Application defaults to
-		// autoStart:true, whose TickerPlugin registers app.render on the SHARED ticker →
-		// the full 1920x1080 WebGL stage is re-rendered ~60x/sec CONTINUOUSLY, even idle/
-		// paused and when nothing changed. That internal ticker render is invisible to our
-		// perfWrap (which only wraps the two EXPLICIT app.render() calls) — which is why
-		// every perf-diag/__cutPerf number reads ~0ms while dragging still drops frames.
-		// This counter fires once per ticker frame: at IDLE (no interaction) it should
-		// show ~60 calls/sec in the [perf-diag] summary, proving the continuous 1080p
-		// render. If it is NOT ~60/sec the hypothesis is wrong — re-measure. REMOVE after
-		// confirmation; the render-on-demand fix (autoStart:false) is the follow-up.
-		this.app.ticker.add(() => perfCount("pixi-ticker-render"))
-
 		reactor.reaction(
 			() => this.#is_playing.value,
 			(is_playing) => {
@@ -126,17 +105,6 @@ export class Compositor {
 			this.actions.increase_timecode(elapsed_time, {omit: true})
 			this.on_playing.publish(0)
 			this.compose_effects([...this.currently_played_effects.values()], this.timecode)
-		}
-		// openimago-6hmb DIAGNOSTIC: live-sync the preview-canvas visibility to window.__noPreview
-		// (this rAF loop runs continuously). display:none removes the 1080p WebGL surface from
-		// compositing without a reload; restored when the flag is unset. DEV-only; only writes
-		// style on an actual change.
-		if(__DEV_6hmb) {
-			const canvas = this.app.view as unknown as HTMLCanvasElement
-			if(canvas && canvas.style) {
-				const target = (window as unknown as {__noPreview?: boolean}).__noPreview === true ? "none" : ""
-				if(canvas.style.display !== target) {canvas.style.display = target}
-			}
 		}
 		requestAnimationFrame(this.#on_playing)
 	}
@@ -206,11 +174,9 @@ export class Compositor {
 		return elapsed_time
 	}
 
-	// openimago-pfho: the single on-demand render entry (autoStart:false). perfWrap so
-	// every paint is visible in [perf-diag]; at idle this fires 0/sec. REMOVE the perfWrap
-	// after diagnosis — keep the render.
+	// openimago-pfho: the single on-demand render entry (autoStart:false).
 	#render() {
-		perfWrap("app.render", () => this.app.render())
+		this.app.render()
 	}
 
 	// openimago-pfho: coalesced render for state-driven canvas mutations. Any #core.state
@@ -229,7 +195,6 @@ export class Compositor {
 
 	compose_effects(effects: AnyEffect[], timecode: number, exporting?: boolean) {
 		if(!this.#recreated) {return}
-		perfCount("compose_effects") // openimago-7ca2 (perf-diag; DEV-only). REMOVE after diagnosis.
 		this.timecode = timecode
 		this.#update_currently_played_effects(effects, timecode, exporting)
 		this.#render()
@@ -249,15 +214,8 @@ export class Compositor {
 	}
 
 	#update_currently_played_effects(effects: AnyEffect[], timecode: number, exporting?: boolean) {
-		// openimago-fgec (perf-diag; DEV-only). The reorder recompose path: compares the set
-		// of effects under the playhead and adds/removes canvas objects. `add` > 0 here on a
-		// reorder means a clip newly intersects the timecode → a video decode/seek (see
-		// #add_effects_to_canvas). REMOVE after diagnosis.
-		perfCount("update_currently_played_effects")
 		const effects_relative_to_timecode = this.get_effects_relative_to_timecode(effects, timecode)
 		const {add, remove} = compare_arrays([...this.currently_played_effects.values()], effects_relative_to_timecode)
-		if(add.length > 0) {perfCount("ucpe-add")}
-		if(remove.length > 0) {perfCount("ucpe-remove")}
 		this.#update_effects(effects_relative_to_timecode)
 		this.#remove_effects_from_canvas(remove, exporting)
 		this.#add_effects_to_canvas(add)
@@ -282,7 +240,6 @@ export class Compositor {
 	}
 
 	async seek(timecode: number, redraw?: boolean) {
-		perfCount("seek") // openimago-7ca2 (perf-diag; DEV-only). REMOVE after diagnosis.
 		this.managers.animationManager.seek(timecode)
 		this.managers.transitionManager.seek(timecode)
 		for(const effect of this.currently_played_effects.values()) {
@@ -343,11 +300,9 @@ export class Compositor {
 				// start_at_position update), so #add runs for it even though its frame is
 				// UNCHANGED. Only re-seek when the target differs from the element's current time
 				// by more than a sub-frame epsilon → a same-frame reorder is a no-op, no decode.
-				// (perfCount stays INSIDE the guard so it counts only REAL decodes — openimago-fgec.)
 				if(element) {
 					const targetSec = effect.start / 1000
 					if(Math.abs(element.currentTime - targetSec) > (0.5 / this.timebase)) {
-						perfCount("video-decode-seek")
 						element.currentTime = targetSec
 					}
 				}
@@ -459,7 +414,6 @@ export class Compositor {
 	}
 
 	async recreate(state: State, media: Media) {
-		perfCount("recreate") // openimago-7ca2 (perf-diag; DEV-only). REMOVE after diagnosis.
 		await media.are_files_ready()
 		for(const effect of state.effects) {
 			if(effect.kind === "image") {
@@ -497,7 +451,6 @@ export class Compositor {
 	}
 
 	update_canvas_objects(state: State) {
-		perfCount("update_canvas_objects") // openimago-7ca2 (perf-diag; DEV-only). REMOVE after diagnosis.
 		this.app.stage.children.forEach(object => {
 			if(!(object instanceof PIXI.Rectangle)) {
 				//@ts-ignore

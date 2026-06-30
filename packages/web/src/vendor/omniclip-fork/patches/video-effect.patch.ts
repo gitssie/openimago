@@ -36,19 +36,6 @@ import { effectWidthPx, FILMSTRIP_TILE_W } from './filmstrip-sprite-css'
 import { ensureFrame0 } from './filmstrip-frame0'
 import { perfWrap } from './perf-diag' // TEMP perf diagnostic (openimago-v2mm)
 
-// openimago-01w3 DIAGNOSTIC-AS-DEFAULT (DEV-only, reversible): by elimination the residual
-// drag jank is browser PAINT of the wide tiled-background-image filmstrip. So in DEV the
-// filmstrip now renders as a FLAT box BY DEFAULT — the user just RELOADS and every video clip
-// is flat, no console command. Escape hatch: set `window.__withFilmstrip = true` (then nudge
-// zoom to re-render) to restore the real tiled filmstrip for comparison. Production is
-// UNAFFECTED (always renders the real filmstrip). REMOVE once the culprit is confirmed and the
-// filmstrip is virtualized correctly (extends openimago-6hmb/fg8y).
-const __DEV =
-  typeof import.meta !== 'undefined' &&
-  (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true
-const __flatFilmstrip = (): boolean =>
-  __DEV && (window as unknown as { __withFilmstrip?: boolean }).__withFilmstrip !== true
-
 // Cell height = full omniclip lane height (lanes are 50px; the sprite frames are
 // 9:16 portrait, 28×50, matching result.filmstrip.frameW/H). The first-frame image is
 // tiled at a FIXED FILMSTRIP_TILE_W×CELL_H cell via CSS `background-repeat: repeat-x`,
@@ -138,13 +125,6 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
   //   - the tiled cell is frame 0, cropped ONCE per sprite to a standalone dataURL
   //     (filmstrip-frame0.ts) so repeat-x tiles only that frame, not the whole strip.
   const render_filmstrip = () => {
-    // openimago-01w3 DIAGNOSTIC-AS-DEFAULT: in DEV, render a FLAT box (no tiled bitmap) UNLESS
-    // window.__withFilmstrip === true. The empty .filmstrip is transparent, so the clip shows
-    // its flat surface fill. The user just reloads → all clips flat; set __withFilmstrip=true
-    // (+ nudge zoom to re-render) to compare against the real filmstrip.
-    if (__flatFilmstrip()) {
-      return html`<div class="filmstrip"></div>`
-    }
     // The filmstrip sprite is a property of the SOURCE media (file_hash), not of the
     // individual clip segment. A native omniclip SPLIT creates the new half and may
     // not carry our custom top-level filmstrip_* fields onto it (openimago-8ho9), so

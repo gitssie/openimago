@@ -14,7 +14,6 @@ import {historical_actions, non_historical_actions} from "./actions.js"
 import {Collaboration} from "./controllers/collaboration/controller.js"
 import {FFmpegHelper} from "./controllers/video-export/helpers/FFmpegHelper/helper.js"
 import {StockLayouts} from "@benev/construct/x/context/controllers/layout/parts/utils/stock_layouts.js"
-import {perfWrap, perfCount} from "../../patches/perf-diag" // openimago-7ca2 (DEV-only). REMOVE after diagnosis.
 
 export interface MiniContextOptions {
 	projectId: string
@@ -34,7 +33,6 @@ export class OmniContext extends Context {
 
 	#listen_for_state_changes() {
 		watch.track(() => this.#core.state, (state) => {
-			perfCount("state-dispatch") // openimago-7ca2 (perf-diag; DEV-only). Fires once per historical-state dispatch — should NOT tick per frame during a drag. REMOVE after diagnosis.
 			this.#save_to_storage(state)
 			this.#updateAnimationTimeline(state)
 			// openimago-pfho (BLOCKER B): with PIXI autoStart:false the shared ticker no
@@ -118,13 +116,9 @@ export class OmniContext extends Context {
 	}
 
 	#updateAnimationTimeline(state: HistoricalState) {
-		// openimago-7ca2: time the Math.max-over-all-effects this runs on every dispatch
-		// (perfWrap records both ms and call count). REMOVE after diagnosis.
-		perfWrap("updateAnimationTimeline", () => {
-			const timelineDuration = Math.max(...state.effects.map(effect => effect.start_at_position + (effect.end - effect.start)))
-			this.controllers.compositor.managers.animationManager.updateTimelineDuration(timelineDuration)
-			this.controllers.compositor.managers.transitionManager.updateTimelineDuration(timelineDuration)
-		})
+		const timelineDuration = Math.max(...state.effects.map(effect => effect.start_at_position + (effect.end - effect.start)))
+		this.controllers.compositor.managers.animationManager.updateTimelineDuration(timelineDuration)
+		this.controllers.compositor.managers.transitionManager.updateTimelineDuration(timelineDuration)
 	}
 
 	#state_from_storage(projectId: string): HistoricalState {

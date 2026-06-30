@@ -16,7 +16,6 @@ import {StateHandler} from "../../views/state-handler/view.js"
 import {TransitionIndicator} from "./views/indicators/add-transition.js"
 import {ProposalIndicator} from "./views/indicators/proposal-indicator.js"
 import {calculate_timeline_width} from "./utils/calculate_timeline_width.js"
-import {perfCount} from "../../../patches/perf-diag"
 import {GUTTER_PX} from "../../../patches/timeline-gutter"
 
 export const OmniTimeline = shadow_component(use => {
@@ -49,7 +48,6 @@ export const OmniTimeline = shadow_component(use => {
 			s.effects.map(e => `${e.id}:${e.start}:${e.end}:${e.track}`).join("|"),
 		]
 	})
-	perfCount("omni-timeline-render") // openimago-oyv0 (perf-diag; DEV-only). REMOVE after verification.
 	const state = use.context.state
 	const effectTrim = use.context.controllers.timeline.effectTrimHandler
 	const effectDrag = use.context.controllers.timeline.effectDragHandler
@@ -67,105 +65,6 @@ export const OmniTimeline = shadow_component(use => {
 	//   4. drop the per-move composedPath()/addTrack detection — addTrack is
 	//      suppressed and tracks are locked (openimago-5zry), so it is dead weight.
 
-	// --- Perf instrumentation (opt-in: set `window.__cutPerf = true` in the browser
-	// --- console). REMOVE once the user confirms the jank is gone (openimago-tv19).
-	const __cutPerf = () => (window as unknown as {__cutPerf?: boolean}).__cutPerf === true
-	let __perfMoves = 0
-	let __perfProcessed = 0
-	let __perfWindowStart = 0
-
-	// ── openimago-7ca2: DRAG-SCOPED FRAME MONITOR (opt-in: window.__cutPerf) ──────────
-	// The perf-diag JS-render counters came back ~0ms yet the user still feels heavy
-	// jank, so the cost is in browser PAINT/COMPOSITE (PIXI 1920x1080 WebGL canvas, or
-	// GPU paint of a multi-thousand-px tiled filmstrip), which JS timers don't capture.
-	// While a clip/trim is grabbed a rAF loop records the inter-frame delta; on drop we
-	// log frame count, max, mean, and #frames over 16/32/50ms — proving whether the main
-	// thread is blowing the frame budget and how badly. REMOVE after the hot path is
-	// localized. (Implemented inline rather than in perf-diag because this is a one-shot
-	// per-drag summary, not perf-diag's once-per-second bucket flush.)
-	let frame_raf: number | null = null
-	let frame_last = 0
-	let frame_count = 0
-	let frame_max = 0
-	let frame_sum = 0
-	let frame_over16 = 0
-	let frame_over32 = 0
-	let frame_over50 = 0
-
-	const frame_tick = (now: number) => {
-		if(frame_last > 0) {
-			const dt = now - frame_last
-			frame_count++
-			frame_sum += dt
-			if(dt > frame_max) {frame_max = dt}
-			if(dt > 16.7) {frame_over16++}
-			if(dt > 32) {frame_over32++}
-			if(dt > 50) {frame_over50++}
-		}
-		frame_last = now
-		frame_raf = requestAnimationFrame(frame_tick)
-	}
-
-	const start_frame_monitor = () => {
-		if(!__cutPerf() || frame_raf !== null) {return}
-		frame_last = 0; frame_count = 0; frame_max = 0; frame_sum = 0
-		frame_over16 = 0; frame_over32 = 0; frame_over50 = 0
-		frame_raf = requestAnimationFrame(frame_tick)
-	}
-
-	const stop_frame_monitor = () => {
-		if(frame_raf === null) {return}
-		cancelAnimationFrame(frame_raf)
-		frame_raf = null
-		if(__cutPerf() && frame_count > 0) {
-			const mean = frame_sum / frame_count
-			console.log(`[cutPerf] DRAG FRAMES: count=${frame_count} max=${frame_max.toFixed(1)}ms mean=${mean.toFixed(1)}ms over16=${frame_over16} over32=${frame_over32} over50=${frame_over50}`)
-		}
-	}
-
-	// ── openimago-fgec: DROP-COMMIT frame monitor (opt-in: window.__cutPerf) ──────────
-	// The DRAG monitor above STOPS at pointerup, so the drop/commit frame — where the
-	// reorder dispatch fires (effect-manager → push effects → state → recompose/repaint)
-	// — has been our BLIND SPOT. The user localizes the jank to the DROP, so keep sampling
-	// inter-frame ms for the ~500ms commit window after pointerup and log the worst frame +
-	// when it settled. Compare longestFrame here against the [perf-diag] compose_effects /
-	// video-decode counts to tell paint-of-the-ripple from a wasteful preview recompose.
-	const COMMIT_WINDOW_MS = 500
-	let commit_raf: number | null = null
-	let commit_start = 0
-	let commit_last = 0
-	let commit_count = 0
-	let commit_longest = 0
-	let commit_over32 = 0
-	let commit_settle = 0 // elapsed ms (from drop) at the END of the last >16ms frame
-
-	const commit_tick = (now: number) => {
-		if(commit_last > 0) {
-			const dt = now - commit_last
-			commit_count++
-			if(dt > commit_longest) {commit_longest = dt}
-			if(dt > 32) {commit_over32++}
-			if(dt > 16.7) {commit_settle = now - commit_start}
-		}
-		commit_last = now
-		if(now - commit_start < COMMIT_WINDOW_MS) {
-			commit_raf = requestAnimationFrame(commit_tick)
-		} else {
-			commit_raf = null
-			if(__cutPerf() && commit_count > 0) {
-				console.log(`[cutPerf] DROP COMMIT: longestFrame=${commit_longest.toFixed(1)}ms frames=${commit_count} over32=${commit_over32} settleMs=${commit_settle.toFixed(0)}`)
-			}
-		}
-	}
-
-	const start_commit_monitor = () => {
-		if(!__cutPerf()) {return}
-		if(commit_raf !== null) {cancelAnimationFrame(commit_raf)}
-		commit_start = performance.now()
-		commit_last = 0; commit_count = 0; commit_longest = 0; commit_over32 = 0; commit_settle = 0
-		commit_raf = requestAnimationFrame(commit_tick)
-	}
-
 	let cached_bounds: DOMRect | null = null
 	let pending_event: PointerEvent | null = null
 	let raf_id: number | null = null
@@ -178,10 +77,8 @@ export const OmniTimeline = shadow_component(use => {
 
 	const get_timeline_bounds = (): DOMRect | null => {
 		if(cached_bounds) {return cached_bounds}
-		const t0 = __cutPerf() ? performance.now() : 0
 		const timeline = use.shadow.querySelector(".timeline-relative")
 		cached_bounds = timeline?.getBoundingClientRect() ?? null
-		if(__cutPerf()) {console.log(`[cutPerf] timeline bounds re-measured in ${(performance.now() - t0).toFixed(2)}ms`)}
 		return cached_bounds
 	}
 
@@ -284,29 +181,15 @@ export const OmniTimeline = shadow_component(use => {
 		const event = pending_event
 		pending_event = null
 		if(!event) {return}
-		const perf = __cutPerf()
-		if(perf) {__perfProcessed++}
-		const t0 = perf ? performance.now() : 0
 		if(effectTrim.grabbed) {
 			effectTrim.effect_dragover(event.clientX, use.context.state)
 		} else {
 			playheadDragOver(event)
 			effect_drag_over(event)
 		}
-		if(perf) {console.log(`[cutPerf] dragover frame processed in ${(performance.now() - t0).toFixed(2)}ms`)}
 	}
 
 	function augmented_dragover(event: PointerEvent) {
-		if(__cutPerf()) {
-			const now = performance.now()
-			if(now - __perfWindowStart >= 1000) {
-				console.log(`[cutPerf] pointermove ${__perfMoves}/s reaching handler → ${__perfProcessed}/s processed (rAF-coalesced)`)
-				__perfMoves = 0
-				__perfProcessed = 0
-				__perfWindowStart = now
-			}
-			__perfMoves++
-		}
 		// Only do layout work while an interaction is active.
 		if(!effectTrim.grabbed && !effectDrag.grabbed && !playheadDrag.grabbed) {return}
 		// openimago-y8qw: ZERO-RE-RENDER tracking. The residual drag jank (after fttp/9oq0/pfho/
@@ -329,8 +212,6 @@ export const OmniTimeline = shadow_component(use => {
 				dn.preview.style.transform = t
 			}
 		}
-		// openimago-7ca2: start the drag-scoped frame monitor for clip/trim drags only.
-		if(effectDrag.grabbed || effectTrim.grabbed) {start_frame_monitor()}
 		// openimago-u7kw: track the latest pointer + run the edge auto-scroll loop during a
 		// clip/trim drag (not playhead). The loop reads autoscroll_pointer every frame, so it
 		// keeps scrolling even if the pointer is then held still at the edge.
@@ -343,12 +224,6 @@ export const OmniTimeline = shadow_component(use => {
 	}
 
 	const end_drag_interaction = () => {
-		// openimago-fgec: this pointerup ends a real drag iff the DRAG monitor was running.
-		// Capture before stop_frame_monitor() nulls frame_raf, then sample the post-drop
-		// commit window (the previously-unmeasured drop hitch).
-		const was_dragging = frame_raf !== null
-		stop_frame_monitor() // openimago-7ca2: log the per-drag frame summary on drop.
-		if(was_dragging) {start_commit_monitor()} // openimago-fgec: measure the commit window.
 		stop_autoscroll() // openimago-u7kw: stop edge auto-scroll on pointerup/cancel.
 		if(raf_id !== null) {
 			cancelAnimationFrame(raf_id)
@@ -374,8 +249,6 @@ export const OmniTimeline = shadow_component(use => {
 			removeEventListener("resize", invalidate_bounds)
 			removeEventListener("scroll", invalidate_bounds, true)
 			if(raf_id !== null) {cancelAnimationFrame(raf_id)}
-			stop_frame_monitor() // openimago-7ca2
-			if(commit_raf !== null) {cancelAnimationFrame(commit_raf); commit_raf = null} // openimago-fgec
 			stop_autoscroll() // openimago-u7kw
 		}
 	})

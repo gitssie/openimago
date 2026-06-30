@@ -8,7 +8,6 @@ import {calculate_effect_width} from "../../../utils/calculate_effect_width.js"
 import {calculate_start_position} from "../../../utils/calculate_start_position.js"
 import lowQualitySvg from "../../../../../icons/material-design-icons/low-quality.svg.js"
 import {laneHeight} from "../../../../../../patches/timeline-lanes"
-import {perfWrap, perfCount} from "../../../../../../patches/perf-diag"
 import {calculate_effect_track_placement} from "../../../utils/calculate_effect_track_placement.js"
 
 export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: AnyEffect, content: TemplateResult, style?: CSSResultGroup, inline_css?: string) => {
@@ -41,7 +40,6 @@ export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: Any
 			s.effects.length,
 		]
 	})
-	perfCount("effect-inner-render") // openimago-oyv0 (perf-diag; DEV-only). REMOVE after verification.
 	const state = use.context.state
 	const effect = use.context.state.effects.find(effect => effect.id === any_effect.id) ?? any_effect
 	const isVisible = state.tracks.find((_, i) => i === effect.track)?.visible
@@ -49,11 +47,10 @@ export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: Any
 	// The clip box height = its lane's height (openimago-g1hb): video clips fill the
 	// 50px video lane; the BGM bar fills the 25px audio lane. Overrides the static
 	// 50px in parts/styles.ts so a clip never overflows the now-shorter audio lane.
-	// openimago-oyv0: lane_height + track_placement are the O(effects) filters the issue
-	// flagged; timed via perf-diag, and track_placement is now computed ONCE per render
-	// (it was called twice in the template below).
-	const lane_height = perfWrap("laneHeight", () => laneHeight(state.effects.filter(e => e.track === effect.track)))
-	const track_placement = perfWrap("track-placement", () => calculate_effect_track_placement(effect.track, use.context.state.effects))
+	// openimago-oyv0: track_placement is computed ONCE per render (it was called twice in
+	// the template below — the O(effects) filter the narrowed-watch fix flagged).
+	const lane_height = laneHeight(state.effects.filter(e => e.track === effect.track))
+	const track_placement = calculate_effect_track_placement(effect.track, use.context.state.effects)
 	const [[x, y], setCords] = use.state<V2 | [null, null]>([null, null])
 	const zoom = use.context.state.zoom
 	const controller = use.context.controllers.timeline
