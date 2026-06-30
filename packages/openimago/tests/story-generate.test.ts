@@ -56,13 +56,19 @@ async function addShot(token: string, projectId: string, epId: string): Promise<
   return ((await res.json()) as Record<string, any>).shot.id as string
 }
 
-function generateReq(token: string | null, projectId: string, epId: string, shotId: string) {
+function generateReq(
+  token: string | null,
+  projectId: string,
+  epId: string,
+  shotId: string,
+  params?: Record<string, unknown>,
+) {
   const headers: Record<string, string> = { "content-type": "application/json" }
   if (token) headers.authorization = `Bearer ${token}`
   return app.fetch(
     new Request(
       `http://localhost/api/platform/projects/${projectId}/story/episodes/${epId}/shots/${shotId}/generate`,
-      { method: "POST", headers, body: "{}" },
+      { method: "POST", headers, body: JSON.stringify(params ?? {}) },
     ),
   )
 }
@@ -218,6 +224,54 @@ test("generateShot appends (does not overwrite) existing runs", async () => {
   const runs = await readJson(project.directory, "story/runs/ep_001.runs.json")
   expect(runs.runs.length).toBe(2)
   expect(runs.runs[0].id).toBe("run_existing")
+})
+
+test("generateShot records posted generation params on the run and persists them on the shot", async () => {
+  const token = await registerUser("gnparams", "gnparams@example.com")
+  const project = await createProject(token, "GenParams")
+  const shotId = await addShot(token, project.id, "ep_001")
+
+  const params = {
+    prompt: "a neon alley street race at night",
+    model: "seedance-2.0",
+    aspectRatio: "9:16",
+    durationSeconds: 12,
+  }
+  const res = await generateReq(token, project.id, "ep_001", shotId, params)
+  expect(res.status).toBe(201)
+  const body = (await res.json()) as Record<string, any>
+
+  // The run's params reflect the EDITED values (not the shot.description / mock default).
+  expect(body.run.params.prompt).toBe(params.prompt)
+  expect(body.run.params.model).toBe("seedance-2.0")
+  expect(body.run.params.aspectRatio).toBe("9:16")
+  expect(body.run.params.durationSeconds).toBe(12)
+
+  // The chosen params are persisted on the shot so the dialog re-opens pre-filled.
+  const ep = await readJson(project.directory, "story/episodes/ep_001.json")
+  const shot = ep.shots.find((s: any) => s.id === shotId)
+  expect(shot.status).toBe("generated")
+  expect(shot.generationParams).toEqual({
+    prompt: params.prompt,
+    model: "seedance-2.0",
+    aspectRatio: "9:16",
+    durationSeconds: 12,
+  })
+})
+
+test("generateShot falls back to shot.description + mock model when no params posted", async () => {
+  const token = await registerUser("gnnoparams", "gnnoparams@example.com")
+  const project = await createProject(token, "GenNoParams")
+  const shotId = await addShot(token, project.id, "ep_001")
+
+  const res = await generateReq(token, project.id, "ep_001", shotId)
+  expect(res.status).toBe(201)
+  const body = (await res.json()) as Record<string, any>
+
+  // Default model preserved; no aspect/duration keys when none requested.
+  expect(body.run.params.model).toBe("mock-video-model")
+  expect(body.run.params.aspectRatio).toBeUndefined()
+  expect(body.run.params.durationSeconds).toBeUndefined()
 })
 
 test("generateShot returns 404 when the shot does not exist", async () => {

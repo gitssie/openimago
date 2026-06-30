@@ -72,6 +72,7 @@ function shot(over: Partial<StoryShotSummary> = {}): StoryShotSummary {
     status: 'pending',
     durationEstimate: null,
     latestRunId: null,
+    generationParams: null,
     ...over,
   }
 }

@@ -268,6 +268,16 @@
       </div>
     </q-dialog>
 
+    <!-- ── 手动编辑: in-timeline AI re-generation dialog (clip context menu) ── -->
+    <ClipGenerateDialog
+      :open="clipGenDialog !== null"
+      :shot="clipGenDialog?.shot ?? null"
+      :latest-run="clipGenDialog?.latestRun ?? null"
+      :generating="clipGenerating"
+      @update:open="(open) => { if (!open && !clipGenerating) clipGenDialog = null }"
+      @generate="onClipGenerate"
+    />
+
     <!-- WorkspaceArtifactsPanel overlay (project scope, ADR 0003) — unchanged -->
     <div v-if="showArtifactsPanel" class="artifacts-panel-overlay">
       <div class="artifacts-panel-overlay__backdrop" @click="toggleArtifactsPanel" />
@@ -372,12 +382,14 @@ import { workspaceFileToAIOutputItem } from 'src/utils/session-output-mapper'
 import { formatRelativeTime } from 'src/utils/format-time'
 import StoryOverviewPanel from 'src/components/session-workspace/StoryOverviewPanel.vue'
 import StoryCutPanel from 'src/components/session-workspace/StoryCutPanel.vue'
+import ClipGenerateDialog from 'src/components/session-workspace/ClipGenerateDialog.vue'
 import StoryTimelineEmpty from 'src/components/session-workspace/StoryTimelineEmpty.vue'
 import type { EpisodeCut } from 'src/utils/cut/cut-types'
 import { rawCutToEpisodeCut } from 'src/utils/cut/cut-api-mapper'
 import { dispatchCutEdit } from 'src/utils/cut/cut-edit-dispatcher'
 import { resolveShotMediaSource } from 'src/utils/cut/shot-media-resolver'
 import { buildReferenceAttachment } from 'src/utils/cut/clip-reference'
+import type { ShotGenerationParams } from 'src/utils/cut/clip-generate-form'
 
 // ── Local types ─────────────────────────────────────────────────────────────
 
@@ -447,6 +459,11 @@ const previewSelection = ref<PreviewSelection | null>(null)
 const previewDialogOpen = ref(false)
 // Canonical HD toggle state for the PreviewPane (parent-owned).
 const previewHdActive = ref(false)
+// 手动编辑 clip action (openimago-ciqk): the in-timeline AI re-generation dialog.
+// null = closed; otherwise the source shot being re-generated + its latest run
+// (for prefill). clipGenerating gates the 生成 button while the request is in flight.
+const clipGenDialog = ref<{ shot: StoryShotSummary; latestRun: StoryRunSummary | null } | null>(null)
+const clipGenerating = ref(false)
 const projectFiles = ref<OutputItem[]>([])
 const projectFilesLoading = ref(false)
 const storyBible = ref<OpenimagoStoryBible | null>(null)
@@ -962,12 +979,46 @@ function onClipRegenerate(sourceShotId: string): void {
   void onShotGenerate(sourceShotId)
 }
 
-/** 手动编辑 — edit the source shot's description (reuses ADR 0005 path). */
+/**
+ * 手动编辑 (openimago-ciqk) — open the in-timeline AI re-generation dialog for the
+ * clip's SOURCE shot, pre-filled from the shot's last-used generation params (or its
+ * authored prompt + the latest run's model). 生成 re-runs video generation with the
+ * edited params via onClipGenerate; the clip's media then refreshes.
+ */
 function onClipManualEdit(sourceShotId: string): void {
   const shot = currentStoryShots.value.find((s) => s.id === sourceShotId)
-  const next = window.prompt('编辑镜头描述', shot?.description ?? '')
-  if (next === null) return
-  onShotUpdate(sourceShotId, { description: next })
+  if (!shot) {
+    $q.notify({ color: 'warning', message: '该镜头已不存在', icon: 'info', timeout: 1800 })
+    return
+  }
+  const latestRun =
+    currentStoryRuns.value
+      .filter((r) => r.shotId === sourceShotId && r.status === 'completed')
+      .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))[0] ?? null
+  clipGenDialog.value = { shot, latestRun }
+}
+
+/**
+ * 生成 from the clip re-generation dialog: re-run video generation for the source
+ * shot with the edited params, then refresh the episode (new run) and re-hydrate the
+ * Cut editor so the clip's filmstrip/preview pick up the new media.
+ */
+async function onClipGenerate(params: ShotGenerationParams): Promise<void> {
+  const dlg = clipGenDialog.value
+  const episodeId = currentStoryEpisodeId.value
+  if (!dlg || !episodeId || clipGenerating.value) return
+  clipGenerating.value = true
+  try {
+    await api.generateShot(projectId.value, episodeId, dlg.shot.id, params)
+    await refreshEpisode(episodeId)
+    storyCutPanelRef.value?.rehydrate()
+    clipGenDialog.value = null
+    $q.notify({ color: 'positive', message: '已重新生成镜头', icon: 'check', timeout: 1400 })
+  } catch {
+    $q.notify({ color: 'negative', message: '重新生成失败', icon: 'error', timeout: 2000 })
+  } finally {
+    clipGenerating.value = false
+  }
 }
 
 /** 删除 — delete the CLIP (cut edit-layer), NOT the source shot. */

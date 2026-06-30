@@ -250,6 +250,19 @@ export interface StoryEpisode {
   updatedAt: string
 }
 
+/**
+ * Per-shot AI video generation params (openimago-ciqk). Persisted on the shot by
+ * generateShot so the clip context-menu 手动编辑 dialog re-opens pre-filled with the
+ * params last used to (re)generate this shot's video. `prompt` is a generation
+ * OVERRIDE — it does NOT replace the human-readable `description`.
+ */
+export interface ShotGenerationParams {
+  prompt?: string
+  model?: string
+  aspectRatio?: string
+  durationSeconds?: number
+}
+
 /** A single shot appended by the UI (ADR 0004 EpisodeShot, ADR 0005 write). */
 export interface EpisodeShot {
   id: string
@@ -262,6 +275,8 @@ export interface EpisodeShot {
   characterIds: string[]
   referenceArtifactIds: string[]
   status: string
+  /** Last-used AI generation params (openimago-ciqk); absent until first generate. */
+  generationParams?: ShotGenerationParams
 }
 
 /** A generation run appended to runs.json (ADR 0004 GenerationRun). */
@@ -273,6 +288,10 @@ export interface GenerationRun {
   params: {
     prompt: string
     model: string
+    // Video generation params from the 手动编辑 re-gen dialog (openimago-ciqk).
+    // Recorded when supplied so the run history reflects the exact request.
+    aspectRatio?: string
+    durationSeconds?: number
     // Voiceover runs (ADR 0004 ResolvedRunParams) carry the speaking line's
     // character, resolved voice, text, and an optional TTS style from emotion.
     characterId?: string
@@ -808,6 +827,7 @@ export class StoryService {
     userId: string,
     episodeId: string,
     shotId: string,
+    params?: ShotGenerationParams,
   ): Promise<
     | { data: { run: GenerationRun }; status: 200 }
     | { error: { code: string; message: string }; status: number }
@@ -835,7 +855,25 @@ export class StoryService {
 
     const description = typeof shot["description"] === "string" ? shot["description"] : ""
     const shotNumber = typeof shot["shotNumber"] === "number" ? shot["shotNumber"] : shotIdx + 1
-    const prompt = description.trim() || `shot ${shotNumber}`
+
+    // ── Generation params (openimago-ciqk) ──
+    // The 手动编辑 dialog posts an edited prompt + model/aspect/duration. Use the
+    // edited prompt when supplied (else fall back to the shot description); the
+    // mock provider keys its clip on the prompt, so editing it changes the media.
+    const promptOverride = typeof params?.prompt === "string" ? params.prompt.trim() : ""
+    const prompt = promptOverride || description.trim() || `shot ${shotNumber}`
+    const model =
+      typeof params?.model === "string" && params.model.trim()
+        ? params.model.trim()
+        : "mock-video-model"
+    const aspectRatio =
+      typeof params?.aspectRatio === "string" && params.aspectRatio.trim()
+        ? params.aspectRatio.trim()
+        : undefined
+    const durationSeconds =
+      typeof params?.durationSeconds === "number" && Number.isFinite(params.durationSeconds)
+        ? params.durationSeconds
+        : undefined
 
     // ── Mock provider result (playable MP4, like opencode mockVideoProvider) ──
     // Deterministic per-shot clip with a committed filmstrip sprite + real
@@ -847,7 +885,12 @@ export class StoryService {
       nodeId: "",
       shotId,
       status: "completed",
-      params: { prompt, model: "mock-video-model" },
+      params: {
+        prompt,
+        model,
+        ...(aspectRatio !== undefined ? { aspectRatio } : {}),
+        ...(durationSeconds !== undefined ? { durationSeconds } : {}),
+      },
       result: {
         artifactId: `mock_${randomSlug()}`,
         kind: "video",
@@ -882,10 +925,26 @@ export class StoryService {
     const runsWrite = await this.writeJsonFileAtomic(dir, runsPath, updatedRuns, projectId)
     if ("error" in runsWrite) return runsWrite
 
-    // ── Flip shot status → generated (atomic episode write + bump updatedAt) ──
-    const updatedShots = shots.map((s, i) =>
-      i === shotIdx ? { ...s, status: "generated" } : s,
-    )
+    // ── Flip shot status → generated + persist the chosen generation params ──
+    // (openimago-ciqk) Only when params were actually supplied (手动编辑 dialog), so
+    // a plain 重新生成 (no body) never clobbers a shot's stored params. Merge over any
+    // existing params so an unchanged field survives. (Atomic write + bump updatedAt.)
+    const suppliedParams: ShotGenerationParams = {
+      ...(promptOverride ? { prompt: promptOverride } : {}),
+      ...(typeof params?.model === "string" && params.model.trim() ? { model } : {}),
+      ...(aspectRatio !== undefined ? { aspectRatio } : {}),
+      ...(durationSeconds !== undefined ? { durationSeconds } : {}),
+    }
+    const hasSuppliedParams = Object.keys(suppliedParams).length > 0
+    const updatedShots = shots.map((s, i) => {
+      if (i !== shotIdx) return s
+      const next: Record<string, unknown> = { ...s, status: "generated" }
+      if (hasSuppliedParams) {
+        const existing = (s["generationParams"] as ShotGenerationParams) ?? {}
+        next["generationParams"] = { ...existing, ...suppliedParams }
+      }
+      return next
+    })
     const updatedEpisode: StoryEpisode = {
       ...episode,
       shots: updatedShots,

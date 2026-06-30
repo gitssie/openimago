@@ -127,7 +127,17 @@ storyRoutes.post("/:id/story/episodes/:epId/shots/:shotId/generate", async (c) =
   const episodeId = c.req.param("epId")
   const shotId = c.req.param("shotId")
 
-  const result = await storyService.generateShot(projectId, userId, episodeId, shotId)
+  // Optional AI generation params from the 手动编辑 re-gen dialog (openimago-ciqk).
+  // Tolerate a missing/empty/invalid body — generateShot falls back to defaults.
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
+  const params = {
+    ...(typeof body["prompt"] === "string" ? { prompt: body["prompt"] } : {}),
+    ...(typeof body["model"] === "string" ? { model: body["model"] } : {}),
+    ...(typeof body["aspectRatio"] === "string" ? { aspectRatio: body["aspectRatio"] } : {}),
+    ...(typeof body["durationSeconds"] === "number" ? { durationSeconds: body["durationSeconds"] } : {}),
+  }
+
+  const result = await storyService.generateShot(projectId, userId, episodeId, shotId, params)
 
   if ("error" in result) {
     return c.json({ error: result.error }, result.status as any)

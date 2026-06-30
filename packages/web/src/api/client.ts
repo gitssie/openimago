@@ -145,6 +145,7 @@ export interface Skill {
 import type { MediaToolResultV1 } from '../services/media'
 
 import type { GenerationRunMetadata } from '../components/session-workspace/types'
+import type { ShotGenerationParams } from 'src/utils/cut/clip-generate-form'
 
 export type { MediaAccessLocator } from '../services/media'
 export type { GenerationRunMetadata }
@@ -606,11 +607,18 @@ export const api = {
         body: JSON.stringify(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}),
       },
     ),
-  // Story writes (ADR 0005) — mock generation: append a completed run + mark shot generated.
-  generateShot: (projectId: string, episodeId: string, shotId: string) =>
+  // Story writes (ADR 0005) — mock generation: append a completed run + mark shot
+  // generated. Optional AI re-gen params (openimago-ciqk) from the 手动编辑 dialog are
+  // sent as the JSON body; the backend records them on the run + persists on the shot.
+  generateShot: (
+    projectId: string,
+    episodeId: string,
+    shotId: string,
+    params?: ShotGenerationParams,
+  ) =>
     request<{ run: OpenimagoGenerationRun }>(
       `/api/platform/projects/${projectId}/story/episodes/${episodeId}/shots/${shotId}/generate`,
-      { method: 'POST', body: '{}' },
+      { method: 'POST', body: JSON.stringify(params ?? {}) },
     ),
   // Voiceover (ADR 0004) — mock TTS: append one audio run per dialog line of a
   // shot. Derived state — the timeline VO track projects these audio runs.

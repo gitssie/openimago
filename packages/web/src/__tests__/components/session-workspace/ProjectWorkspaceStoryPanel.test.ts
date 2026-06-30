@@ -112,6 +112,7 @@ function makeShot(over: Partial<StoryShotSummary> = {}): StoryShotSummary {
     status: over.status ?? 'pending',
     durationEstimate: over.durationEstimate ?? 3,
     latestRunId: over.latestRunId ?? null,
+    generationParams: over.generationParams ?? null,
   }
 }
 

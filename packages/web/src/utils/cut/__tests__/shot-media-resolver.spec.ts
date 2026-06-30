@@ -17,6 +17,7 @@ function shot(id: string, latestRunId: string | null = null): StoryShotSummary {
     status: 'generated',
     durationEstimate: null,
     latestRunId,
+    generationParams: null,
   }
 }
 

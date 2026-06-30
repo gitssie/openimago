@@ -4,6 +4,8 @@
 // project-scoped artifact display. Maps to MediaToolResultV1 (ADR 0002)
 // but flattens access locators for panel rendering.
 
+import type { ShotGenerationParams } from 'src/utils/cut/clip-generate-form'
+
 // ── Generation-run metadata (ADR 0003, openimago-xkn) ────────────────────
 //
 // Carries tool-call identity, input arguments, and parent lineage for
@@ -193,6 +195,12 @@ export interface StoryShotSummary {
   durationEstimate: number | null
   /** Optional: latest run for this shot (most-recent first). */
   latestRunId: string | null
+  /**
+   * Last-used AI video generation params (openimago-ciqk), persisted by the backend
+   * when the clip 手动编辑 re-gen dialog generates. null until the shot is first
+   * (re)generated through that dialog; used to pre-fill it on re-open.
+   */
+  generationParams: ShotGenerationParams | null
 }
 
 /** Single workflow node (ADR 0004 WorkflowNode, flattened). */

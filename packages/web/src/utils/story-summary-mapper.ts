@@ -24,6 +24,7 @@ import type {
   StoryStyleSeedSummary,
   StoryWorkflowNodeSummary,
 } from '../components/session-workspace/types'
+import type { ShotGenerationParams } from './cut/clip-generate-form'
 
 /** Guard: extract string value safely. */
 function safeStr(v: unknown): string {
@@ -178,8 +179,22 @@ export function rawEpisodeToShotSummaries(episode: OpenimagoStoryEpisode): Story
       status: isStatus(shot['status'], ['pending', 'in_progress', 'generated', 'review', 'approved'] as const) ?? 'pending',
       durationEstimate: safeNum(shot['durationEstimate']) ?? safeNum(shot['duration']) ?? null,
       latestRunId: safeStr(shot['latestRunId']) || safeStr(shot['lastRunId']) || null,
+      generationParams: mapGenerationParams(shot['generationParams']),
     }
   })
+}
+
+/** Map a shot's persisted AI generation params (openimago-ciqk), tolerating absence
+ *  and unknown shapes. Returns null when no usable params are present. */
+function mapGenerationParams(v: unknown): ShotGenerationParams | null {
+  if (typeof v !== 'object' || v === null) return null
+  const raw = v as Record<string, unknown>
+  const out: ShotGenerationParams = {}
+  if (typeof raw['prompt'] === 'string') out.prompt = raw['prompt']
+  if (typeof raw['model'] === 'string') out.model = raw['model']
+  if (typeof raw['aspectRatio'] === 'string') out.aspectRatio = raw['aspectRatio']
+  if (typeof raw['durationSeconds'] === 'number') out.durationSeconds = raw['durationSeconds']
+  return Object.keys(out).length > 0 ? out : null
 }
 
 // ── Workflow → nodes ──────────────────────────────────────────────────────────
