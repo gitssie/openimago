@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm"
-import { readdirSync, statSync, existsSync, mkdirSync, writeFileSync, readFileSync } from "fs"
-import { join, extname } from "path"
+import { readdirSync, statSync, existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from "fs"
+import { join, extname, basename } from "path"
 import { db } from "../db/client"
 import { projects } from "../db/schema"
 import { SessionTable } from "../db/session-schema"
@@ -103,6 +103,71 @@ export class OutputsService {
     }
 
     return this.scanDirectory(project.directory, filter)
+  }
+
+  /**
+   * Delete a single scanned output file from a project's directory
+   * (openimago-oy1l). Ownership is checked the same way as listProjectOutputs
+   * (project must belong to the user). `name` must be a plain basename inside the
+   * directory — any path separator / traversal / dotfile is rejected (404) so a
+   * crafted name can never escape the project directory.
+   */
+  async deleteProjectOutput(
+    projectId: string,
+    userId: string,
+    name: string,
+  ): Promise<
+    | { deleted: true; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const rows = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, projectId))
+
+    if (rows.length === 0) {
+      return { error: { code: "NOT_FOUND", message: "Project not found" }, status: 404 }
+    }
+
+    const project = rows[0]!
+    if (project.userId !== userId) {
+      return { error: { code: "FORBIDDEN", message: "Not project owner" }, status: 403 }
+    }
+
+    return this.deleteInDirectory(project.directory, name)
+  }
+
+  private deleteInDirectory(
+    directory: string,
+    name: string,
+  ): { deleted: true; status: 200 } | { error: { code: string; message: string }; status: number } {
+    // Only a plain basename within the directory is deletable. Reject traversal,
+    // separators, and the dotfiles/.thumbnails that the scan itself hides.
+    const safe = basename(name)
+    if (!safe || safe !== name || safe === "." || safe === ".." || safe.startsWith(".")) {
+      return { error: { code: "NOT_FOUND", message: "Output not found" }, status: 404 }
+    }
+
+    const fullPath = join(directory, safe)
+    if (!existsSync(fullPath)) {
+      return { error: { code: "NOT_FOUND", message: "Output not found" }, status: 404 }
+    }
+
+    try {
+      unlinkSync(fullPath)
+    } catch {
+      return { error: { code: "NOT_FOUND", message: "Output not found" }, status: 404 }
+    }
+
+    // Best-effort: drop the cached thumbnail too (ignore if absent).
+    try {
+      const thumb = join(directory, ".thumbnails", `${safe}.thumb.webp`)
+      if (existsSync(thumb)) unlinkSync(thumb)
+    } catch {
+      // ignore thumbnail cleanup failures
+    }
+
+    return { deleted: true, status: 200 }
   }
 
   private scanDirectory(

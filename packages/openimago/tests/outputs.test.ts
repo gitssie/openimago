@@ -471,3 +471,108 @@ test("project outputs without token returns 401", async () => {
   )
   expect(res.status).toBe(401)
 })
+
+// ===========================================================================
+// Delete a project output — DELETE /api/platform/projects/:id/outputs/:name
+// (openimago-oy1l) — removes a scanned output file from the project directory.
+// ===========================================================================
+
+// 17. Delete removes the file (and leaves the others)
+test("DELETE /projects/:id/outputs/:name removes the scanned file", async () => {
+  const { verifyJwt } = await import("../src/auth/jwt")
+  const token = await registerUserGlobal("poutdel", "poutdel@example.com")
+  const claims = await verifyJwt(token)
+  const { id: projId, directory } = await createProjectRaw(claims.userId, "Delete Outputs Project")
+
+  createFiles(directory, [
+    { name: "gone.png", content: "x" },
+    { name: "keep.png", content: "y" },
+  ])
+
+  const app = await buildProjectApp()
+  const res = await app.fetch(
+    new Request(`http://localhost/api/platform/projects/${projId}/outputs/gone.png`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${token}` },
+    }),
+  )
+  expect(res.status).toBe(200)
+  const body = await res.json() as Record<string, any>
+  expect(body.deleted).toBe(true)
+  expect(existsSync(join(directory, "gone.png"))).toBe(false)
+  expect(existsSync(join(directory, "keep.png"))).toBe(true)
+})
+
+// 18. Another user's project output → 403 (file untouched)
+test("DELETE /projects/:id/outputs/:name on another user's project returns 403", async () => {
+  const { verifyJwt } = await import("../src/auth/jwt")
+  const tokenA = await registerUserGlobal("poutdelA", "poutdelA@example.com")
+  const claimsA = await verifyJwt(tokenA)
+  const { id: projId, directory } = await createProjectRaw(claimsA.userId, "A's Delete Project")
+  createFiles(directory, [{ name: "owned.png", content: "x" }])
+
+  const tokenB = await registerUserGlobal("poutdelB", "poutdelB@example.com")
+
+  const app = await buildProjectApp()
+  const res = await app.fetch(
+    new Request(`http://localhost/api/platform/projects/${projId}/outputs/owned.png`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${tokenB}` },
+    }),
+  )
+  expect(res.status).toBe(403)
+  expect(existsSync(join(directory, "owned.png"))).toBe(true)
+})
+
+// 19. Missing output file → 404
+test("DELETE /projects/:id/outputs/:name for a missing file returns 404", async () => {
+  const { verifyJwt } = await import("../src/auth/jwt")
+  const token = await registerUserGlobal("poutdel404", "poutdel404@example.com")
+  const claims = await verifyJwt(token)
+  const { id: projId } = await createProjectRaw(claims.userId, "Missing Output Project")
+
+  const app = await buildProjectApp()
+  const res = await app.fetch(
+    new Request(`http://localhost/api/platform/projects/${projId}/outputs/nope.png`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${token}` },
+    }),
+  )
+  expect(res.status).toBe(404)
+})
+
+// 20. Non-existent project → 404
+test("DELETE /projects/:id/outputs/:name on a non-existent project returns 404", async () => {
+  const token = await registerUserGlobal("poutdelnp", "poutdelnp@example.com")
+  const app = await buildProjectApp()
+  const res = await app.fetch(
+    new Request("http://localhost/api/platform/projects/proj_nope/outputs/x.png", {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${token}` },
+    }),
+  )
+  expect(res.status).toBe(404)
+})
+
+// 21. Path traversal is rejected and the outside file is untouched
+test("DELETE /projects/:id/outputs/:name rejects path traversal", async () => {
+  const { verifyJwt } = await import("../src/auth/jwt")
+  const token = await registerUserGlobal("pouttrav", "pouttrav@example.com")
+  const claims = await verifyJwt(token)
+  const { id: projId, directory } = await createProjectRaw(claims.userId, "Traversal Project")
+
+  // A sibling file OUTSIDE the project directory (one level up, in COS_BASE_PATH).
+  const outsideName = `trav_secret_${crypto.randomUUID().slice(0, 6)}.txt`
+  const outsidePath = join(directory, "..", outsideName)
+  writeFileSync(outsidePath, "secret")
+
+  const app = await buildProjectApp()
+  const res = await app.fetch(
+    new Request(
+      `http://localhost/api/platform/projects/${projId}/outputs/${encodeURIComponent(`../${outsideName}`)}`,
+      { method: "DELETE", headers: { authorization: `Bearer ${token}` } },
+    ),
+  )
+  expect(res.status).toBe(404)
+  expect(existsSync(outsidePath)).toBe(true)
+})

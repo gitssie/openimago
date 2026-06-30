@@ -38,3 +38,18 @@ projectOutputsRoutes.get("/:id/outputs", async (c) => {
 
   return c.json({ outputs: result.outputs })
 })
+
+// Delete one scanned output file from the project directory (openimago-oy1l).
+projectOutputsRoutes.delete("/:id/outputs/:name", async (c) => {
+  const projectId = c.req.param("id")
+  const name = c.req.param("name")
+  const userId = c.get("userId") as string
+
+  const result = await outputsService.deleteProjectOutput(projectId, userId, name)
+
+  if ("error" in result) {
+    return c.json({ error: result.error }, result.status as any)
+  }
+
+  return c.json({ deleted: true })
+})
