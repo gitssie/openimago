@@ -1772,14 +1772,40 @@ function onItemSelectType(section: LeftPanelSection, id: string) {
   $q.notify({ color: 'info', message: `切换${sectionLabel(section)} ${id} 的素材类型（待接入）`, icon: 'category', timeout: 1200 })
 }
 
-/** "评论生成" pressed on a card footer. For shots, reuse the mock generate
- *  command; other sections are 待接入 stubs for now. */
+/** "评论生成" pressed on a card footer. Shots → mock video generate; 关键元素
+ *  (Character/Scene) → Bible concept art (shotId:null image run, openimago-ugy9).
+ *  The 旁白与音乐 (audio) section has no grounded op yet → 待接入 stub. */
 function onCommentGenerate(section: LeftPanelSection, id: string) {
   if (section === 'shots') {
     void onShotGenerate(id)
     return
   }
+  if (section === 'elements') {
+    void onElementConceptGenerate(id)
+    return
+  }
   $q.notify({ color: 'info', message: `${sectionLabel(section)} ${id} 评论生成（待接入）`, icon: 'auto_awesome', timeout: 1200 })
+}
+
+/** Generate concept art for a Bible element (关键元素 card). Appends a shot-less
+ *  image run linked to the element via nodeId, then refreshes the episode so the
+ *  card's thumbnail row surfaces it (openimago-ugy9). */
+async function onElementConceptGenerate(elementId: string) {
+  const pid = projectId.value
+  const episodeId = currentStoryEpisodeId.value
+  if (!pid || !episodeId) {
+    $q.notify({ color: 'info', message: '生成概念图需要选择剧集', icon: 'info', timeout: 1800 })
+    return
+  }
+  try {
+    await api.generateElementConcept(pid, episodeId, elementId)
+    $q.notify({ color: 'positive', message: '概念图已生成', icon: 'auto_awesome', timeout: 1500 })
+    await refreshEpisode(episodeId)
+  } catch (err) {
+    const status = err instanceof ApiError ? err.status : 0
+    const message = status === 404 ? '未找到该元素，无法生成概念图' : '概念图生成失败'
+    $q.notify({ color: 'negative', message, icon: 'error', timeout: 2200 })
+  }
 }
 
 /** Human-readable label for a left-panel section (notification copy). */

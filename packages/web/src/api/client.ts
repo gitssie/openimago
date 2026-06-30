@@ -665,6 +665,20 @@ export const api = {
       `/api/platform/projects/${projectId}/story/episodes/${episodeId}/voiceover`,
       { method: 'POST', body: '{}' },
     ),
+  // Bible-element concept art (ADR 0004, openimago-ugy9) — the 关键元素 "评论生成" op.
+  // Appends a shot-less (shotId:null) image run linked to the element via nodeId,
+  // so its left-panel card surfaces the new thumbnail. Optional prompt/model
+  // override the element's authored copy. Media cost is billed inline (xqr).
+  generateElementConcept: (
+    projectId: string,
+    episodeId: string,
+    elementId: string,
+    params?: { prompt?: string; model?: string },
+  ) =>
+    request<{ run: OpenimagoGenerationRun }>(
+      `/api/platform/projects/${projectId}/story/episodes/${episodeId}/elements/${elementId}/concept`,
+      { method: 'POST', body: JSON.stringify(params ?? {}) },
+    ),
   // Story writes (ADR 0005) — delete a shot (renumbers the rest).
   deleteShot: (projectId: string, episodeId: string, shotId: string, expectedUpdatedAt?: string) =>
     request<{ updatedAt: string }>(
