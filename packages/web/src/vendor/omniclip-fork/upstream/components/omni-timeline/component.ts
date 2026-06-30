@@ -177,6 +177,26 @@ export const OmniTimeline = shadow_component(use => {
 		}
 		// Only do layout work while an interaction is active.
 		if(!effectTrim.grabbed && !effectDrag.grabbed && !playheadDrag.grabbed) {return}
+		// openimago-sdin: ZERO-LATENCY tracking — drive the grabbed clip's transform DIRECTLY
+		// + SYNCHRONOUSLY here, bypassing BOTH the rAF coalescing below AND the reactive
+		// setCords hop (which together lag the cursor 1-2 frames — the felt jank with clean
+		// frame metrics). The reactive/logical path (proposal indicator + drop placement)
+		// still runs via the rAF below; only the grabbed node's per-move VISUAL transform is
+		// written here. eomu (flat) + fg8y (viewport-sized) + 6807 (layer-promoted) keep this
+		// a cheap composite-only move, exactly like dragging a plain div. The transform here
+		// matches the reactive template (coordinates − grabbed.offset) so the drop re-render
+		// lands with no jump.
+		const dn = effectDrag.directNodes
+		if(dn && effectDrag.grabbed) {
+			const bounds = get_timeline_bounds()
+			if(bounds) {
+				const coordX = Math.max(0, event.clientX - bounds.left)
+				const coordY = Math.max(0, event.clientY - bounds.top)
+				const t = `translate(${coordX - effectDrag.grabbed.offset.x}px, ${coordY - effectDrag.grabbed.offset.y}px)`
+				dn.effect.style.transform = t
+				dn.preview.style.transform = t
+			}
+		}
 		// openimago-7ca2: start the drag-scoped frame monitor for clip/trim drags only.
 		if(effectDrag.grabbed || effectTrim.grabbed) {start_frame_monitor()}
 		pending_event = event
