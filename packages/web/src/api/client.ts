@@ -400,6 +400,28 @@ export interface GalleryDetail {
   }
 }
 
+// Directory-scan entries (openimago-r5h0). The /outputs and /files routes scan a
+// project/session directory and return bare file metadata — NOT the DB-backed
+// WorkspaceFile shape (no `access` hrefs, no `workspaceFileId`). Renderable media
+// with hosted URLs comes from the workspace-files API (`projectWorkspaceFiles`);
+// these scans only carry on-disk metadata. Mirrors OutputsService.OutputEntry /
+// FileService.FileEntry on the backend.
+export interface ProjectOutputEntry {
+  name: string
+  path: string
+  size: number
+  mimeType: string
+  thumbnailPath?: string
+  modifiedAt: string
+}
+export interface ProjectFileEntry {
+  name: string
+  path: string
+  size: number
+  type: string
+  modifiedAt: string
+}
+
 export const api = {
   // Auth — { token, user } / { id, username, ... }
   register: (data: { email: string; password: string }) =>
@@ -560,9 +582,10 @@ export const api = {
   projectWorkspaceFiles: (projectId: string) =>
     request<{ workspaceFiles: WorkspaceFile[] }>(`/api/platform/projects/${projectId}/workspace-files`).then((r) => r.workspaceFiles ?? []),
 
-  // Project outputs — aggregated media results across project sessions
+  // Project outputs — files scanned from the project directory (openimago-r5h0:
+  // returns ProjectOutputEntry, NOT WorkspaceFile).
   projectOutputs: (projectId: string) =>
-    request<{ outputs: WorkspaceFile[] }>(`/api/platform/projects/${projectId}/outputs`).then((r) => r.outputs ?? []),
+    request<{ outputs: ProjectOutputEntry[] }>(`/api/platform/projects/${projectId}/outputs`).then((r) => r.outputs ?? []),
 
   // Delete one scanned output file from the project directory (openimago-oy1l).
   // `name` is the output's basename (OutputEntry.name); mirrors deleteAsset.
@@ -572,9 +595,10 @@ export const api = {
       { method: 'DELETE' },
     ),
 
-  // Project files — flat file listing for a project
+  // Project files — flat file listing scanned from the project directory
+  // (openimago-r5h0: returns ProjectFileEntry, NOT WorkspaceFile).
   projectFiles: (projectId: string) =>
-    request<{ files: WorkspaceFile[] }>(`/api/platform/projects/${projectId}/files`).then((r) => r.files ?? []),
+    request<{ files: ProjectFileEntry[] }>(`/api/platform/projects/${projectId}/files`).then((r) => r.files ?? []),
 
   // ── Story Data (read-only project scaffold files) ───────────────────────────
   //

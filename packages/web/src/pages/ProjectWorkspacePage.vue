@@ -2108,22 +2108,42 @@ async function fetchStoryData() {
   }
 }
 
+/** Map a mime type to the media kind used by the output surfaces, or null for
+ *  non-media files (which the outputs/artifacts surfaces don't show). */
+function mimeToMediaKind(mime: string): 'image' | 'video' | 'audio' | null {
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime.startsWith('audio/')) return 'audio'
+  return null
+}
+
+// fetchProjectOutputs maps the directory-scan /outputs response. The backend
+// returns ProjectOutputEntry (name/path/size/mimeType/modifiedAt) — NOT the
+// WorkspaceFile shape the old mapper assumed (openimago-r5h0), which threw on
+// every item and left this surface empty at runtime. Directory scans carry no
+// externally servable URL (the renderable, hosted outputs come from the
+// workspace-files API → aiOutputItems), so `url` stays empty; we keep the
+// on-disk filename (also the delete key) + kind + time so the storyboard
+// fallback / artifacts surfaces actually populate.
 async function fetchProjectOutputs() {
   projectOutputsLoading.value = true
   try {
     const outputs = await api.projectOutputs(projectId.value)
-    projectOutputs.value = outputs.map((wf) => ({
-      id: wf.workspaceFileId,
-      url: wf.access.thumbnail?.href ?? wf.access.preview.href ?? '',
-      filename: wf.filename || wf.kind || '生成结果',
-      kind: wf.kind,
-      timeLabel: formatResultTime(new Date(wf.createdAt)),
-      promptText: wf.prompt ?? '',
-      model: wf.model ?? null,
-      resolution: null,
-      durationLabel: null,
-      ...(wf.generationRun ? { genRun: wf.generationRun } : {}),
-    }))
+    projectOutputs.value = outputs.flatMap((o) => {
+      const kind = mimeToMediaKind(o.mimeType)
+      if (!kind) return []
+      return [{
+        id: o.name,
+        url: '',
+        filename: o.name,
+        kind,
+        timeLabel: formatResultTime(new Date(o.modifiedAt)),
+        promptText: '',
+        model: null,
+        resolution: null,
+        durationLabel: null,
+      } satisfies OutputItem]
+    })
     if (!selectedOutputId.value && projectOutputs.value.length > 0) {
       selectedOutputId.value = projectOutputs.value[0]!.id
     }
@@ -2152,19 +2172,25 @@ async function fetchProjectWorkspaceFiles() {
   }
 }
 
+// Same defect/shape as fetchProjectOutputs (openimago-r5h0): /files returns
+// ProjectFileEntry (name/path/size/type/modifiedAt), not WorkspaceFile. Map the
+// real fields, filtered to media kinds (the artifacts surface only shows media).
 async function fetchProjectFiles() {
   projectFilesLoading.value = true
   try {
     const files = await api.projectFiles(projectId.value)
-    projectFiles.value = files.map((wf) => ({
-      id: wf.workspaceFileId,
-      url: wf.access.preview.href ?? '',
-      filename: wf.filename || wf.kind || '文件',
-      kind: wf.kind,
-      timeLabel: formatResultTime(new Date(wf.createdAt)),
-      promptText: wf.prompt ?? '',
-      ...(wf.generationRun ? { genRun: wf.generationRun } : {}),
-    }))
+    projectFiles.value = files.flatMap((f) => {
+      const kind = mimeToMediaKind(f.type)
+      if (!kind) return []
+      return [{
+        id: f.name,
+        url: '',
+        filename: f.name,
+        kind,
+        timeLabel: formatResultTime(new Date(f.modifiedAt)),
+        promptText: '',
+      } satisfies OutputItem]
+    })
   } catch {
     projectFiles.value = []
   } finally {
