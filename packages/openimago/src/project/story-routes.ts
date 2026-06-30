@@ -521,3 +521,16 @@ storyRoutes.get("/:id/story/agents", async (c) => {
   // Return as text/plain since AGENTS.md is markdown, not JSON
   return c.text(result.text)
 })
+
+// ── Session-reachable mount (ADR 0009) ────────────────────────────────────────
+//
+// Story is directory-scoped: a standalone session resolves to a directory +
+// ownership exactly like a project (StoryService.resolveProjectDir treats the
+// `:id` as a session key when it matches no project). Re-mount the SAME story
+// handlers under the sessions namespace so `/api/platform/sessions/:id/story/*`
+// works with `:id` = sessionId, with zero duplicated handler bodies.
+//
+// The dual-channel validate route (storyValidateRoutes) stays project-only for
+// now and is intentionally NOT re-mounted here.
+export const storySessionRoutes = new Hono()
+storySessionRoutes.route("/", storyRoutes)

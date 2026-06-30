@@ -2,9 +2,10 @@ import { eq } from "drizzle-orm"
 import { readFile, access, writeFile, rename, mkdir } from "fs/promises"
 import path from "path"
 import { db } from "../db/client"
-import { projects } from "../db/schema"
+import { projects, users } from "../db/schema"
 import { logger } from "../server/logger"
 import { filmstripMeta, type FilmstripMeta } from "../media/filmstrip"
+import { resolveDirectory as resolveSessionDirectory } from "../workdir/resolver"
 
 // ── Canonical story file names relative to project directory ──────────────────
 
@@ -391,16 +392,43 @@ interface LegacyCutClipV1 {
 
 export class StoryService {
   /**
-   * Validate project ownership and return the project directory.
+   * Resolve a Story workspace directory from a project key OR a standalone
+   * session key, with ownership check (ADR 0009). Story files live inside the
+   * directory; the key is only used to look up that directory + verify the
+   * caller may reach it. The directory is the single storage entity behind both
+   * a project (`projects.directory`, owned via `projects.userId`) and a session
+   * (`session.directory`, owned via `session.workspace_id`).
    */
-  private async resolveProjectDir(
-    projectId: string,
+  private async resolveWorkspaceDir(
+    key: { projectId: string } | { sessionId: string },
     userId: string,
   ): Promise<string | { error: { code: string; message: string }; status: number }> {
+    if ("sessionId" in key) {
+      // Map userId → workspaceId (the link projects.userId provides for the
+      // project branch), then reuse the shared session resolver, which checks
+      // session existence + workspace ownership.
+      const [user] = await db
+        .select({ workspaceId: users.workspaceId })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1)
+
+      if (!user?.workspaceId) {
+        logger.warn({ userId, sessionId: key.sessionId }, "story: forbidden — no workspace for user")
+        return { error: { code: "FORBIDDEN", message: "Not workspace owner" }, status: 403 }
+      }
+
+      const resolved = await resolveSessionDirectory(key.sessionId, user.workspaceId)
+      if ("status" in resolved) {
+        return { error: { code: resolved.code, message: resolved.message }, status: resolved.status }
+      }
+      return resolved.directory
+    }
+
     const rows = await db
       .select()
       .from(projects)
-      .where(eq(projects.id, projectId))
+      .where(eq(projects.id, key.projectId))
 
     if (rows.length === 0) {
       return { error: { code: "NOT_FOUND", message: "Project not found" }, status: 404 }
@@ -409,11 +437,31 @@ export class StoryService {
     const project = rows[0]!
 
     if (project.userId !== userId) {
-      logger.warn({ userId, projectId }, "story: forbidden — not project owner")
+      logger.warn({ userId, projectId: key.projectId }, "story: forbidden — not project owner")
       return { error: { code: "FORBIDDEN", message: "Not project owner" }, status: 403 }
     }
 
     return project.directory
+  }
+
+  /**
+   * Thin wrapper kept for the story method bodies, which pass a single id
+   * string. Reached via `/projects/:id/story/*` the id is a project id; reached
+   * via `/sessions/:id/story/*` (ADR 0009) it is a session id. Project and
+   * session ids occupy disjoint id-spaces, so resolve-as-project first and fall
+   * back to resolve-as-session only when the id matches no project (NOT_FOUND).
+   * A project owned by another user returns FORBIDDEN without falling through —
+   * it IS a project, just not this caller's.
+   */
+  private async resolveProjectDir(
+    id: string,
+    userId: string,
+  ): Promise<string | { error: { code: string; message: string }; status: number }> {
+    const asProject = await this.resolveWorkspaceDir({ projectId: id }, userId)
+    if (typeof asProject !== "string" && asProject.status === 404) {
+      return this.resolveWorkspaceDir({ sessionId: id }, userId)
+    }
+    return asProject
   }
 
   /**
