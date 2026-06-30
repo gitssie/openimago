@@ -148,8 +148,13 @@ const base_styles = css`
 			position: absolute;
 			background: #0080002e;
 			border-radius: 5px;
-			top: 0;
-			
+			top: 0px;
+			/* openimago-6807: the drop preview moves per frame via transform:translate
+			   (proposal-indicator.ts) and can be thousands of px wide. It is display:block
+			   ONLY during a grab, so a static will-change here promotes it to its own layer
+			   for the drag without holding a persistent layer the rest of the time. */
+			will-change: transform;
+
 			&[data-push-effects] {
 				width: 10px;
 				z-index: 1;

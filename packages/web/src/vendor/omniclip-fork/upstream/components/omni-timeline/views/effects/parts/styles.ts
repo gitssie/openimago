@@ -24,6 +24,12 @@ const base_styles = css`
 		&[data-grabbed] {
 			opacity: 1 !important;
 			cursor: grabbing;
+			/* openimago-6807: the .trim-handles preview is the element effect.ts moves via
+			   transform:translate(setCords) during a drag — promote it to its own layer
+			   (composite-only move) and contain its paint. Gated on [data-grabbed] so the
+			   layer exists only while dragging. */
+			will-change: transform;
+			contain: paint;
 		}
 
 		&[data-selected] {
@@ -82,6 +88,13 @@ const base_styles = css`
 		top: 0;
 		height: 50px;
 		overflow: hidden;
+		/* openimago-6807: cap each clip's paint/layout area. Clips can be many
+		   thousands of px wide with a tiled repeat-x filmstrip; bounding the clip's
+		   paint + layout lets the browser skip re-rasterising off-screen clips and the
+		   ones pushed during a swap. Visually a no-op — the box is already
+		   overflow:hidden + position:absolute (its own containing block), and the
+		   .trim-handles live in a SIBLING node so they are never clipped by this. */
+		contain: layout paint;
 
 		& .not-found {
 			background: repeating-linear-gradient(45deg, #5D5D5D, #5D5D5D 10px, #858585 10px, #858585 20px);
@@ -92,6 +105,12 @@ const base_styles = css`
 		&[data-grabbed] {
 			z-index: 2;
 			opacity: 0.5 !important;
+			/* openimago-6807: promote the GRABBED clip to its own GPU compositor layer
+			   so the per-frame transform:translate move (effect.ts setCords) is
+			   composite-only — no re-rasterising of the huge tiled filmstrip each frame.
+			   Gated on [data-grabbed] so the layer (and its GPU memory) exists ONLY for
+			   the duration of the drag, never for all clips at once. */
+			will-change: transform;
 		}
 
 		&[data-selected] {
