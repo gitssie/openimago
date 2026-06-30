@@ -4,7 +4,6 @@ import {light_view} from "../../../../context/context.js"
 import {ProposedTimecode} from "../../../../context/types.js"
 import {calculate_effect_width} from "../../utils/calculate_effect_width.js"
 import {calculate_start_position} from "../../utils/calculate_start_position.js"
-import {calculate_effect_track_index} from "../../utils/calculate_effect_track_index.js"
 import {calculate_effect_track_placement} from "../../utils/calculate_effect_track_placement.js"
 import {getEffectsOnTrack} from "../../../../context/controllers/timeline/utils/get-effects-on-track.js"
 import {EffectDrag, EffectDrop} from "../../../../context/controllers/timeline/parts/drag-related/effect-drag.js"
@@ -24,13 +23,17 @@ export const ProposalIndicator = light_view(use => () => {
 
 	function translate_to_timecode({grabbed, position}: EffectDrop | EffectDrag) {
 		const baseline_zoom = use.context.state.zoom
-		const [x, y] = position.coordinates
+		const [x] = position.coordinates
 		const start = ((x - grabbed.offset.x) * Math.pow(2, -baseline_zoom))
 		const timeline_start = start >= 0 ? start : 0
 		const timeline_end = ((x - grabbed.offset.x) * Math.pow(2, -baseline_zoom)) + (grabbed.effect.end - grabbed.effect.start)
-		const track = calculate_effect_track_index(y, use.context.state.tracks.length, use.context.state.effects) > use.context.state.tracks.length - 1
-			? use.context.state.tracks.length - 1
-			: calculate_effect_track_index(y, use.context.state.tracks.length, use.context.state.effects)
+		// openimago-5zry: the Cut editor is a FIXED 3-lane layout (video=track0,
+		// narration=track1, BGM=track2). Lock the drop target to the clip's
+		// ORIGINAL track so a drag can only reorder horizontally WITHIN its own
+		// lane — it must never change lane. The y-derived
+		// calculate_effect_track_index() is intentionally bypassed; the horizontal
+		// timeline_start/timeline_end math above is unchanged.
+		const track = grabbed.effect.track
 		return {
 			timeline_start,
 			timeline_end,

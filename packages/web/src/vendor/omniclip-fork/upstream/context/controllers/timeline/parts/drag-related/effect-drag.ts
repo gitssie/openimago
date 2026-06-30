@@ -33,13 +33,14 @@ export class EffectDragHandler {
 
 	drop(e: PointerEvent) {
 		if(this.grabbed) {
-			const path = e.composedPath()
-			const indicator = path.find(e => (e as HTMLElement).className === "indicator-area") as HTMLElement | undefined
-			this.onDrop.publish({grabbed: this.grabbed!, position: {...this.at!,
-				indicator: indicator
-					? {type: "addTrack", index: Number(indicator.getAttribute("data-index"))}
-					: null
-			}})
+			// openimago-5zry: the Cut editor is a FIXED 3-lane layout — a drop must
+			// NEVER create a new lane. The "addTrack" indicator (set when the drop
+			// lands on an `.indicator-area` gutter) is what drives
+			// EffectManager.setProposedTimecode -> #adjustForAddTrackDrop ->
+			// actions.add_track(), so it is suppressed here: the committed drop
+			// always carries a null indicator and the fixed 3-lane set is preserved.
+			void e
+			this.onDrop.publish({grabbed: this.grabbed!, position: {...this.at!, indicator: null}})
 			this.#resetState()
 		}
 	}
