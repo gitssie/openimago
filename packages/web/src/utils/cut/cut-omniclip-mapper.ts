@@ -97,7 +97,14 @@ export function cutToOmniclipState(
       track: 0,
       file_hash: media.fileHash,
       name: media.name,
-      thumbnail: media.thumbnail,
+      // openimago-9frm: do NOT thread the source's base64 data-URL thumbnail (tens-hundreds KB)
+      // onto the omniclip effect. slate StateTree.transmute structuredClones the ENTIRE effects
+      // state x2 on every action (drop/trim/ripple), so a per-effect base64 = multiple MB cloned
+      // per edit (invisible to JS timers — inside structuredClone) = residual edit jank. The
+      // embedded editor never reads effect.thumbnail (the timeline filmstrip uses the sprite /
+      // filmstrip_url; the only reader is the suppressed omniclip export view; cut.json readback
+      // never reads it). Keep it empty so every transmute clone stays tiny.
+      thumbnail: '',
       raw_duration: media.rawDurationSeconds * MS_PER_S,
       frames: media.frames,
       rect: fullFrameRect(),

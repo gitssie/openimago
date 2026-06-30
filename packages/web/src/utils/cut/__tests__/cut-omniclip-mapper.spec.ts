@@ -42,6 +42,27 @@ describe('cut <-> omniclip mapper (production)', () => {
     expect(state.effects[1]).toMatchObject({ start: 1000, end: 4000, duration: 3000, start_at_position: 2500 })
   })
 
+  it('keeps the heavy base64 thumbnail OUT of omniclip state (openimago-9frm)', () => {
+    // slate StateTree.transmute structuredClones the whole effects state x2 on EVERY action
+    // (drop/trim/ripple). A base64 data-URL thumbnail (tens-hundreds KB) on each effect would
+    // be cloned every edit — multiple MB of dead weight, since the embedded editor never reads
+    // effect.thumbnail (the timeline filmstrip uses the sprite/filmstrip_url). So the mapper
+    // must NOT thread the heavy base64 onto the hydrated effect, even though the source media
+    // carries one.
+    const { state } = cutToOmniclipState(baseCut, resolveMedia)
+    let videoCount = 0
+    for (const e of state.effects) {
+      if (e.kind === 'video') {
+        videoCount++
+        expect(e.thumbnail).toBe('')
+      }
+    }
+    expect(videoCount).toBeGreaterThan(0)
+    // sanity: the source media DID carry a heavy base64 thumbnail, so the assertion isn't vacuous
+    const m = resolveMedia('shot_1')
+    expect(m?.thumbnail).toContain('base64')
+  })
+
   it('clamps a clip whose out point exceeds its source-duration snapshot (openimago-lknv)', () => {
     const overlongCut: EpisodeCut = {
       ...baseCut,
