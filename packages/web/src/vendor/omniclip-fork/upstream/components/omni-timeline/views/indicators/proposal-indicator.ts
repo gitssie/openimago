@@ -7,6 +7,7 @@ import {calculate_start_position} from "../../utils/calculate_start_position.js"
 import {calculate_effect_track_placement} from "../../utils/calculate_effect_track_placement.js"
 import {getEffectsOnTrack} from "../../../../context/controllers/timeline/utils/get-effects-on-track.js"
 import {EffectDrag, EffectDrop} from "../../../../context/controllers/timeline/parts/drag-related/effect-drag.js"
+import {laneHeight} from "../../../../../patches/timeline-lanes"
 
 export const ProposalIndicator = light_view(use => () => {
 	const controller = use.context.controllers.timeline
@@ -70,17 +71,15 @@ export const ProposalIndicator = light_view(use => () => {
 		return () => {disposeDrag(); disposeDrop()}
 	})
 
-	const text_effect_specific_styles = () => {
-		return !track_effects.some(effect => effect.kind !== "text") && track_effects.find(effect => effect.kind === "text")
-			? `height: 30px;`
-			: ""
-	}
-
 	return html`
 		<div
 			?data-push-effects=${proposedTimecode?.effects_to_push}
 			style="
-				${text_effect_specific_styles()}
+				${/* openimago-uzho: size the drop preview to the SAME lane source of truth
+				    as the track rows/placement so it always matches the hovered lane —
+				    video=50 / audio|BGM|empty=25 / text=30 — overriding the uniform CSS
+				    .drop-indicator{height:50px} and the old stray inline 30px. */ ""}
+				height: ${laneHeight(track_effects)}px;
 				display: ${effectDragHandler.grabbed && !trim_handler.grabbed && !getDraggedOverAddTrackIndicator() ? "block" : "none"};
 				width: ${
 					proposedTimecode.effects_to_push
