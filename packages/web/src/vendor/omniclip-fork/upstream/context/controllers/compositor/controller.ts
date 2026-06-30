@@ -230,8 +230,15 @@ export class Compositor {
 	}
 
 	#update_currently_played_effects(effects: AnyEffect[], timecode: number, exporting?: boolean) {
+		// openimago-fgec (perf-diag; DEV-only). The reorder recompose path: compares the set
+		// of effects under the playhead and adds/removes canvas objects. `add` > 0 here on a
+		// reorder means a clip newly intersects the timecode → a video decode/seek (see
+		// #add_effects_to_canvas). REMOVE after diagnosis.
+		perfCount("update_currently_played_effects")
 		const effects_relative_to_timecode = this.get_effects_relative_to_timecode(effects, timecode)
 		const {add, remove} = compare_arrays([...this.currently_played_effects.values()], effects_relative_to_timecode)
+		if(add.length > 0) {perfCount("ucpe-add")}
+		if(remove.length > 0) {perfCount("ucpe-remove")}
 		this.#update_effects(effects_relative_to_timecode)
 		this.#remove_effects_from_canvas(remove, exporting)
 		this.#add_effects_to_canvas(add)
@@ -310,7 +317,11 @@ export class Compositor {
 				this.currently_played_effects.set(effect.id, effect)
 				this.managers.videoManager.add_video_to_canvas(effect)
 				const element = this.managers.videoManager.get(effect.id)?.sprite?.texture.baseTexture.resource.source as HTMLVideoElement
-				if(element) {element.currentTime = effect.start / 1000}
+				// openimago-fgec (perf-diag; DEV-only): setting currentTime triggers an async
+				// video DECODE/SEEK — the real per-drop cost that app.render's 0.1ms hides. A
+				// count > 0 on a reorder means the drop re-decoded a video frame. REMOVE after
+				// diagnosis.
+				if(element) {perfCount("video-decode-seek"); element.currentTime = effect.start / 1000}
 			}
 			else if(effect.kind === "text") {
 				this.currently_played_effects.set(effect.id, effect)

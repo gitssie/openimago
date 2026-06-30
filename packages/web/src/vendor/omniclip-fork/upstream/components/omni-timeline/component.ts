@@ -112,6 +112,49 @@ export const OmniTimeline = shadow_component(use => {
 		}
 	}
 
+	// ── openimago-fgec: DROP-COMMIT frame monitor (opt-in: window.__cutPerf) ──────────
+	// The DRAG monitor above STOPS at pointerup, so the drop/commit frame — where the
+	// reorder dispatch fires (effect-manager → push effects → state → recompose/repaint)
+	// — has been our BLIND SPOT. The user localizes the jank to the DROP, so keep sampling
+	// inter-frame ms for the ~500ms commit window after pointerup and log the worst frame +
+	// when it settled. Compare longestFrame here against the [perf-diag] compose_effects /
+	// video-decode counts to tell paint-of-the-ripple from a wasteful preview recompose.
+	const COMMIT_WINDOW_MS = 500
+	let commit_raf: number | null = null
+	let commit_start = 0
+	let commit_last = 0
+	let commit_count = 0
+	let commit_longest = 0
+	let commit_over32 = 0
+	let commit_settle = 0 // elapsed ms (from drop) at the END of the last >16ms frame
+
+	const commit_tick = (now: number) => {
+		if(commit_last > 0) {
+			const dt = now - commit_last
+			commit_count++
+			if(dt > commit_longest) {commit_longest = dt}
+			if(dt > 32) {commit_over32++}
+			if(dt > 16.7) {commit_settle = now - commit_start}
+		}
+		commit_last = now
+		if(now - commit_start < COMMIT_WINDOW_MS) {
+			commit_raf = requestAnimationFrame(commit_tick)
+		} else {
+			commit_raf = null
+			if(__cutPerf() && commit_count > 0) {
+				console.log(`[cutPerf] DROP COMMIT: longestFrame=${commit_longest.toFixed(1)}ms frames=${commit_count} over32=${commit_over32} settleMs=${commit_settle.toFixed(0)}`)
+			}
+		}
+	}
+
+	const start_commit_monitor = () => {
+		if(!__cutPerf()) {return}
+		if(commit_raf !== null) {cancelAnimationFrame(commit_raf)}
+		commit_start = performance.now()
+		commit_last = 0; commit_count = 0; commit_longest = 0; commit_over32 = 0; commit_settle = 0
+		commit_raf = requestAnimationFrame(commit_tick)
+	}
+
 	let cached_bounds: DOMRect | null = null
 	let pending_event: PointerEvent | null = null
 	let raf_id: number | null = null
@@ -204,7 +247,12 @@ export const OmniTimeline = shadow_component(use => {
 	}
 
 	const end_drag_interaction = () => {
+		// openimago-fgec: this pointerup ends a real drag iff the DRAG monitor was running.
+		// Capture before stop_frame_monitor() nulls frame_raf, then sample the post-drop
+		// commit window (the previously-unmeasured drop hitch).
+		const was_dragging = frame_raf !== null
 		stop_frame_monitor() // openimago-7ca2: log the per-drag frame summary on drop.
+		if(was_dragging) {start_commit_monitor()} // openimago-fgec: measure the commit window.
 		if(raf_id !== null) {
 			cancelAnimationFrame(raf_id)
 			raf_id = null
@@ -230,6 +278,7 @@ export const OmniTimeline = shadow_component(use => {
 			removeEventListener("scroll", invalidate_bounds, true)
 			if(raf_id !== null) {cancelAnimationFrame(raf_id)}
 			stop_frame_monitor() // openimago-7ca2
+			if(commit_raf !== null) {cancelAnimationFrame(commit_raf); commit_raf = null} // openimago-fgec
 		}
 	})
 
