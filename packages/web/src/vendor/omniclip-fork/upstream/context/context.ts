@@ -45,12 +45,29 @@ export class OmniContext extends Context {
 			// (#on_playing renders every frame), so it does NOT reintroduce the idle render.
 			this.controllers.compositor.request_render()
 		})
-		watch.track(() => this.#core.state.effects, async () => {
-			queue = queue.then(async () => {
-				await this.controllers.compositor.managers.animationManager.refresh(this.state)
-			})
-		})
-		watch.track(() => this.#core.state.animations, async () => {
+		// openimago-9oq0: COALESCE the effects/animations → animationManager.refresh →
+		// compose_effects path. A ripple drop fires N SYNCHRONOUS effect dispatches
+		// (effect-manager #pushEffectsForward forEach set_effect_start_position); the old
+		// per-dispatch `queue.then(refresh)` ran a FULL refresh → compose_effects → 1080p
+		// stage sort/render (+ a guarded seek) for EACH of the N — the "放置卡住" drop freeze.
+		// Both watchers now schedule a single trailing-edge refresh, so the whole burst
+		// collapses to ONE refresh + ONE compose on the FINAL state (identical visual result).
+		watch.track(() => this.#core.state.effects, () => this.#scheduleEffectsRefresh())
+		watch.track(() => this.#core.state.animations, () => this.#scheduleEffectsRefresh())
+	}
+
+	#refreshScheduled = false
+
+	// openimago-9oq0: trailing-edge coalesce of animationManager.refresh. The first dispatch
+	// of a synchronous burst schedules ONE rAF; later dispatches in the same tick are deduped.
+	// On the next frame the refresh runs ONCE, reading the FINAL `this.state`, so the last
+	// update is never dropped. Mirrors the openimago-pfho request_render rAF-coalesce pattern.
+	// Keeps the existing `queue` serialisation so an in-flight async refresh never overlaps.
+	#scheduleEffectsRefresh() {
+		if(this.#refreshScheduled) {return}
+		this.#refreshScheduled = true
+		requestAnimationFrame(() => {
+			this.#refreshScheduled = false
 			queue = queue.then(async () => {
 				await this.controllers.compositor.managers.animationManager.refresh(this.state)
 			})
