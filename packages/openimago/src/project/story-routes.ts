@@ -541,6 +541,30 @@ storyRoutes.post("/:id/story/episodes/:epId/runs/rerun", async (c) => {
   return c.json({ run: result.data.run }, 201)
 })
 
+// POST /api/platform/projects/:id/story/episodes/:epId/elements/:elementId/concept
+// Generate Bible-element concept art (openimago-ugy9): the 关键元素 "评论生成" op.
+// Appends a shot-less (shotId:null) image Run linked to the element via nodeId,
+// so the left-panel element card surfaces the new thumbnail. Optional prompt/model
+// in the body override the element's authored copy. Distinct from shot generation.
+storyRoutes.post("/:id/story/episodes/:epId/elements/:elementId/concept", async (c) => {
+  const userId = c.get("userId") as string
+  const projectId = c.req.param("id")
+  const episodeId = c.req.param("epId")
+  const elementId = c.req.param("elementId")
+
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
+  const params = {
+    ...(typeof body["prompt"] === "string" ? { prompt: body["prompt"] } : {}),
+    ...(typeof body["model"] === "string" ? { model: body["model"] } : {}),
+  }
+
+  const result = await storyService.generateElementConcept(projectId, userId, episodeId, elementId, params)
+  if ("error" in result) {
+    return c.json({ error: result.error }, result.status as any)
+  }
+  return c.json({ run: result.data.run }, 201)
+})
+
 // GET /api/platform/projects/:id/story/agents
 storyRoutes.get("/:id/story/agents", async (c) => {
   const userId = c.get("userId") as string

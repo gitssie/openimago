@@ -284,7 +284,10 @@ export interface EpisodeShot {
 export interface GenerationRun {
   id: string
   nodeId: string
-  shotId: string
+  /** Shot this run belongs to, or null for Bible-level concept art (Character /
+   *  Scene design) which is shot-less and linked only to a Workflow node via
+   *  nodeId (CONTEXT.md Run; seed docs/story-schema/runs/ep_001.runs.json). */
+  shotId: string | null
   status: string
   params: {
     prompt: string
@@ -1070,6 +1073,69 @@ export class StoryService {
   }
 
   /**
+   * Generate concept art for a Bible element (Character / Scene design,
+   * openimago-ugy9). Per CONTEXT.md, Bible-level concept art is a Run with
+   * `shotId: null` linked only to a Workflow node — so this appends an image-kind
+   * run with the element id on `nodeId` (the left-panel element card resolves its
+   * thumbnail by matching nodeId ⊇ element-id token; mapper.runNodeMatchesElement).
+   * Reuses the shared media-gen path (`buildMockImageRun` / `appendRun`).
+   *
+   * This is the 关键元素 "评论生成" op — distinct from shot generation (which is video
+   * + flips shot status). Billing note: like shot generation, media cost is billed
+   * INLINE by the media service (openimago-xqr), reusing the same media-gen path —
+   * not via session.cost/CDC.
+   */
+  async generateElementConcept(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    elementId: string,
+    params?: { prompt?: string; model?: string },
+  ): Promise<
+    | { data: { run: GenerationRun }; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    if (!SAFE_EP_RELATED_PATTERN.test(`${episodeId}.runs.json`)) {
+      logger.warn({ projectId, episodeId }, "story: invalid episode ID (generateElementConcept)")
+      return { error: { code: "VALIDATION_ERROR", message: "Invalid episode ID" }, status: 400 }
+    }
+    if (!elementId) {
+      return { error: { code: "VALIDATION_ERROR", message: "elementId is required" }, status: 400 }
+    }
+
+    const dir = await this.resolveProjectDir(projectId, userId)
+    if (typeof dir !== "string") return dir // 403 non-owner / 404 missing project/session
+
+    // ── Resolve the element from the Bible (character or scene) ──
+    const bibleRead = await this.readJsonFile<StoryBible>(dir, CANONICAL_BIBLE, projectId)
+    if ("error" in bibleRead) return bibleRead
+    const bible = bibleRead.data
+    const characters = Array.isArray(bible.characters) ? bible.characters : []
+    const scenes = Array.isArray(bible.scenes) ? bible.scenes : []
+    const element =
+      characters.find((c) => String(c["id"] ?? "") === elementId) ??
+      scenes.find((s) => String(s["id"] ?? "") === elementId)
+    if (!element) {
+      return { error: { code: "NOT_FOUND", message: `Bible element not found: ${elementId}` }, status: 404 }
+    }
+
+    // ── Resolve params: posted prompt/model win, else the element's authored copy ──
+    const elementName = typeof element["name"] === "string" ? element["name"] : ""
+    const elementDescription = typeof element["description"] === "string" ? element["description"] : ""
+    const promptOverride = typeof params?.prompt === "string" ? params.prompt.trim() : ""
+    const prompt = promptOverride || elementDescription.trim() || elementName.trim() || `concept ${elementId}`
+    const model =
+      typeof params?.model === "string" && params.model.trim() ? params.model.trim() : "mock-image-model"
+
+    // ── Build the shot-less concept-art image run + append (append-only) ──
+    const run = this.buildMockImageRun(elementId, { prompt, model })
+    const runsWrite = await this.appendRun(dir, projectId, episodeId, run)
+    if ("error" in runsWrite) return runsWrite
+
+    return { data: { run }, status: 200 }
+  }
+
+  /**
    * Build a completed mock-video GenerationRun for a shot from resolved params —
    * the shared media-generation path for both shot generation (`generateShot`) and
    * artifact rerun (`rerunArtifact`). The mock provider keys its clip on the prompt,
@@ -1106,6 +1172,38 @@ export class StoryService {
       startedAt: now,
       completedAt: now,
       ...(extra?.parentArtifactId ? { parentArtifactId: extra.parentArtifactId } : {}),
+    }
+  }
+
+  /**
+   * Build a completed mock-image GenerationRun for Bible concept art (openimago-ugy9).
+   * Shot-less (`shotId: null`); `nodeId` is set to the element id so the element
+   * card resolves this thumbnail. The mock provider keys its image on the prompt,
+   * so editing the prompt changes the media. A real image provider (openimago-xqr)
+   * slots in behind this same signature.
+   */
+  private buildMockImageRun(
+    elementId: string,
+    resolved: { prompt: string; model: string },
+  ): GenerationRun {
+    const url = mockImageUrl(`${elementId}${resolved.prompt}`)
+    const now = new Date().toISOString()
+    const artifactId = `mock_${randomSlug()}`
+    return {
+      id: `run_${randomSlug()}`,
+      nodeId: elementId,
+      shotId: null,
+      status: "completed",
+      params: { prompt: resolved.prompt, model: resolved.model },
+      result: {
+        artifactId,
+        kind: "image",
+        mime: "image/svg+xml",
+        filename: `${elementId}-${artifactId}.svg`,
+        access: { preview: url, thumbnail: url },
+      },
+      startedAt: now,
+      completedAt: now,
     }
   }
 
