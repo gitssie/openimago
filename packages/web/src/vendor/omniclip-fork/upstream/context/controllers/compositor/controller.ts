@@ -67,6 +67,19 @@ export class Compositor {
 		}
 
 		this.#on_playing()
+
+		// openimago-pfho PROOF (perf-diag; DEV-only). PIXI v7's Application defaults to
+		// autoStart:true, whose TickerPlugin registers app.render on the SHARED ticker →
+		// the full 1920x1080 WebGL stage is re-rendered ~60x/sec CONTINUOUSLY, even idle/
+		// paused and when nothing changed. That internal ticker render is invisible to our
+		// perfWrap (which only wraps the two EXPLICIT app.render() calls) — which is why
+		// every perf-diag/__cutPerf number reads ~0ms while dragging still drops frames.
+		// This counter fires once per ticker frame: at IDLE (no interaction) it should
+		// show ~60 calls/sec in the [perf-diag] summary, proving the continuous 1080p
+		// render. If it is NOT ~60/sec the hypothesis is wrong — re-measure. REMOVE after
+		// confirmation; the render-on-demand fix (autoStart:false) is the follow-up.
+		this.app.ticker.add(() => perfCount("pixi-ticker-render"))
+
 		reactor.reaction(
 			() => this.#is_playing.value,
 			(is_playing) => {
