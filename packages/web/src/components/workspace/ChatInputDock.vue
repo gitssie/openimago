@@ -125,7 +125,7 @@ withDefaults(defineProps<{
   showElementPill: true,
   showDefaultCompose: true,
   showHint: true,
-  hintText: 'Enter 发送, Shift + Enter 换行',
+  hintText: 'Enter 发送，Shift + Enter 换行',
 })
 
 // ── Emits ────────────────────────────────────────────────────────────────────
