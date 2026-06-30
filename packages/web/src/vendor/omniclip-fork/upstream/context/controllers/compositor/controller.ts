@@ -16,6 +16,14 @@ import {get_effect_at_timestamp} from "../video-export/utils/get_effect_at_times
 import {AnyEffect, AudioEffect, ImageEffect, State, TextEffect, VideoEffect} from "../../types.js"
 import {perfWrap, perfCount} from "../../../../patches/perf-diag" // openimago-7ca2 (DEV-only). REMOVE after diagnosis.
 
+// openimago-6hmb DIAGNOSTIC (DEV-only, reversible): window.__noPreview = true hides the PIXI
+// 1920x1080 WebGL canvas (display:none) so it is not composited while dragging — bisects
+// whether the WebGL preview is the drag cost. Synced live each frame in #on_playing; no
+// behaviour change when unset. REMOVE once the culprit is identified.
+const __DEV_6hmb =
+	typeof import.meta !== 'undefined' &&
+	(import.meta as unknown as {env?: {DEV?: boolean}}).env?.DEV === true
+
 export interface Managers {
 	videoManager: VideoManager
 	textManager: TextManager
@@ -118,6 +126,17 @@ export class Compositor {
 			this.actions.increase_timecode(elapsed_time, {omit: true})
 			this.on_playing.publish(0)
 			this.compose_effects([...this.currently_played_effects.values()], this.timecode)
+		}
+		// openimago-6hmb DIAGNOSTIC: live-sync the preview-canvas visibility to window.__noPreview
+		// (this rAF loop runs continuously). display:none removes the 1080p WebGL surface from
+		// compositing without a reload; restored when the flag is unset. DEV-only; only writes
+		// style on an actual change.
+		if(__DEV_6hmb) {
+			const canvas = this.app.view as unknown as HTMLCanvasElement
+			if(canvas && canvas.style) {
+				const target = (window as unknown as {__noPreview?: boolean}).__noPreview === true ? "none" : ""
+				if(canvas.style.display !== target) {canvas.style.display = target}
+			}
 		}
 		requestAnimationFrame(this.#on_playing)
 	}

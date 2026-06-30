@@ -36,6 +36,16 @@ import { effectWidthPx, FILMSTRIP_TILE_W } from './filmstrip-sprite-css'
 import { ensureFrame0 } from './filmstrip-frame0'
 import { perfWrap } from './perf-diag' // TEMP perf diagnostic (openimago-v2mm)
 
+// openimago-6hmb DIAGNOSTIC (DEV-only, reversible): bisect the drag jank between filmstrip
+// PAINT and the WebGL preview canvas. `window.__noFilmstrip = true` renders every video clip
+// as a FLAT box (skips the tiled repeat-x bitmap). Read live each render; no behaviour change
+// when unset. REMOVE once the culprit is identified.
+const __DEV =
+  typeof import.meta !== 'undefined' &&
+  (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true
+const __noFilmstrip = (): boolean =>
+  __DEV && (window as unknown as { __noFilmstrip?: boolean }).__noFilmstrip === true
+
 // Cell height = full omniclip lane height (lanes are 50px; the sprite frames are
 // 9:16 portrait, 28×50, matching result.filmstrip.frameW/H). The first-frame image is
 // tiled at a FIXED FILMSTRIP_TILE_W×CELL_H cell via CSS `background-repeat: repeat-x`,
@@ -125,6 +135,13 @@ export const VideoEffect = shadow_view((use) => (effect, timeline) => {
   //   - the tiled cell is frame 0, cropped ONCE per sprite to a standalone dataURL
   //     (filmstrip-frame0.ts) so repeat-x tiles only that frame, not the whole strip.
   const render_filmstrip = () => {
+    // openimago-6hmb DIAGNOSTIC: window.__noFilmstrip → FLAT box, no tiled bitmap painted.
+    // The empty .filmstrip is transparent, so the clip shows its flat surface fill. Read
+    // live each render (toggle takes effect on the next re-render of this clip — see the
+    // console instructions; nudge zoom to re-render all clips at once).
+    if (__noFilmstrip()) {
+      return html`<div class="filmstrip"></div>`
+    }
     // The filmstrip sprite is a property of the SOURCE media (file_hash), not of the
     // individual clip segment. A native omniclip SPLIT creates the new half and may
     // not carry our custom top-level filmstrip_* fields onto it (openimago-8ho9), so
