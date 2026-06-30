@@ -17,6 +17,7 @@ import {TransitionIndicator} from "./views/indicators/add-transition.js"
 import {ProposalIndicator} from "./views/indicators/proposal-indicator.js"
 import {calculate_timeline_width} from "./utils/calculate_timeline_width.js"
 import {perfCount} from "../../../patches/perf-diag"
+import {GUTTER_PX} from "../../../patches/timeline-gutter"
 
 export const OmniTimeline = shadow_component(use => {
 	use.styles(styles)
@@ -225,8 +226,14 @@ export const OmniTimeline = shadow_component(use => {
 		const maxScroll = host.scrollWidth - host.clientWidth
 		let dir = 0
 		let dist = 0
-		if(ev.clientX < rect.left + AUTOSCROLL_EDGE_PX) {
-			dir = -1; dist = (rect.left + AUTOSCROLL_EDGE_PX) - ev.clientX
+		// openimago (u7kw follow-up): the LEFT zone must clear the 60px sticky track-header
+		// GUTTER — clip content starts at host.left + GUTTER_PX, so the effective left boundary
+		// is there, not the raw host edge. Trigger within GUTTER_PX + EDGE_PX (zone ~0..108) and
+		// ramp speed by proximity to host.left + GUTTER_PX (full speed once the pointer reaches
+		// the gutter/content boundary). The RIGHT edge has no gutter — unchanged.
+		const leftBoundary = rect.left + GUTTER_PX
+		if(ev.clientX < leftBoundary + AUTOSCROLL_EDGE_PX) {
+			dir = -1; dist = (leftBoundary + AUTOSCROLL_EDGE_PX) - ev.clientX
 		} else if(ev.clientX > rect.right - AUTOSCROLL_EDGE_PX) {
 			dir = 1; dist = ev.clientX - (rect.right - AUTOSCROLL_EDGE_PX)
 		}
