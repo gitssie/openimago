@@ -52,11 +52,39 @@ export class OmniContext extends Context {
 		// stage sort/render (+ a guarded seek) for EACH of the N — the "放置卡住" drop freeze.
 		// Both watchers now schedule a single trailing-edge refresh, so the whole burst
 		// collapses to ONE refresh + ONE compose on the FINAL state (identical visual result).
-		watch.track(() => this.#core.state.effects, () => this.#scheduleEffectsRefresh())
+		//
+		// openimago-fttp: a pure POSITION reorder (only start_at_position/track change — the
+		// video is already loaded/decoded/shown) must NOT recompose or re-decode at all. Gate
+		// the effects-watcher refresh on a CONTENT key (id→kind:file_hash:start:end, which
+		// EXCLUDES position/track): if the content-key set is unchanged, the move changed only
+		// positions → SKIP the refresh/compose/seek entirely. The preview keeps its current
+		// already-decoded frame and refreshes on the next REAL preview event (play, scrub →
+		// seek(), or a content change: add/remove/trim/split/transition/BGM). The unconditional
+		// request_render above still paints the (unchanged) canvas, so nothing freezes.
+		watch.track(() => this.#core.state.effects, () => {
+			const key = this.#effectsContentKey(this.#core.state.effects)
+			if(key === this.#lastEffectsContentKey) {return} // pure position/track reorder → no recompose
+			this.#lastEffectsContentKey = key
+			this.#scheduleEffectsRefresh()
+		})
+		// Animations always recompose (they change the rendered canvas) — not gated by content.
 		watch.track(() => this.#core.state.animations, () => this.#scheduleEffectsRefresh())
 	}
 
 	#refreshScheduled = false
+	#lastEffectsContentKey: string | null = null
+
+	// openimago-fttp: CONTENT identity of the effect set, EXCLUDING start_at_position + track.
+	// A pure reorder leaves this unchanged (→ skip recompose); a trim/split/add/remove/BGM
+	// change alters it (→ recompose). Sorted by entry so clip ORDER doesn't matter. (text has
+	// no file_hash → ""; its content edits update the sprite directly + via request_render, so
+	// they don't need this compose path.)
+	#effectsContentKey(effects: ReadonlyArray<{id: string; kind: string; start: number; end: number; file_hash?: string}>): string {
+		return effects
+			.map(e => `${e.id}:${e.kind}:${e.file_hash ?? ""}:${e.start}:${e.end}`)
+			.sort()
+			.join("|")
+	}
 
 	// openimago-9oq0: trailing-edge coalesce of animationManager.refresh. The first dispatch
 	// of a synchronous burst schedules ONE rAF; later dispatches in the same tick are deduped.
