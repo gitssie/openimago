@@ -315,6 +315,11 @@ export interface GenerationRun {
   }
   startedAt: string
   completedAt: string
+  /** When this run is an ADR 0003 artifact rerun, the result.artifactId of the
+   *  source run it was re-executed from. Immutably links rerun output → source
+   *  so the panel can trace a variation back to what it came from. Absent on
+   *  ordinary (non-rerun) runs. */
+  parentArtifactId?: string
 }
 
 export interface StoryWorkflow {
@@ -926,51 +931,11 @@ export class StoryService {
     // ── Mock provider result (playable MP4, like opencode mockVideoProvider) ──
     // Deterministic per-shot clip with a committed filmstrip sprite + real
     // duration, so the timeline renders continuous distinct frames (openimago-0t9m).
-    const clip = mockVideoClip(`${shotId}${prompt}`)
     const now = new Date().toISOString()
-    const run: GenerationRun = {
-      id: `run_${randomSlug()}`,
-      nodeId: "",
-      shotId,
-      status: "completed",
-      params: {
-        prompt,
-        model,
-        ...(aspectRatio !== undefined ? { aspectRatio } : {}),
-        ...(durationSeconds !== undefined ? { durationSeconds } : {}),
-      },
-      result: {
-        artifactId: `mock_${randomSlug()}`,
-        kind: "video",
-        mime: "video/mp4",
-        filename: `${shotId}.mp4`,
-        access: { preview: clip.preview, thumbnail: clip.preview, filmstrip: clip.filmstrip },
-        duration: clip.durationSeconds,
-        filmstrip: filmstripMeta(),
-      },
-      startedAt: now,
-      completedAt: now,
-    }
+    const run = this.buildMockVideoRun(shotId, { prompt, model, aspectRatio, durationSeconds })
 
     // ── Append to runs.json (append-only; initialize when missing) ──
-    const runsFile = `${episodeId}.runs.json`
-    if (!SAFE_EP_RELATED_PATTERN.test(runsFile)) {
-      return { error: { code: "VALIDATION_ERROR", message: "Invalid episode ID" }, status: 400 }
-    }
-    const runsPath = `${STORY_RUNS_DIR}/${runsFile}`
-    const runsRead = await this.readJsonFile<StoryRuns>(dir, runsPath, projectId)
-    const runsDoc: StoryRuns =
-      "error" in runsRead
-        ? { schemaVersion: 1, episodeId, runs: [] }
-        : runsRead.data
-    const existingRuns = Array.isArray(runsDoc.runs) ? runsDoc.runs : []
-    const updatedRuns: StoryRuns = {
-      ...runsDoc,
-      schemaVersion: runsDoc.schemaVersion ?? 1,
-      episodeId: runsDoc.episodeId ?? episodeId,
-      runs: [...existingRuns, run as unknown as Record<string, unknown>],
-    }
-    const runsWrite = await this.writeJsonFileAtomic(dir, runsPath, updatedRuns, projectId)
+    const runsWrite = await this.appendRun(dir, projectId, episodeId, run)
     if ("error" in runsWrite) return runsWrite
 
     // ── Flip shot status → generated + persist the chosen generation params ──
@@ -1002,6 +967,174 @@ export class StoryService {
     if ("error" in epWrite) return epWrite
 
     return { data: { run }, status: 200 }
+  }
+
+  /**
+   * Re-execute a prior GenerationRun behind `artifactId` (ADR 0003 artifact-panel
+   * rerun, openimago-wc96). Locates the source run by its `result.artifactId` in
+   * the episode's runs.json, re-runs the SAME media-generation path as generateShot
+   * with that run's persisted params (optional `overrides` win per field, mirroring
+   * the parameter editor), and appends a NEW run. Immutable per ADR 0003: the
+   * source run and the shot are never mutated — only a new run is appended, linked
+   * back via `parentArtifactId` for traceability.
+   *
+   * This is the ARTIFACT rerun, distinct from shot 重新生成 (`generateShot`), which
+   * also flips shot status + persists params.
+   *
+   * Billing note: media-generation cost (image/video) is charged INLINE by the
+   * media service (openimago-xqr) — it does NOT flow through session.cost/CDC.
+   * Because rerun reuses the same media-gen path (`buildMockVideoRun`, the mock
+   * stand-in for that service), it inherits that inline charge automatically once
+   * xqr lands; there is deliberately no bespoke charge here.
+   */
+  async rerunArtifact(
+    projectId: string,
+    userId: string,
+    episodeId: string,
+    artifactId: string,
+    overrides?: ShotGenerationParams,
+  ): Promise<
+    | { data: { run: GenerationRun }; status: 200 }
+    | { error: { code: string; message: string }; status: number }
+  > {
+    const runsFile = `${episodeId}.runs.json`
+    if (!SAFE_EP_RELATED_PATTERN.test(runsFile)) {
+      logger.warn({ projectId, episodeId }, "story: invalid episode ID (rerunArtifact)")
+      return { error: { code: "VALIDATION_ERROR", message: "Invalid episode ID" }, status: 400 }
+    }
+    if (!artifactId) {
+      return { error: { code: "VALIDATION_ERROR", message: "artifactId is required" }, status: 400 }
+    }
+
+    const dir = await this.resolveProjectDir(projectId, userId)
+    if (typeof dir !== "string") return dir // 403 non-owner / 404 missing project/session
+
+    // ── Locate the source run by its result.artifactId ──
+    const runsPath = `${STORY_RUNS_DIR}/${runsFile}`
+    const runsRead = await this.readJsonFile<StoryRuns>(dir, runsPath, projectId)
+    const existingRuns =
+      "error" in runsRead || !Array.isArray(runsRead.data.runs) ? [] : runsRead.data.runs
+    const prior = existingRuns.find(
+      (r) => (r as { result?: { artifactId?: unknown } }).result?.artifactId === artifactId,
+    )
+    if (!prior) {
+      return { error: { code: "NOT_FOUND", message: `Artifact not found: ${artifactId}` }, status: 404 }
+    }
+
+    // ── Resolve params: prior run params as the base, overrides win per field ──
+    const priorParams = ((prior as { params?: Record<string, unknown> }).params ?? {}) as Record<
+      string,
+      unknown
+    >
+    const shotId = typeof (prior as { shotId?: unknown }).shotId === "string"
+      ? (prior as { shotId: string }).shotId
+      : ""
+
+    const overridePrompt = typeof overrides?.prompt === "string" ? overrides.prompt.trim() : ""
+    const priorPrompt = typeof priorParams["prompt"] === "string" ? (priorParams["prompt"] as string) : ""
+    const prompt = overridePrompt || priorPrompt || `shot ${shotId}`
+
+    const overrideModel =
+      typeof overrides?.model === "string" && overrides.model.trim() ? overrides.model.trim() : ""
+    const priorModel =
+      typeof priorParams["model"] === "string" && (priorParams["model"] as string).trim()
+        ? (priorParams["model"] as string)
+        : ""
+    const model = overrideModel || priorModel || "mock-video-model"
+
+    const aspectRatio =
+      typeof overrides?.aspectRatio === "string" && overrides.aspectRatio.trim()
+        ? overrides.aspectRatio.trim()
+        : typeof priorParams["aspectRatio"] === "string" && (priorParams["aspectRatio"] as string).trim()
+          ? (priorParams["aspectRatio"] as string)
+          : undefined
+
+    const durationSeconds =
+      typeof overrides?.durationSeconds === "number" && Number.isFinite(overrides.durationSeconds)
+        ? overrides.durationSeconds
+        : typeof priorParams["durationSeconds"] === "number" &&
+            Number.isFinite(priorParams["durationSeconds"] as number)
+          ? (priorParams["durationSeconds"] as number)
+          : undefined
+
+    // ── Re-execute (same media-gen path) + append a NEW run (append-only) ──
+    const run = this.buildMockVideoRun(
+      shotId,
+      { prompt, model, aspectRatio, durationSeconds },
+      { parentArtifactId: artifactId },
+    )
+    const runsWrite = await this.appendRun(dir, projectId, episodeId, run)
+    if ("error" in runsWrite) return runsWrite
+
+    return { data: { run }, status: 200 }
+  }
+
+  /**
+   * Build a completed mock-video GenerationRun for a shot from resolved params —
+   * the shared media-generation path for both shot generation (`generateShot`) and
+   * artifact rerun (`rerunArtifact`). The mock provider keys its clip on the prompt,
+   * so editing the prompt changes the media. A real provider (openimago-xqr) slots
+   * in here behind the same signature, inheriting both call sites + its inline charge.
+   */
+  private buildMockVideoRun(
+    shotId: string,
+    resolved: { prompt: string; model: string; aspectRatio?: string; durationSeconds?: number },
+    extra?: { parentArtifactId?: string },
+  ): GenerationRun {
+    const clip = mockVideoClip(`${shotId}${resolved.prompt}`)
+    const now = new Date().toISOString()
+    return {
+      id: `run_${randomSlug()}`,
+      nodeId: "",
+      shotId,
+      status: "completed",
+      params: {
+        prompt: resolved.prompt,
+        model: resolved.model,
+        ...(resolved.aspectRatio !== undefined ? { aspectRatio: resolved.aspectRatio } : {}),
+        ...(resolved.durationSeconds !== undefined ? { durationSeconds: resolved.durationSeconds } : {}),
+      },
+      result: {
+        artifactId: `mock_${randomSlug()}`,
+        kind: "video",
+        mime: "video/mp4",
+        filename: `${shotId}.mp4`,
+        access: { preview: clip.preview, thumbnail: clip.preview, filmstrip: clip.filmstrip },
+        duration: clip.durationSeconds,
+        filmstrip: filmstripMeta(),
+      },
+      startedAt: now,
+      completedAt: now,
+      ...(extra?.parentArtifactId ? { parentArtifactId: extra.parentArtifactId } : {}),
+    }
+  }
+
+  /**
+   * Append a run to story/runs/ep_NNN.runs.json (append-only; initialize the doc
+   * when the file is missing). Shared by `generateShot` and `rerunArtifact`.
+   */
+  private async appendRun(
+    dir: string,
+    projectId: string,
+    episodeId: string,
+    run: GenerationRun,
+  ): Promise<{ status: 200 } | { error: { code: string; message: string }; status: number }> {
+    const runsFile = `${episodeId}.runs.json`
+    if (!SAFE_EP_RELATED_PATTERN.test(runsFile)) {
+      return { error: { code: "VALIDATION_ERROR", message: "Invalid episode ID" }, status: 400 }
+    }
+    const runsPath = `${STORY_RUNS_DIR}/${runsFile}`
+    const runsRead = await this.readJsonFile<StoryRuns>(dir, runsPath, projectId)
+    const runsDoc: StoryRuns =
+      "error" in runsRead ? { schemaVersion: 1, episodeId, runs: [] } : runsRead.data
+    const existingRuns = Array.isArray(runsDoc.runs) ? runsDoc.runs : []
+    const updatedRuns: StoryRuns = {
+      ...runsDoc,
+      schemaVersion: runsDoc.schemaVersion ?? 1,
+      episodeId: runsDoc.episodeId ?? episodeId,
+      runs: [...existingRuns, run as unknown as Record<string, unknown>],
+    }
+    return this.writeJsonFileAtomic(dir, runsPath, updatedRuns, projectId)
   }
 
   /**

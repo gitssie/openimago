@@ -508,6 +508,39 @@ storyRoutes.get("/:id/story/episodes/:epId/runs", async (c) => {
   return c.json({ runs: result.data })
 })
 
+// POST /api/platform/projects/:id/story/episodes/:epId/runs/rerun
+// Artifact-panel rerun (ADR 0003, openimago-wc96): re-execute a prior
+// GenerationRun (located by its result.artifactId) with its persisted params —
+// optional overrides from the parameter editor win per field — appending a NEW
+// run. Immutable: never mutates the source run or the shot. Distinct from shot
+// 重新生成 (.../shots/:id/generate). Registered as a static "runs/rerun" segment, so
+// it never collides with the GET /runs read above.
+storyRoutes.post("/:id/story/episodes/:epId/runs/rerun", async (c) => {
+  const userId = c.get("userId") as string
+  const projectId = c.req.param("id")
+  const episodeId = c.req.param("epId")
+
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
+  const artifactId = typeof body["artifactId"] === "string" ? body["artifactId"] : ""
+  if (!artifactId) {
+    return c.json({ error: { code: "VALIDATION_ERROR", message: "artifactId is required" } }, 400)
+  }
+  // Optional per-field overrides from the artifact parameter editor; absent fields
+  // inherit from the source run's persisted params.
+  const overrides = {
+    ...(typeof body["prompt"] === "string" ? { prompt: body["prompt"] } : {}),
+    ...(typeof body["model"] === "string" ? { model: body["model"] } : {}),
+    ...(typeof body["aspectRatio"] === "string" ? { aspectRatio: body["aspectRatio"] } : {}),
+    ...(typeof body["durationSeconds"] === "number" ? { durationSeconds: body["durationSeconds"] } : {}),
+  }
+
+  const result = await storyService.rerunArtifact(projectId, userId, episodeId, artifactId, overrides)
+  if ("error" in result) {
+    return c.json({ error: result.error }, result.status as any)
+  }
+  return c.json({ run: result.data.run }, 201)
+})
+
 // GET /api/platform/projects/:id/story/agents
 storyRoutes.get("/:id/story/agents", async (c) => {
   const userId = c.get("userId") as string
