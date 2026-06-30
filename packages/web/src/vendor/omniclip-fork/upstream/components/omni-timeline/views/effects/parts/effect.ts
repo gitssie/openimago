@@ -8,11 +8,40 @@ import {calculate_effect_width} from "../../../utils/calculate_effect_width.js"
 import {calculate_start_position} from "../../../utils/calculate_start_position.js"
 import lowQualitySvg from "../../../../../icons/material-design-icons/low-quality.svg.js"
 import {laneHeight} from "../../../../../../patches/timeline-lanes"
+import {perfWrap, perfCount} from "../../../../../../patches/perf-diag"
 import {calculate_effect_track_placement} from "../../../utils/calculate_effect_track_placement.js"
 
 export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: AnyEffect, content: TemplateResult, style?: CSSResultGroup, inline_css?: string) => {
 	use.styles([style ?? css``, styles])
-	use.watch(() => use.context.state)
+	// openimago-oyv0: NARROW the per-clip subscription. The old `() => use.context.state`
+	// re-rendered EVERY clip's subtree on EVERY state dispatch — selection, the per-frame
+	// `timecode` tick, and EACH per-effect position write a swap emits — re-running the two
+	// O(effects) helpers below for every clip every time. Slate re-renders only when the
+	// collector's deep-equal RETURN changes, so collect ONLY the fields this view renders:
+	// the LIVE effect's trim window + position + track, the selected flag, the track's
+	// visible/locked, zoom, and effects.length (so add/remove/split still re-render).
+	// `timecode`/scroll/unrelated fields are dropped from the key. Drag still follows the
+	// cursor via the LOCAL setCords/previewPosition state below; `grabbed` is read fresh
+	// each render and its transitions are driven by the selection dispatch on start + the
+	// local setCords([null,null]) on drop. Tracks are locked (openimago-5zry), so a clip's
+	// lane never changes mid-interaction.
+	use.watch(() => {
+		const s = use.context.state
+		const e = s.effects.find(ef => ef.id === any_effect.id) ?? any_effect
+		const track = s.tracks[e.track]
+		return [
+			e.start,
+			e.end,
+			e.start_at_position,
+			e.track,
+			s.selected_effect?.id === any_effect.id,
+			track?.visible,
+			track?.locked,
+			s.zoom,
+			s.effects.length,
+		]
+	})
+	perfCount("effect-inner-render") // openimago-oyv0 (perf-diag; DEV-only). REMOVE after verification.
 	const state = use.context.state
 	const effect = use.context.state.effects.find(effect => effect.id === any_effect.id) ?? any_effect
 	const isVisible = state.tracks.find((_, i) => i === effect.track)?.visible
@@ -20,7 +49,11 @@ export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: Any
 	// The clip box height = its lane's height (openimago-g1hb): video clips fill the
 	// 50px video lane; the BGM bar fills the 25px audio lane. Overrides the static
 	// 50px in parts/styles.ts so a clip never overflows the now-shorter audio lane.
-	const lane_height = laneHeight(state.effects.filter(e => e.track === effect.track))
+	// openimago-oyv0: lane_height + track_placement are the O(effects) filters the issue
+	// flagged; timed via perf-diag, and track_placement is now computed ONCE per render
+	// (it was called twice in the template below).
+	const lane_height = perfWrap("laneHeight", () => laneHeight(state.effects.filter(e => e.track === effect.track)))
+	const track_placement = perfWrap("track-placement", () => calculate_effect_track_placement(effect.track, use.context.state.effects))
 	const [[x, y], setCords] = use.state<V2 | [null, null]>([null, null])
 	const zoom = use.context.state.zoom
 	const controller = use.context.controllers.timeline
@@ -178,7 +211,7 @@ export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: Any
 					width: ${((previewPosition.end ?? effect.end) - (previewPosition.start ?? effect.start)) * Math.pow(2, zoom)}px;
 					transform: translate(
 						${x ?? calculate_start_position(previewPosition.startAtPosition ?? effect.start_at_position, use.context.state.zoom)}px,
-						${y ?? calculate_effect_track_placement(effect.track, use.context.state.effects)}px
+						${y ?? track_placement}px
 					);
 				"
 				@pointerdown=${drag_events.start}

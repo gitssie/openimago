@@ -16,10 +16,29 @@ import {StateHandler} from "../../views/state-handler/view.js"
 import {TransitionIndicator} from "./views/indicators/add-transition.js"
 import {ProposalIndicator} from "./views/indicators/proposal-indicator.js"
 import {calculate_timeline_width} from "./utils/calculate_timeline_width.js"
+import {perfCount} from "../../../patches/perf-diag"
 
 export const OmniTimeline = shadow_component(use => {
 	use.styles(styles)
-	use.watch(() => use.context.state)
+	// openimago-oyv0: NARROW the timeline subscription. The old `() => use.context.state`
+	// re-rendered the WHOLE timeline — `repeat(state.effects → …)` + `calculate_timeline_width`
+	// — on EVERY dispatch, including the per-frame `timecode` tick, the selection write on
+	// pointerdown, and EACH per-effect position write a swap emits. Re-render only when the
+	// SET/geometry of effects, the track count, or zoom changes (these drive the child list
+	// and the timeline width); `timecode`/selection/scroll are handled by the Playhead and
+	// the per-clip Effect views' own subscriptions, so they no longer rebuild the whole
+	// timeline. Keying on each effect's [id,start,end,start_at_position,track] still fires a
+	// re-render on add/remove/split/reorder/move.
+	use.watch(() => {
+		const s = use.context.state
+		return [
+			s.zoom,
+			s.tracks.length,
+			s.effects.length,
+			s.effects.map(e => `${e.id}:${e.start}:${e.end}:${e.start_at_position}:${e.track}`).join("|"),
+		]
+	})
+	perfCount("omni-timeline-render") // openimago-oyv0 (perf-diag; DEV-only). REMOVE after verification.
 	const state = use.context.state
 	const effectTrim = use.context.controllers.timeline.effectTrimHandler
 	const effectDrag = use.context.controllers.timeline.effectDragHandler
