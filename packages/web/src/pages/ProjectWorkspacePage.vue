@@ -280,6 +280,31 @@
       @generate="onClipGenerate"
     />
 
+    <!-- ── Output context menu (Download + Delete) — openimago-oy1l ─────────── -->
+    <!-- Seeded at the click position; Rerun is intentionally omitted (openimago-wc96). -->
+    <div
+      v-if="outputMenu.open"
+      class="output-menu-anchor"
+      :style="{ position: 'fixed', left: outputMenu.x + 'px', top: outputMenu.y + 'px', width: '0', height: '0' }"
+    >
+      <q-menu v-model="outputMenu.open" anchor="bottom left" self="top left">
+        <q-list dense style="min-width: 148px">
+          <q-item v-close-popup clickable @click="onOutputMenuDownload">
+            <q-item-section avatar>
+              <q-icon name="download" size="18px" />
+            </q-item-section>
+            <q-item-section>下载</q-item-section>
+          </q-item>
+          <q-item v-close-popup clickable @click="onOutputMenuDelete">
+            <q-item-section avatar>
+              <q-icon name="delete" size="18px" />
+            </q-item-section>
+            <q-item-section>删除</q-item-section>
+          </q-item>
+        </q-list>
+      </q-menu>
+    </div>
+
     <!-- WorkspaceArtifactsPanel overlay (project scope, ADR 0003) — unchanged -->
     <div v-if="showArtifactsPanel" class="artifacts-panel-overlay">
       <div class="artifacts-panel-overlay__backdrop" @click="toggleArtifactsPanel" />
@@ -1547,8 +1572,76 @@ function onGridOutputSelect(id: string) {
   selectedOutputId.value = id
 }
 
-function onOutputMenu(id: string, _event: MouseEvent) {
-  $q.notify({ color: 'info', message: `对 ${id} 打开菜单（待接入）`, icon: 'info', timeout: 1200 })
+// ── Output delete (openimago-oy1l) ───────────────────────────────────────────
+//
+// Outputs are files scanned from the project directory; deleting one removes the
+// file via the project outputs DELETE endpoint, then refreshes every panel that
+// projects those files. Project-scoped only (the endpoint needs a projectId).
+
+/** Best-effort on-disk basename for an output, from its url (drops query + decodes). */
+function outputNameFromUrl(url: string | null | undefined): string | null {
+  if (!url) return null
+  try {
+    const path = url.split('?')[0] ?? url
+    const seg = path.split('/').pop() ?? ''
+    const name = decodeURIComponent(seg)
+    return name || null
+  } catch {
+    return null
+  }
+}
+
+/** Re-pull the filesystem-scanned outputs/files + DB-backed workspace files so
+ *  every outputs surface reflects a delete. */
+async function refreshOutputs(): Promise<void> {
+  await Promise.all([
+    fetchProjectOutputs(),
+    fetchProjectFiles(),
+    fetchProjectWorkspaceFiles(),
+  ])
+}
+
+/** Delete one scanned output file by name, then refresh the panels. Returns
+ *  whether the delete succeeded so callers can clear their local selection. */
+async function deleteOutputByName(name: string | null | undefined): Promise<boolean> {
+  if (!name || !hasProject.value) return false
+  try {
+    await api.deleteOutput(projectId.value, name)
+    await refreshOutputs()
+    $q.notify({ color: 'positive', message: '已删除产出', icon: 'check', timeout: 1200 })
+    return true
+  } catch {
+    $q.notify({ color: 'negative', message: '删除产出失败', icon: 'error', timeout: 2000 })
+    return false
+  }
+}
+
+// Output context menu (Download + Delete). Anchored at the click position via a
+// fixed-position seed element; Rerun is intentionally omitted (openimago-wc96).
+const outputMenu = ref<{ open: boolean; x: number; y: number; item: AIOutputItem | null }>({
+  open: false,
+  x: 0,
+  y: 0,
+  item: null,
+})
+
+function onOutputMenu(id: string, event: MouseEvent) {
+  const item = aiOutputItems.value.find((o) => o.id === id) ?? null
+  if (!item) return
+  outputMenu.value = { open: true, x: event.clientX, y: event.clientY, item }
+}
+
+function onOutputMenuDownload() {
+  const url = outputMenu.value.item?.url
+  if (url) window.open(url, '_blank', 'noopener')
+}
+
+async function onOutputMenuDelete() {
+  const item = outputMenu.value.item
+  if (!item) return
+  const name = item.filename || outputNameFromUrl(item.url)
+  const ok = await deleteOutputByName(name)
+  if (ok && selectedOutputId.value === item.id) selectedOutputId.value = null
 }
 
 function onOutputFilter() {
@@ -1671,11 +1764,17 @@ function onPreviewDownload() {
   window.open(url, '_blank', 'noopener')
 }
 
-/** Delete the previewed item (待接入 — destructive op not yet wired). */
-function onPreviewDelete() {
+/** Delete the previewed media's underlying output file, then close the dialog
+ *  and refresh the panels (openimago-oy1l). */
+async function onPreviewDelete() {
   const sel = previewSelection.value
   if (!sel) return
-  $q.notify({ color: 'info', message: `删除 ${sel.id}（待接入）`, icon: 'delete', timeout: 1200 })
+  const name = outputNameFromUrl(selectedPreview.value.mediaUrl)
+  const ok = await deleteOutputByName(name)
+  if (ok) {
+    previewDialogOpen.value = false
+    previewSelection.value = null
+  }
 }
 
 /** HD toggle — track the canonical state in the parent (visual only for now). */
@@ -1821,10 +1920,12 @@ function onShotUpdate(shotId: string, patch: { description: string }) {
   )
 }
 
+/** Download the selected output / scene — opens its url in a new tab, mirroring
+ *  onPreviewDownload. */
 function onContextDownload() {
-  if (!selectedOutputId.value && !selectedSceneId.value) return
-  const id = selectedOutputId.value ?? selectedSceneId.value
-  $q.notify({ color: 'info', message: `下载 ${id}（待接入）`, icon: 'download', timeout: 1200 })
+  const url = selectedGridOutput.value?.url || contextStrip.value?.thumbnailUrl || null
+  if (!url) return
+  window.open(url, '_blank', 'noopener')
 }
 
 function onContextClear() {
@@ -1939,8 +2040,13 @@ async function onArtifactRerun(payload: unknown) {
   }
 }
 
-function onArtifactDelete(_id: string) {
-  $q.notify({ color: 'info', message: '删除制品功能即将上线', icon: 'delete', timeout: 1500 })
+/** Delete the artifact's underlying output file by its name, then refresh
+ *  (openimago-oy1l). */
+async function onArtifactDelete(id: string) {
+  const artifact = projectArtifacts.value.find((a) => a.id === id)
+  const name = artifact?.filename || outputNameFromUrl(artifact?.access?.preview ?? artifact?.access?.thumbnail)
+  const ok = await deleteOutputByName(name)
+  if (ok && artifactsPanelSelectedId.value === id) artifactsPanelSelectedId.value = null
 }
 
 function toggleArtifactsPanel() {

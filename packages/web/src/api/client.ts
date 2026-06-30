@@ -564,6 +564,14 @@ export const api = {
   projectOutputs: (projectId: string) =>
     request<{ outputs: WorkspaceFile[] }>(`/api/platform/projects/${projectId}/outputs`).then((r) => r.outputs ?? []),
 
+  // Delete one scanned output file from the project directory (openimago-oy1l).
+  // `name` is the output's basename (OutputEntry.name); mirrors deleteAsset.
+  deleteOutput: (projectId: string, name: string) =>
+    request<{ deleted: boolean }>(
+      `/api/platform/projects/${projectId}/outputs/${encodeURIComponent(name)}`,
+      { method: 'DELETE' },
+    ),
+
   // Project files — flat file listing for a project
   projectFiles: (projectId: string) =>
     request<{ files: WorkspaceFile[] }>(`/api/platform/projects/${projectId}/files`).then((r) => r.files ?? []),
