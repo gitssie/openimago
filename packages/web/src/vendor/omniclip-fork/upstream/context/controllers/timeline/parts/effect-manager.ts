@@ -14,16 +14,31 @@ export class EffectManager {
 	constructor(private actions: Actions, private compositor: Compositor, private media: Media) {}
 
 	setProposedTimecode({grabbed, position}: EffectDrop, proposedTimecode: ProposedTimecode, state: State) {
-		this.actions.set_effect_start_position(grabbed.effect, proposedTimecode.proposed_place.start_at_position)
-		this.actions.set_effect_track(grabbed.effect, proposedTimecode.proposed_place.track)
+		// openimago-tfpp: fold the grabbed clip's new position+track AND every ripple-pushed
+		// clip's new position into ONE batched apply_reorder = ONE slate transmute (one
+		// deep-clone of the whole state), instead of N+ separate set_effect_start_position/
+		// set_effect_track dispatches that each deep-cloned the state (the drop freeze). Net
+		// final positions are identical; it's one undo step. set_effect_end (the rare shrink
+		// case) and the empty-track/addTrack track adjustments stay separate — they don't fire
+		// on the common in-lane ripple (5zry locks the track, suppresses addTrack).
+		const updates: {id: string, start_at_position?: number, track?: number}[] = [
+			{
+				id: grabbed.effect.id,
+				start_at_position: proposedTimecode.proposed_place.start_at_position,
+				track: proposedTimecode.proposed_place.track,
+			},
+		]
+		if (proposedTimecode.effects_to_push) {
+			const pushBy = grabbed.effect.end - grabbed.effect.start
+			for (const e of proposedTimecode.effects_to_push) {
+				updates.push({id: e.id, start_at_position: e.start_at_position + pushBy})
+			}
+		}
+		this.actions.apply_reorder(updates)
 
 		if (proposedTimecode.duration && grabbed.effect.duration !== proposedTimecode.duration) {
 			const end = grabbed.effect.start + proposedTimecode.duration
 			this.actions.set_effect_end(grabbed.effect, end)
-		}
-
-		if (proposedTimecode.effects_to_push) {
-			this.#pushEffectsForward(proposedTimecode.effects_to_push, grabbed.effect.end - grabbed.effect.start)
 		}
 
 		const isCurrentTrackEmpty = this.#isTrackEmpty(state, grabbed.effect)
@@ -158,11 +173,6 @@ export class EffectManager {
 		.find(e => e.start_at_position < effect.start_at_position)
 	}
 
-	#pushEffectsForward(effectsToPush: AnyEffect[], pushBy: number) {
-		effectsToPush.forEach(effect => {
-			this.actions.set_effect_start_position(effect, effect.start_at_position + pushBy)
-		})
-	}
 
 	splitEffectAtTimestamp(state: State) {
 		const normalizedTimecode = this.#normalizeToTimebase(state)

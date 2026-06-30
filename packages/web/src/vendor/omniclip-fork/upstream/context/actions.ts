@@ -340,6 +340,21 @@ export const historical = actionize_historical({
 		const effect = helper.get_effect(id)
 		effect!.start_at_position = x
 	},
+	// openimago-tfpp: BATCHED reorder. slate's StateTree.transmute structuredClone()s the
+	// ENTIRE state (x2) + deep.freeze on EVERY action, so the per-clip
+	// set_effect_start_position/set_effect_track calls in a ripple drop = N+ FULL deep-clones
+	// of the timeline state = the drop freeze + the effect-inner-render storm (invisible to JS
+	// timers — the cost is inside slate). Apply ALL position/track changes in ONE action = ONE
+	// transmute = ONE clone = ONE dispatch = ONE re-render pass, and ONE undo step.
+	apply_reorder: state => (updates: {id: string, start_at_position?: number, track?: number}[]) => {
+		const helper = new Helpers(state)
+		for (const u of updates) {
+			const effect = helper.get_effect(u.id)
+			if (!effect) continue
+			if (u.start_at_position !== undefined) effect.start_at_position = u.start_at_position
+			if (u.track !== undefined) effect.track = u.track
+		}
+	},
 	set_effect_start: state => ({id}: AnyEffect, start: number) => {
 		const helper = new Helpers(state)
 		const effect = helper.get_effect(id)
