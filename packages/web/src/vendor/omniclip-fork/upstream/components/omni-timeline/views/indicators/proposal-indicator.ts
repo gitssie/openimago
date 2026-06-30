@@ -58,12 +58,17 @@ export const ProposalIndicator = light_view(use => () => {
 		const disposeDrag = effectDragHandler.onEffectDrag(props => {
 			if(props.position && props.grabbed) {
 				const timecode = translate_to_timecode(props)
+				// openimago-tv19 perf (opt-in: window.__cutPerf=true) — time the per-move
+				// recompute. REMOVE once the user confirms the drag jank is gone.
+				const __perf = (window as unknown as {__cutPerf?: boolean}).__cutPerf === true
+				const __t0 = __perf ? performance.now() : 0
 				const proposed_timecode = use.context.controllers.timeline
 				.calculate_proposed_timecode(
 					timecode,
 					props,
 					use.context.state
 				)
+				if(__perf) {console.log(`[cutPerf] calculate_proposed_timecode ${(performance.now() - __t0).toFixed(2)}ms`)}
 				setDraggedOverAddTrackIndicator(props.position.indicator?.type === "addTrack")
 				setProposedTimecode(proposed_timecode)
 			}

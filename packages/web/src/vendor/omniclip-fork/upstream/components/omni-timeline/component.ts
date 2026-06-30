@@ -25,49 +25,121 @@ export const OmniTimeline = shadow_component(use => {
 	const effectDrag = use.context.controllers.timeline.effectDragHandler
 	const playheadDrag = use.context.controllers.timeline.playheadDragHandler
 
-	use.mount(() => {
-		const layout = document.querySelector("construct-editor")?.shadowRoot?.querySelector(".layout") as HTMLElement
-		if(layout) {layout.style.borderRadius = "10px"}
-		window.addEventListener("pointermove", augmented_dragover)
-		return () => removeEventListener("pointermove", augmented_dragover)
-	})
+	// ── openimago-tv19: drag/trim performance — rAF-coalesced pointermove ─────────
+	// The window pointermove handler previously ran on EVERY event (100+/sec): two
+	// querySelector + getBoundingClientRect layout reads (playhead + effect) plus a
+	// composedPath() scan, then a recompute + re-render — and it did this for EVERY
+	// pointermove on the page, even when nothing was being dragged. We now:
+	//   1. early-out unless a drag / trim / playhead grab is active,
+	//   2. coalesce bursts of moves to ≤1 process per animation frame,
+	//   3. cache the `.timeline-relative` bounds for the interaction (refreshed only
+	//      on scroll / resize / interaction-end),
+	//   4. drop the per-move composedPath()/addTrack detection — addTrack is
+	//      suppressed and tracks are locked (openimago-5zry), so it is dead weight.
+
+	// --- Perf instrumentation (opt-in: set `window.__cutPerf = true` in the browser
+	// --- console). REMOVE once the user confirms the jank is gone (openimago-tv19).
+	const __cutPerf = () => (window as unknown as {__cutPerf?: boolean}).__cutPerf === true
+	let __perfMoves = 0
+	let __perfProcessed = 0
+	let __perfWindowStart = 0
+
+	let cached_bounds: DOMRect | null = null
+	let pending_event: PointerEvent | null = null
+	let raf_id: number | null = null
+
+	const invalidate_bounds = () => {cached_bounds = null}
+
+	const get_timeline_bounds = (): DOMRect | null => {
+		if(cached_bounds) {return cached_bounds}
+		const t0 = __cutPerf() ? performance.now() : 0
+		const timeline = use.shadow.querySelector(".timeline-relative")
+		cached_bounds = timeline?.getBoundingClientRect() ?? null
+		if(__cutPerf()) {console.log(`[cutPerf] timeline bounds re-measured in ${(performance.now() - t0).toFixed(2)}ms`)}
+		return cached_bounds
+	}
 
 	const playheadDragOver = (event: PointerEvent) => {
-		const timeline = use.shadow.querySelector(".timeline-relative")
-		const bounds = timeline?.getBoundingClientRect()
+		const bounds = get_timeline_bounds()
 		if(bounds) {
-			const x = event.clientX - bounds?.left
-			if(x >= 0) {
-				playheadDrag.move(x)
-			} else playheadDrag.move(0)
+			const x = event.clientX - bounds.left
+			playheadDrag.move(x >= 0 ? x : 0)
 		}
 	}
 
 	const effect_drag_over = (event: PointerEvent) => {
-		const timeline = use.shadow.querySelector(".timeline-relative")
-		const bounds = timeline?.getBoundingClientRect()
-		const path = event.composedPath()
-		const indicator = path.find(e => (e as HTMLElement).className === "indicator-area") as HTMLElement | undefined
+		const bounds = get_timeline_bounds()
 		if(bounds) {
 			const x = event.clientX - bounds.left
 			const y = event.clientY - bounds.top
-			effectDrag.move({
-				coordinates: [x >= 0 ? x : 0, y >= 0 ? y : 0],
-				indicator: indicator
-					? {type: "addTrack", index: Number(indicator.getAttribute("data-index"))}
-					: null
-			})
+			// addTrack is suppressed (openimago-5zry) and tracks are locked, so the old
+			// per-move composedPath()/.indicator-area scan is dead weight — always pass
+			// indicator:null. The committed drop in effect-drag.ts forces the same.
+			effectDrag.move({coordinates: [x >= 0 ? x : 0, y >= 0 ? y : 0], indicator: null})
 		}
 	}
 
-	function augmented_dragover(event: PointerEvent) {
+	const process_pending_dragover = () => {
+		raf_id = null
+		const event = pending_event
+		pending_event = null
+		if(!event) {return}
+		const perf = __cutPerf()
+		if(perf) {__perfProcessed++}
+		const t0 = perf ? performance.now() : 0
 		if(effectTrim.grabbed) {
 			effectTrim.effect_dragover(event.clientX, use.context.state)
-			return
+		} else {
+			playheadDragOver(event)
+			effect_drag_over(event)
 		}
-		playheadDragOver(event)
-		effect_drag_over(event)
+		if(perf) {console.log(`[cutPerf] dragover frame processed in ${(performance.now() - t0).toFixed(2)}ms`)}
 	}
+
+	function augmented_dragover(event: PointerEvent) {
+		if(__cutPerf()) {
+			const now = performance.now()
+			if(now - __perfWindowStart >= 1000) {
+				console.log(`[cutPerf] pointermove ${__perfMoves}/s reaching handler → ${__perfProcessed}/s processed (rAF-coalesced)`)
+				__perfMoves = 0
+				__perfProcessed = 0
+				__perfWindowStart = now
+			}
+			__perfMoves++
+		}
+		// Only do layout work while an interaction is active.
+		if(!effectTrim.grabbed && !effectDrag.grabbed && !playheadDrag.grabbed) {return}
+		pending_event = event
+		if(raf_id === null) {raf_id = requestAnimationFrame(process_pending_dragover)}
+	}
+
+	const end_drag_interaction = () => {
+		if(raf_id !== null) {
+			cancelAnimationFrame(raf_id)
+			raf_id = null
+		}
+		pending_event = null
+		invalidate_bounds()
+	}
+
+	use.mount(() => {
+		const layout = document.querySelector("construct-editor")?.shadowRoot?.querySelector(".layout") as HTMLElement
+		if(layout) {layout.style.borderRadius = "10px"}
+		window.addEventListener("pointermove", augmented_dragover)
+		window.addEventListener("pointerup", end_drag_interaction)
+		window.addEventListener("pointercancel", end_drag_interaction)
+		window.addEventListener("resize", invalidate_bounds)
+		// capture:true so a scroll on any nested timeline scroller invalidates the cache.
+		window.addEventListener("scroll", invalidate_bounds, true)
+		return () => {
+			removeEventListener("pointermove", augmented_dragover)
+			removeEventListener("pointerup", end_drag_interaction)
+			removeEventListener("pointercancel", end_drag_interaction)
+			removeEventListener("resize", invalidate_bounds)
+			removeEventListener("scroll", invalidate_bounds, true)
+			if(raf_id !== null) {cancelAnimationFrame(raf_id)}
+		}
+	})
 
 	const render_tracks = () => repeat(use.context.state.tracks, ((_track, i) => Track([i], {attrs: {part: "add-track-indicator"}})))
 	const render_effects = () => repeat(use.context.state.effects, (effect) => effect.id, (effect) => {
