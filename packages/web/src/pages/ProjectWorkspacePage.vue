@@ -13,13 +13,13 @@
     <WorkspaceTopBar
       class="project-workspace__topbar"
       :brand-variant="'wordmark'"
-      :brand-label="projectName"
-      :tabs="PROJECT_WORKSPACE_TABS"
+      :brand-label="brandLabel"
+      :tabs="workspaceTabs"
       :active-tab="activeWorkspaceTab"
       :panel-base-id="'project-workspace'"
       @tab-change="onWorkspaceTabChange"
     >
-      <template #middle-right>
+      <template v-if="hasProject" #middle-right>
         <WorkspaceSessionChip
           :sessions="sidebarSessions"
           :current-label="currentSessionLabel"
@@ -53,6 +53,8 @@
       </template>
     </WorkspaceTopBar>
 
+    <!-- ════ Project / Story shell (project, or a session whose dir has story) ════ -->
+    <template v-if="storyShell">
     <UILayout class="project-workspace-layout relative full-height" view="lhr lpr lfr" container>
       <!-- ── Left drawer: storyboard scene cards ─────────────────────── -->
       <UILayoutDrawer
@@ -177,7 +179,7 @@
 
           <!-- 时间线 tab → NLE Cut editor (omniclip) for the current episode -->
           <StoryCutPanel
-            v-else-if="activeWorkspaceTab === 'timeline' && currentStoryEpisodeId"
+            v-else-if="activeWorkspaceTab === 'timeline' && currentStoryEpisodeId && storyEditable"
             ref="storyCutPanelRef"
             class="project-workspace-page__story-view"
             :project-id="projectId"
@@ -313,6 +315,251 @@
       <q-icon name="view_in_ar" size="18px" />
       <span class="artifacts-panel-toggle__count">{{ projectArtifacts.length }}</span>
     </button>
+    </template>
+
+    <!-- ════ Degraded session shell (standalone session, no story files) ════════ -->
+    <!--
+      Exactly the prior SessionWorkspacePage experience: a session sidebar, the
+      chat surface with its todo / revert / follow-up docks, and the AI 产出
+      right drawer. The dead no-op story tabs are gone (workspaceTabs is empty
+      in this mode), per ADR 0009.
+    -->
+    <template v-else>
+    <UILayout class="session-layout relative full-height" view="lhr lpr lfr" container>
+      <UILayoutDrawer
+        :model-value="!sidebarCollapsed"
+        side="left"
+        :width="280"
+        :breakpoint="1024"
+        bordered
+        show-if-above
+        @update:model-value="sidebarCollapsed = !$event"
+      >
+        <SessionWorkspaceSidebar
+          :sessions="sidebarSessions"
+          :session-count="sidebarSessions.length"
+          :collapsed="sidebarCollapsed"
+          :creating="isSessionSwitching"
+          @create="createNewSession"
+          @select="handleSwitchSession"
+          @delete="deleteSession"
+          @toggle-collapse="sidebarCollapsed = !sidebarCollapsed"
+        />
+      </UILayoutDrawer>
+
+      <UILayoutPageContainer>
+        <UILayoutPage class="chat-page">
+          <main class="chat-area">
+            <div class="chat-body">
+              <header v-if="currentSessionItem || currentSessionLabel" class="chat-meta">
+                <div class="chat-meta__title-row">
+                  <h2 class="chat-meta__title">
+                    {{ currentSessionLabel }}
+                  </h2>
+                  <span v-if="currentSessionItem" class="chat-meta__clock">
+                    {{ formatSessionTime(currentSessionItem.time) }}
+                  </span>
+                  <span v-if="isConnected" class="chat-meta__status" aria-label="在线">
+                    <span class="chat-meta__status-dot" />
+                    <span>在线</span>
+                  </span>
+                </div>
+              </header>
+
+              <div class="chat-body__messages">
+                <SessionChatView
+                  ref="chatViewRef"
+                  :session-id="sessionId"
+                  :display-messages="displayMessages"
+                  :part-text="partText"
+                  :is-loading="isLoading"
+                  :session-status="sessionStatus"
+                  :history-exhausted="historyExhausted"
+                  :history-loading="historyLoading"
+                  :current-session-item="currentSessionItem"
+                  :active-attention-call-id="activeAttentionCallId"
+                  :is-session-switching="messagesLoading"
+                  @load-history="onLoadHistory"
+                  @switch-session="handleSwitchSession"
+                  @revert-turn="(msgId) => void revertMessage(msgId)"
+                  @use-suggestion="useSuggestion"
+                />
+              </div>
+
+              <div v-if="hasSessionExtras" class="chat-body__extras">
+                <AgentQuestion
+                  v-if="pendingQuestion"
+                  :request="pendingQuestion"
+                  :on-reply="replyToQuestion"
+                  :on-reject="rejectQuestion"
+                />
+
+                <div v-if="sessionTodos.length > 0" class="todo-dock imago-dock q-mb-sm">
+                  <div class="row items-center justify-between q-mb-xs">
+                    <div class="text-caption text-weight-medium text-grey-5">
+                      {{ t('agent.todoProgress', { done: completedTodoCount, total: sessionTodos.length }) }}
+                    </div>
+                    <div v-if="activeTodoLabel" class="text-caption text-grey-5 ellipsis todo-dock__preview">
+                      {{ activeTodoLabel }}
+                    </div>
+                  </div>
+                  <div class="todo-dock__list">
+                    <div
+                      v-for="todo in sessionTodos"
+                      :key="todo.content"
+                      class="todo-dock__item row no-wrap items-start q-gutter-sm"
+                    >
+                      <q-icon
+                        :name="todo.status === 'completed' ? 'check_circle' : todo.status === 'in_progress' ? 'more_horiz' : todo.status === 'cancelled' ? 'cancel' : 'radio_button_unchecked'"
+                        :color="todo.status === 'completed' ? 'positive' : todo.status === 'in_progress' ? 'grey-5' : todo.status === 'cancelled' ? 'grey-5' : 'grey-4'"
+                        size="16px"
+                        class="q-mt-xs"
+                      />
+                      <div
+                        class="col text-body2"
+                        :class="{ 'text-grey-5': todo.status === 'completed' || todo.status === 'cancelled' }"
+                      >
+                        {{ todo.content }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  v-if="revertMessagePreview"
+                  class="revert-dock imago-dock imago-dock--warning q-mb-sm row items-center justify-between q-gutter-sm"
+                >
+                  <div class="col min-width-0">
+                    <div class="text-caption text-grey-5">{{ t('agent.revertActive') }}</div>
+                    <div class="text-body2 text-weight-medium ellipsis">{{ revertMessagePreview }}</div>
+                  </div>
+                  <div class="row items-center q-gutter-sm">
+                    <q-btn
+                      flat
+                      dense
+                      no-caps
+                      size="sm"
+                      color="warning"
+                      :label="t('agent.restore')"
+                      @click="restoreRevert"
+                    />
+                    <q-icon name="history" size="18px" color="warning" />
+                  </div>
+                </div>
+
+                <div v-if="currentQueuedFollowups.length > 0" class="followup-dock imago-dock q-mb-sm">
+                  <button
+                    type="button"
+                    class="followup-dock__header row items-center justify-between q-gutter-sm"
+                    @click="followupCollapsed = !followupCollapsed"
+                  >
+                    <div class="text-caption text-weight-medium text-grey-5">
+                      {{ currentQueuedFollowups.length === 1 ? t('agent.followupOne') : t('agent.followupMany', { count: currentQueuedFollowups.length }) }}
+                    </div>
+                    <q-btn
+                      flat
+                      dense
+                      round
+                      size="sm"
+                      icon="expand_more"
+                      color="grey-5"
+                      class="followup-dock__toggle"
+                      :class="{ 'followup-dock__toggle--collapsed': followupCollapsed }"
+                      @click.stop="followupCollapsed = !followupCollapsed"
+                    />
+                  </button>
+                  <div v-if="!followupCollapsed" class="followup-dock__list">
+                    <div
+                      v-for="item in currentQueuedFollowups"
+                      :key="item.id"
+                      class="followup-dock__item row items-center q-gutter-sm"
+                    >
+                      <div class="col min-width-0">
+                        <div class="text-body2 ellipsis">{{ getFollowupPreview(item) }}</div>
+                        <div
+                          v-if="failedFollowupId[sessionId || ''] === item.id"
+                          class="text-caption text-negative q-mt-xs"
+                        >
+                          {{ t('agent.followupFailed') }}
+                        </div>
+                      </div>
+                      <q-btn
+                        dense
+                        no-caps
+                        size="sm"
+                        color="grey-6"
+                        :loading="sendingFollowupId === item.id"
+                        :label="t('agent.sendNow')"
+                        @click="sendQueuedFollowup(item.id, true)"
+                      />
+                      <q-btn
+                        flat
+                        dense
+                        no-caps
+                        size="sm"
+                        color="grey-6"
+                        :disable="sendingFollowupId === item.id"
+                        :label="'编辑'"
+                        @click="editQueuedFollowup(item.id)"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <AgentPermission
+                  v-if="pendingPermission"
+                  :request="pendingPermission"
+                  :on-respond="replyToPermission"
+                />
+              </div>
+
+              <ChatInputDock
+                v-if="!currentParentSession"
+                :loading="isLoading"
+                :connected="isConnected"
+                :disabled="isSessionSwitching"
+                :attachments="pendingAttachments"
+                @submit="submitDraftMessage"
+                @abort="abortSession"
+                @remove-attachment="(id) => removeAttachment(id)"
+                @attach-files="onFilesSelected"
+              />
+              <div v-else class="child-session-input-disabled imago-dock text-body2 text-grey-7">
+                <span>{{ t('agent.childInputDisabled') }}</span>
+                <q-btn
+                  flat
+                  dense
+                  no-caps
+                  color="grey-5"
+                  class="q-ml-sm"
+                  :label="t('agent.backToParent')"
+                  @click="handleSwitchSession(currentParentSession.id)"
+                />
+              </div>
+            </div>
+          </main>
+        </UILayoutPage>
+      </UILayoutPageContainer>
+
+      <UILayoutDrawer v-model="rightPanelVisible" side="right" :width="360" behavior="desktop" bordered>
+        <AIOutputsPanel
+          :title="'AI 产出'"
+          :subtitle="'当前会话的生成结果'"
+          :items="aiOutputItems"
+          :selected-id="selectedResultId"
+          :layout="'grid'"
+          :show-view-all="aiOutputItems.length > 6"
+          :view-all-label="'查看全部'"
+          :aria-label="'会话 AI 产出面板'"
+          @item-select="handleSelectResult"
+          @item-menu="handleItemMenu"
+          @layout-change="(l) => { sessionLayoutMode = l }"
+          @filter="handleFilterOutputs"
+          @view-all="handleViewAll"
+        />
+      </UILayoutDrawer>
+    </UILayout>
+    </template>
   </q-page>
 </template>
 
@@ -322,6 +569,7 @@ import { useQuasar } from 'quasar'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import SessionChatView from 'src/components/session-workspace/SessionChatView.vue'
+import SessionWorkspaceSidebar from 'src/components/session-workspace/SessionWorkspaceSidebar.vue'
 import ProjectWorkspaceGrid from 'src/components/session-workspace/ProjectWorkspaceGrid.vue'
 import ProjectWorkspaceLeftPanel from 'src/components/session-workspace/ProjectWorkspaceLeftPanel.vue'
 import type {
@@ -349,7 +597,7 @@ import ProjectContextStrip from 'src/components/workspace/ProjectContextStrip.vu
 import TopbarActionButton from 'src/components/workspace/TopbarActionButton.vue'
 import WorkspaceTopBar from 'src/components/workspace/WorkspaceTopBar.vue'
 import WorkspaceSessionChip from 'src/components/workspace/WorkspaceSessionChip.vue'
-import { useAgentSession } from 'src/composables/useAgentSession'
+import { useAgentSession, type DisplayMessage } from 'src/composables/useAgentSession'
 import type { TextPart } from '@opencode-ai/sdk/v2'
 import type { SessionItem } from 'src/services/agents'
 import { api, ApiError, type OpenimagoProject, type OpenimagoStoryBible, type OpenimagoStorySeries, type OpenimagoStoryEpisode, type OpenimagoStoryWorkflow, type OpenimagoStoryRuns, type WorkspaceFile } from 'src/api/client'
@@ -378,7 +626,7 @@ import {
   rawEpisodeToShotSummaries,
   rawRunsToRunSummaries,
 } from 'src/utils/story-summary-mapper'
-import { workspaceFileToAIOutputItem } from 'src/utils/session-output-mapper'
+import { workspaceFileToAIOutputItem, mergeAIOutputItems } from 'src/utils/session-output-mapper'
 import { formatRelativeTime } from 'src/utils/format-time'
 import StoryOverviewPanel from 'src/components/session-workspace/StoryOverviewPanel.vue'
 import StoryCutPanel from 'src/components/session-workspace/StoryCutPanel.vue'
@@ -438,9 +686,47 @@ const storyboardDensity = ref<'grid' | 'list'>('grid')
 const outputLayout = ref<'grid' | 'rows'>('grid')
 const hasUnreadNotifications = ref(true)
 
-const projectId = computed(() => route.params.id as string)
+// ── Degraded session-shell state (ADR 0009) ─────────────────────────────────
+// Used only when the page is in the no-project, no-story degenerate case — i.e.
+// the standalone session experience (chat + AI 产出). Mirrors the prior
+// SessionWorkspacePage refs so that shell behaves exactly as before.
+const sidebarCollapsed = ref(false)
+const rightPanelVisible = ref(true)
+const followupCollapsed = ref(false)
+const selectedResultId = ref<string | null>(null)
+const sessionLayoutMode = ref<'grid' | 'rows'>('grid')
+const sessionFileItems = ref<AIOutputItem[]>([])
+// True once the resolved directory is known to contain Story files. Drives the
+// Story tabs/panels for a standalone session (a project always shows them).
+const storyHasFiles = ref(false)
+
+// ── Workspace scope (ADR 0009) ───────────────────────────────────────────────
+//
+// This page is folder-driven: it is parameterized by a project key OR a session
+// key, resolved from the route. The project routes carry `:id` = projectId (and
+// an optional `:sessionId`); the standalone session routes carry `:id` =
+// sessionId. Story data is fetched via whichever key is present; the project
+// experience is unchanged when a projectId is present (`hasProject`).
+const isProjectRoute = computed(
+  () => route.name === 'project-workspace' || route.name === 'project-session',
+)
+// NOTE: kept named `projectId` so the (unchanged) project-mode code reads as
+// before; it is now null on the standalone session routes.
+const projectId = computed<string>(() => (isProjectRoute.value ? (route.params.id as string) : ''))
+const hasProject = computed(() => Boolean(projectId.value))
+// The standalone-session key. On a project route this is the optional nested
+// `:sessionId`; on a session route it is the top-level `:id`.
+const routeSessionId = computed<string | null>(() => {
+  if (isProjectRoute.value) {
+    const sid = route.params.sessionId
+    return typeof sid === 'string' && sid ? sid : null
+  }
+  const id = route.params.id
+  return typeof id === 'string' && id ? id : null
+})
 const project = ref<OpenimagoProject | null>(null)
 const projectName = computed(() => project.value?.name || '项目工作台')
+const brandLabel = computed(() => (hasProject.value ? projectName.value : '工作台'))
 const projectStatus = computed<'active' | 'archived'>(() => project.value?.status || 'active')
 
 const projectOutputs = ref<OutputItem[]>([])
@@ -506,8 +792,13 @@ const {
   sessionId,
   sessionStatus,
   sessionList,
+  childSessions,
   sessionMessages,
   pendingAttachments,
+  currentQueuedFollowups,
+  failedFollowupId,
+  sendingFollowupId,
+  sessionTodos,
   partText,
   pendingQuestion,
   pendingPermission,
@@ -517,14 +808,19 @@ const {
   loadOlderMessages,
   switchSession,
   createNewSession,
+  deleteSession,
   addAttachment,
   addReferenceAttachment,
   removeAttachment,
   sendMessage,
+  sendQueuedFollowup,
+  editQueuedFollowup,
+  getFollowupPreview,
   abortSession,
   replyToQuestion,
   rejectQuestion,
   replyToPermission,
+  restoreRevert,
   revertMessage,
   startEventSubscription,
   stopEventSubscription,
@@ -535,7 +831,9 @@ const {
   (msg, opts) => $q.notify({ color: 'info', message: msg, icon: opts?.icon ?? 'info', ...(opts?.timeout !== undefined ? { timeout: opts.timeout } : {}) }),
   (msg) => $q.notify({ color: 'positive', message: msg, icon: 'check' }),
   () => { /* focus handled inside ChatInputDock */ },
-  () => projectId.value,
+  // Project scope only when a projectId is present; standalone sessions stay
+  // project-less (created in a wrk_ dir), exactly as the old SessionWorkspacePage.
+  () => projectId.value || undefined,
 )
 
 // ── Derived ─────────────────────────────────────────────────────────────────
@@ -556,9 +854,175 @@ const selectedGridOutput = computed<ShotOutputItem | null>(
   () => gridOutputs.value.find((item) => item.id === selectedOutputId.value) ?? null,
 )
 
-// Right-side "AI 产出" panel is now sourced from the DB-backed
-// workspace_generated_files (openimago-owy7), persistent across refresh.
-const aiOutputItems = computed<AIOutputItem[]>(() => projectWorkspaceFileItems.value)
+// ── Story read dispatch (ADR 0009) ──────────────────────────────────────────
+//
+// Story is directory-scoped: resolve it via the project key when present, else
+// the session key (new session-reachable routes, openimago-zaet). Writes stay
+// project-scoped for now (guarded below); the standalone-session story tabs are
+// read-only until session-scoped story writes land.
+const storyReads = {
+  bible: () =>
+    hasProject.value
+      ? api.projectStoryBible(projectId.value)
+      : routeSessionId.value
+        ? api.sessionStoryBible(routeSessionId.value)
+        : Promise.resolve(null),
+  series: () =>
+    hasProject.value
+      ? api.projectStorySeries(projectId.value)
+      : routeSessionId.value
+        ? api.sessionStorySeries(routeSessionId.value)
+        : Promise.resolve(null),
+  episode: (epId: string) =>
+    hasProject.value
+      ? api.projectStoryEpisode(projectId.value, epId)
+      : routeSessionId.value
+        ? api.sessionStoryEpisode(routeSessionId.value, epId)
+        : Promise.resolve(null),
+  workflow: (epId: string) =>
+    hasProject.value
+      ? api.projectStoryWorkflow(projectId.value, epId)
+      : routeSessionId.value
+        ? api.sessionStoryWorkflow(routeSessionId.value, epId)
+        : Promise.resolve(null),
+  runs: (epId: string) =>
+    hasProject.value
+      ? api.projectStoryRuns(projectId.value, epId)
+      : routeSessionId.value
+        ? api.sessionStoryRuns(routeSessionId.value, epId)
+        : Promise.resolve(null),
+  cut: (epId: string) =>
+    hasProject.value
+      ? api.projectStoryCut(projectId.value, epId)
+      : routeSessionId.value
+        ? api.sessionStoryCut(routeSessionId.value, epId)
+        : Promise.resolve(null),
+}
+
+// Whether to render the project/story shell. A project always shows it (project
+// behavior is unchanged). A standalone session shows it only when its directory
+// actually has Story files; otherwise the page degrades to the chat + AI 产出
+// session shell — exactly the prior SessionWorkspacePage experience.
+const storyShell = computed(() => hasProject.value || storyHasFiles.value)
+// Story writes (add shot, generate, cut edits) remain project-scoped for now.
+const storyEditable = computed(() => hasProject.value)
+
+const workspaceTabs = computed<ReadonlyArray<{ id: string; label: string }>>(
+  () => (storyShell.value ? PROJECT_WORKSPACE_TABS : []),
+)
+
+// ── Degraded session-shell derived state (ADR 0009) ─────────────────────────
+// Verbatim port of the prior SessionWorkspacePage projections, used only when
+// `storyShell` is false (standalone session, no story files).
+
+function getAllSessions(): SessionItem[] {
+  const nested = Object.values(childSessions.value).flatMap((items) => items)
+  return [...sessionList.value, ...nested]
+}
+
+const currentParentSession = computed<SessionItem | null>(() => {
+  if (!sessionId.value) return null
+  const sessions = getAllSessions()
+  const session = sessions.find((item) => item.id === sessionId.value)
+  return session?.parentID
+    ? sessions.find((item) => item.id === session.parentID) ?? null
+    : null
+})
+
+function computeDisplayTurns(): { user: DisplayMessage; assistant: DisplayMessage | null }[] {
+  const turns: { user: DisplayMessage; assistant: DisplayMessage | null }[] = []
+  const revertMessageId = currentSessionItem.value?.revert?.messageID
+  for (const message of displayMessages.value) {
+    if (message.role === 'user') {
+      if (revertMessageId && message.id >= revertMessageId) continue
+      turns.push({ user: message, assistant: null })
+      continue
+    }
+    const userId = message.id.replace(/^asst:/, '')
+    const existing = turns.find((turn) => turn.user.id === userId)
+    if (existing) existing.assistant = message
+  }
+  return turns
+}
+
+function getUserMessageText(msg: DisplayMessage): string {
+  return msg.parts
+    .filter((p): p is TextPart => p.type === 'text' && !p.synthetic)
+    .map((p) => p.text)
+    .join('')
+}
+
+function resolveMediaFileKind(mime: string, filename: string): AIOutputItem['kind'] | null {
+  if (mime.includes('image') || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(filename)) return 'image'
+  if (mime.includes('video') || /\.(mp4|webm|mov|avi)$/i.test(filename)) return 'video'
+  if (mime.includes('audio') || /\.(mp3|wav|ogg|flac|aac|m4a)$/i.test(filename)) return 'audio'
+  return null
+}
+
+const revertMessagePreview = computed(() => {
+  const revertMessageId = currentSessionItem.value?.revert?.messageID
+  if (!revertMessageId) return ''
+  const revertedMessage = displayMessages.value.find((message) => message.id === revertMessageId && message.role === 'user')
+  if (!revertedMessage) return revertMessageId
+  const text = getUserMessageText(revertedMessage).trim()
+  return text || revertMessageId
+})
+
+const completedTodoCount = computed(() => sessionTodos.value.filter((todo) => todo.status === 'completed').length)
+
+const activeTodoLabel = computed(() => {
+  return sessionTodos.value.find((todo) => todo.status === 'in_progress')?.content
+    ?? sessionTodos.value.find((todo) => todo.status === 'pending')?.content
+    ?? sessionTodos.value.at(-1)?.content
+    ?? ''
+})
+
+const hasSessionExtras = computed(() => {
+  return Boolean(
+    pendingQuestion.value
+    || sessionTodos.value.length > 0
+    || revertMessagePreview.value
+    || currentQueuedFollowups.value.length > 0
+    || pendingPermission.value,
+  )
+})
+
+const generatedResults = computed<AIOutputItem[]>(() => {
+  const items: AIOutputItem[] = []
+  const displayTurns = computeDisplayTurns()
+  for (const turn of displayTurns) {
+    if (!turn.assistant) continue
+    const prompt = getUserMessageText(turn.user).trim()
+    for (const part of turn.assistant.parts) {
+      if (part.type !== 'file') continue
+      const mime = part.mime?.toLowerCase() ?? ''
+      const filename = part.filename || (part as { url?: string }).url?.split('/').at(-1) || '生成结果'
+      const kind = resolveMediaFileKind(mime, filename)
+      if (!kind) continue
+      items.push({
+        id: (part as { id?: string }).id ?? `file-${items.length}`,
+        url: (part as { url?: string }).url ?? '',
+        filename,
+        kind,
+        timeLabel: formatResultTime(turn.assistant.time),
+        prompt,
+      })
+    }
+  }
+  return items.sort((left, right) => right.timeLabel.localeCompare(left.timeLabel))
+})
+
+// Session AI-outputs: DB-backed workspace-files merged with inline `file` parts.
+const sessionAiOutputItems = computed<AIOutputItem[]>(() =>
+  mergeAIOutputItems(sessionFileItems.value, generatedResults.value),
+)
+
+// Right-side "AI 产出" panel. Project: DB-backed workspace_generated_files
+// (openimago-owy7), persistent across refresh. Session: merged session files +
+// inline chat-turn media (the prior SessionWorkspacePage behavior).
+const aiOutputItems = computed<AIOutputItem[]>(() =>
+  hasProject.value ? projectWorkspaceFileItems.value : sessionAiOutputItems.value,
+)
 
 // ── Story elements (unchanged from prior version) ───────────────────────────
 
@@ -712,7 +1176,7 @@ const isChatSurfaceTab = computed(
 
 // Shot-adding is the single supported story write (ADR 0005); enabled once an
 // episode is selected so the new shot has a target.
-const canAddShot = computed(() => Boolean(currentStoryEpisodeId.value))
+const canAddShot = computed(() => Boolean(currentStoryEpisodeId.value) && storyEditable.value)
 
 // ── WorkspaceArtifact[] for WorkspaceArtifactsPanel (ADR 0003) ───────────
 
@@ -759,7 +1223,7 @@ const currentSessionItem = computed<SessionItem | null>(() => {
 
 const currentSessionLabel = computed(() => {
   const session = currentSessionItem.value
-  if (!session) return t('agent.untitled')
+  if (!session) return hasProject.value ? t('agent.untitled') : '工作台'
   const title = session.title?.trim()
   if (!title) return t('agent.untitled')
   return title.replace(/\s+\(@[^)]+ subagent\)$/, '')
@@ -913,12 +1377,11 @@ function onEpisodeSelect(episodeId: string) {
 
 /** Pull the workflow DAG + run history for one episode (ADR 0004). */
 async function fetchEpisodeWorkflowRuns(episodeId: string): Promise<void> {
-  const pid = projectId.value
   try {
     const [wf, runs, cut] = await Promise.all([
-      api.projectStoryWorkflow(pid, episodeId),
-      api.projectStoryRuns(pid, episodeId),
-      api.projectStoryCut(pid, episodeId),
+      storyReads.workflow(episodeId),
+      storyReads.runs(episodeId),
+      storyReads.cut(episodeId),
     ])
     // Guard against an out-of-order resolve after another episode was selected.
     if (currentStoryEpisodeId.value !== episodeId) return
@@ -938,7 +1401,7 @@ async function fetchEpisodeWorkflowRuns(episodeId: string): Promise<void> {
 async function refreshStoryCut(): Promise<void> {
   const episodeId = currentStoryEpisodeId.value
   if (!episodeId) return
-  const cut = await api.projectStoryCut(projectId.value, episodeId)
+  const cut = await storyReads.cut(episodeId)
   if (episodeId === currentStoryEpisodeId.value) {
     storyCut.value = rawCutToEpisodeCut(cut)
   }
@@ -1033,7 +1496,7 @@ function onClipDelete(clipId: string): void {
         episodeId,
         currentUpdatedAt: () => storyCut.value?.updatedAt,
         refetch: async () => {
-          const fresh = await api.projectStoryCut(projectId.value, episodeId)
+          const fresh = await storyReads.cut(episodeId)
           return fresh?.updatedAt
         },
       },
@@ -1224,13 +1687,13 @@ function onPreviewToggleHd() {
  *  it is the current episode, also re-pull its runs so the timeline and the
  *  left-panel shot thumbnails (sourced from completed runs) refresh. */
 async function refreshEpisode(episodeId: string): Promise<OpenimagoStoryEpisode | null> {
-  const fresh = await api.projectStoryEpisode(projectId.value, episodeId)
+  const fresh = await storyReads.episode(episodeId)
   if (!fresh) return null
   const idx = storyEpisodes.value.findIndex((ep) => ep.id === episodeId)
   if (idx >= 0) storyEpisodes.value.splice(idx, 1, fresh)
   else storyEpisodes.value.push(fresh)
   if (episodeId === currentStoryEpisodeId.value) {
-    const runs = await api.projectStoryRuns(projectId.value, episodeId)
+    const runs = await storyReads.runs(episodeId)
     if (episodeId === currentStoryEpisodeId.value) storyRuns.value = runs
   }
   return fresh
@@ -1394,7 +1857,11 @@ async function handleSwitchSession(sid: string) {
   isSessionSwitching.value = true
   try {
     await switchSession(sid)
-    void router.push({ name: 'project-session', params: { id: projectId.value, sessionId: sid } })
+    if (hasProject.value) {
+      void router.push({ name: 'project-session', params: { id: projectId.value, sessionId: sid } })
+    } else {
+      void router.push({ name: 'session', params: { id: sid } })
+    }
   } finally {
     isSessionSwitching.value = false
   }
@@ -1492,23 +1959,34 @@ async function fetchProjectData() {
 }
 
 async function fetchStoryData() {
-  const pid = projectId.value
+  // No scope at all (e.g. the bare /sessions list) → no story to read.
+  if (!hasProject.value && !routeSessionId.value) {
+    storyHasFiles.value = false
+    return
+  }
   storyPanelLoading.value = true
   storyPanelError.value = null
   try {
     const [bible, series] = await Promise.all([
-      api.projectStoryBible(pid),
-      api.projectStorySeries(pid),
+      storyReads.bible(),
+      storyReads.series(),
     ])
     storyBible.value = bible
     storySeries.value = series
+    // A standalone session shows the Story tabs only when its directory actually
+    // has Story files (ADR 0009). A project always shows them, so this flag is
+    // only consulted via `storyShell` when there is no project.
+    storyHasFiles.value = Boolean(
+      (bible && (bible.characters.length > 0 || bible.scenes.length > 0 || bible.styleSeeds.length > 0))
+      || (series && series.episodes.length > 0),
+    )
     if (series && series.episodes.length > 0) {
       const epIds = series.episodes
         .slice(0, 10)
         .map((e: unknown) => (e as Record<string, unknown>).id as string | undefined)
         .filter((id): id is string => Boolean(id))
       const episodes = await Promise.all(
-        epIds.map((epId) => api.projectStoryEpisode(pid, epId)),
+        epIds.map((epId) => storyReads.episode(epId)),
       )
       storyEpisodes.value = episodes.filter((ep): ep is OpenimagoStoryEpisode => ep !== null)
       if (epIds.length > 0 && !currentStoryEpisodeId.value) {
@@ -1592,41 +2070,90 @@ function formatResultTime(date: Date): string {
   return formatRelativeTime(date)
 }
 
+// ── Degraded session-shell handlers (ADR 0009) ──────────────────────────────
+// Port of the prior SessionWorkspacePage handlers, active only in session mode.
+
+async function fetchSessionFiles(): Promise<void> {
+  const sid = sessionId.value
+  if (!sid) {
+    sessionFileItems.value = []
+    return
+  }
+  try {
+    const files = await api.sessionWorkspaceFiles(sid)
+    // Guard against a race where the session switched mid-flight.
+    if (sessionId.value !== sid) return
+    sessionFileItems.value = files.map((wf) => workspaceFileToAIOutputItem(wf, formatResultTime))
+  } catch {
+    if (sessionId.value === sid) sessionFileItems.value = []
+  }
+}
+
+function handleSelectResult(id: string) {
+  selectedResultId.value = id
+}
+
+function handleItemMenu(id: string, _event: MouseEvent) {
+  $q.notify({ color: 'info', message: `对 ${id} 打开菜单（待接入）`, icon: 'info', timeout: 1200 })
+}
+
+function handleFilterOutputs() {
+  $q.notify({ color: 'info', message: '筛选面板即将上线', icon: 'filter_list', timeout: 1200 })
+}
+
+function handleViewAll() {
+  $q.notify({ color: 'info', message: '全部结果视图即将上线', icon: 'list', timeout: 1200 })
+}
+
 // ── Lifecycle ───────────────────────────────────────────────────────────────
 
 onMounted(() => {
   void loadAgents()
   void loadCommands()
-  void fetchProjectData()
-  void fetchProjectOutputs()
-  void fetchProjectWorkspaceFiles()
-  void fetchProjectFiles()
+  // Project-only data sources; skipped on the standalone session shell.
+  if (hasProject.value) {
+    void fetchProjectData()
+    void fetchProjectOutputs()
+    void fetchProjectWorkspaceFiles()
+    void fetchProjectFiles()
+  }
+  // Story is scope-aware (project OR session key); it sets storyHasFiles.
   void fetchStoryData()
   void loadSessionList().then(() => {
-    const paramSessionId = route.params.sessionId
-    if (paramSessionId && typeof paramSessionId === 'string' && paramSessionId !== sessionId.value) {
-      void switchSession(paramSessionId)
-    }
+    const sid = routeSessionId.value
+    if (sid && sid !== sessionId.value) void switchSession(sid)
   })
   startEventSubscription()
 })
 
+// Route-driven session switching: the nested `:sessionId` on a project route OR
+// the top-level `:id` on a session route. Navigating to the bare /sessions list
+// (no id, no project) clears the active session.
+watch(routeSessionId, (sid) => {
+  if (sid && sid !== sessionId.value) void switchSession(sid)
+  else if (!sid && !hasProject.value && sessionId.value) void switchSession('')
+})
+
+// Pull DB-backed workspace files whenever the active session changes in the
+// degraded session shell (initial load, route change, sidebar switch).
 watch(
-  () => route.params.sessionId,
-  (sid) => {
-    const s = typeof sid === 'string' ? sid : undefined
-    if (s && s !== sessionId.value) void switchSession(s)
-  },
+  sessionId,
+  () => { if (!hasProject.value) void fetchSessionFiles() },
+  { immediate: true },
 )
 
 // After a generation round completes (isLoading true → false), refresh the
-// DB-backed "AI 产出" panel so newly generated media appears without a manual
-// reload (openimago-owy7). Also refresh the filesystem-scanned projectOutputs
-// so the storyboard fallback stays in sync.
+// "AI 产出" panel so newly generated media appears without a manual reload.
+// Project (openimago-owy7) also refreshes the filesystem-scanned projectOutputs
+// so the storyboard fallback stays in sync; the session shell refreshes its
+// session workspace files.
 watch(isLoading, (loading, wasLoading) => {
-  if (wasLoading && !loading) {
+  if (!(wasLoading && !loading)) return
+  if (hasProject.value) {
     void fetchProjectWorkspaceFiles()
     void fetchProjectOutputs()
+  } else {
+    void fetchSessionFiles()
   }
 })
 
@@ -1852,4 +2379,181 @@ function onSessionSelect(sid: string) {
   font-size: 11px;
   font-weight: 600;
 }
+
+// ════ Degraded session shell (ADR 0009) — ported from SessionWorkspacePage ════
+
+.session-layout {
+  z-index: 1;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.session-layout :deep(.ui-layout__drawer) {
+  background: var(--imago-bg-panel) !important;
+  color: var(--imago-text-primary);
+  border-color: var(--imago-border-dim);
+}
+
+.session-layout :deep(.ui-layout__drawer--left) {
+  border-right: 1px solid var(--imago-border-dim);
+}
+
+.session-layout :deep(.ui-layout__drawer--right) {
+  border-left: 1px solid var(--imago-border-dim);
+}
+
+.chat-page {
+  min-width: 0;
+}
+
+.chat-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: var(--imago-bg-void);
+}
+
+.chat-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.chat-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 24px 4px;
+  flex-shrink: 0;
+}
+
+.chat-meta__title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.chat-meta__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--imago-text-primary);
+  letter-spacing: 0.005em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.chat-meta__clock {
+  font-size: 11.5px;
+  color: var(--imago-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-meta__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--imago-text-muted);
+}
+
+.chat-meta__status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--imago-neon-cyan);
+  box-shadow: 0 0 6px var(--imago-neon-cyan);
+}
+
+.chat-body__messages {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.child-session-input-disabled {
+  width: 100%;
+  padding: 14px 16px;
+  margin: 8px 20px 16px;
+  border-radius: var(--imago-radius-lg);
+}
+
+.imago-dock {
+  background: var(--imago-bg-surface);
+  border: 1px solid var(--imago-border-soft);
+  border-radius: var(--imago-radius-lg);
+}
+
+.chat-body__extras {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 0 20px 8px;
+}
+
+.todo-dock,
+.revert-dock,
+.followup-dock {
+  padding: 10px 12px;
+}
+
+.todo-dock__preview,
+.followup-dock__preview {
+  max-width: 55%;
+}
+
+.todo-dock__list,
+.followup-dock__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.todo-dock__item,
+.followup-dock__item {
+  align-items: flex-start;
+}
+
+.followup-dock__header {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.followup-dock__toggle {
+  transition: transform 0.15s ease;
+}
+
+.followup-dock__toggle--collapsed {
+  transform: rotate(180deg);
+}
+
+.imago-dock--warning {
+  border-color: var(--imago-warning-border, rgba(245, 158, 11, 0.18));
+  background: var(--imago-warning-bg, rgba(245, 158, 11, 0.06));
+}
+
+.text-grey-7 { color: rgba(255, 255, 255, 0.42); }
+.text-grey-5 { color: var(--imago-text-muted, #a1a1aa); }
+.text-caption { font-size: 12px; line-height: 1.4; }
+.text-body2 { font-size: 14px; line-height: 1.4; }
+.text-weight-medium { font-weight: 500; }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
