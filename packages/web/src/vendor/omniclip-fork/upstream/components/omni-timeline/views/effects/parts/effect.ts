@@ -241,7 +241,7 @@ export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: Any
 				width: ${calculate_effect_width(effect, zoom)}px;
 				transform: translate(
 					${x ?? calculate_start_position(effect.start_at_position, zoom)}px,
-					${y ?? calculate_effect_track_placement(effect.track, use.context.state.effects)}px
+					${y ?? track_placement}px
 				);
 			"
 			@pointerdown=${drag_events.start}

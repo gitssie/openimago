@@ -317,11 +317,21 @@ export class Compositor {
 				this.currently_played_effects.set(effect.id, effect)
 				this.managers.videoManager.add_video_to_canvas(effect)
 				const element = this.managers.videoManager.get(effect.id)?.sprite?.texture.baseTexture.resource.source as HTMLVideoElement
-				// openimago-fgec (perf-diag; DEV-only): setting currentTime triggers an async
-				// video DECODE/SEEK — the real per-drop cost that app.render's 0.1ms hides. A
-				// count > 0 on a reorder means the drop re-decoded a video frame. REMOVE after
-				// diagnosis.
-				if(element) {perfCount("video-decode-seek"); element.currentTime = effect.start / 1000}
+				// openimago-5dte: GUARD the seek. Setting <video>.currentTime triggers an async
+				// seek + HTTP 206 range fetch + video DECODE (~1.1s settle, OFF the main thread —
+				// invisible to our app.render timers; the confirmed "放下去卡" drop hitch). A
+				// reorder re-adds the same clip under the playhead as a NEW object (immutable
+				// start_at_position update), so #add runs for it even though its frame is
+				// UNCHANGED. Only re-seek when the target differs from the element's current time
+				// by more than a sub-frame epsilon → a same-frame reorder is a no-op, no decode.
+				// (perfCount stays INSIDE the guard so it counts only REAL decodes — openimago-fgec.)
+				if(element) {
+					const targetSec = effect.start / 1000
+					if(Math.abs(element.currentTime - targetSec) > (0.5 / this.timebase)) {
+						perfCount("video-decode-seek")
+						element.currentTime = targetSec
+					}
+				}
 			}
 			else if(effect.kind === "text") {
 				this.currently_played_effects.set(effect.id, effect)
@@ -330,7 +340,14 @@ export class Compositor {
 			else if(effect.kind === "audio") {
 				this.currently_played_effects.set(effect.id, effect)
 				const element = this.managers.audioManager.get(effect.id)
-				if(element) {element.currentTime = effect.start / 1000}
+				// openimago-5dte: same sub-frame guard as the video branch — a same-frame reorder
+				// re-adds this audio clip as a new object; avoid a needless currentTime re-seek.
+				if(element) {
+					const targetSec = effect.start / 1000
+					if(Math.abs(element.currentTime - targetSec) > (0.5 / this.timebase)) {
+						element.currentTime = targetSec
+					}
+				}
 			}
 		}
 		this.update_canvas_objects(omnislate.context.state)
