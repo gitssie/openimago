@@ -61,3 +61,58 @@ export function filmstripTileCount(widthPx: number, tileWidth: number, maxTiles:
   const w = Number.isFinite(tileWidth) && tileWidth > 0 ? tileWidth : FILMSTRIP_TILE_W
   return Math.max(1, Math.min(maxTiles, Math.ceil(widthPx / w)))
 }
+
+/** The painted sub-rect of a clip's filmstrip, in CLIP-LOCAL pixels. */
+export interface FilmstripSlice {
+  /** True when any part of the clip intersects the (overscanned) viewport. */
+  visible: boolean
+  /** Left offset of the painted strip from the clip's own left edge. */
+  offsetPx: number
+  /** Width of the painted strip (≤ viewport + 2·overscan, clamped to the clip). */
+  widthPx: number
+}
+
+/**
+ * Virtualize the filmstrip to the visible viewport (openimago-fg8y). A clip can be many
+ * thousands of px wide (a 64s clip ≈ 8100px) and paints a tiled repeat-x filmstrip across
+ * its FULL width; total painted bitmap grows with timeline length. This intersects the
+ * clip's timeline rect `[clipLeftPx, clipLeftPx+clipWidthPx]` with the viewport
+ * `[scrollLeftPx, scrollLeftPx+viewportWidthPx]` (grown by `overscanPx` each side so a
+ * coalesced scroll re-render never reveals a blank edge) and returns the painted slice in
+ * CLIP-LOCAL coordinates. Because every tile is the SAME first frame, a narrower strip
+ * starting at `offsetPx` tiles identically — the on-screen look is unchanged while a
+ * fully-offscreen clip paints nothing and a huge clip paints only ~one viewport.
+ *
+ * Pure / DOM-free so it is unit-testable (this file is dependency-free by design). When the
+ * viewport is not yet measurable (clientWidth 0 / non-finite) or scrollLeft/clipLeft are
+ * non-finite, it DEGRADES to the full clip width (the un-virtualized behaviour) rather than
+ * blanking the strip.
+ */
+export function filmstripVisibleSlice(
+  clipLeftPx: number,
+  clipWidthPx: number,
+  scrollLeftPx: number,
+  viewportWidthPx: number,
+  overscanPx: number,
+): FilmstripSlice {
+  if (!Number.isFinite(clipWidthPx) || clipWidthPx <= 0) {
+    return { visible: false, offsetPx: 0, widthPx: 0 }
+  }
+  // Untrustworthy viewport → paint the whole clip (degrade to un-virtualized, never blank).
+  if (
+    !Number.isFinite(viewportWidthPx) || viewportWidthPx <= 0 ||
+    !Number.isFinite(scrollLeftPx) || !Number.isFinite(clipLeftPx)
+  ) {
+    return { visible: true, offsetPx: 0, widthPx: clipWidthPx }
+  }
+  const over = Number.isFinite(overscanPx) && overscanPx > 0 ? overscanPx : 0
+  const viewStart = scrollLeftPx - over
+  const viewEnd = scrollLeftPx + viewportWidthPx + over
+  const clampToClip = (v: number) => (v < 0 ? 0 : v > clipWidthPx ? clipWidthPx : v)
+  const offsetPx = clampToClip(viewStart - clipLeftPx)
+  const endPx = clampToClip(viewEnd - clipLeftPx)
+  const widthPx = endPx - offsetPx
+  return widthPx > 0
+    ? { visible: true, offsetPx, widthPx }
+    : { visible: false, offsetPx: 0, widthPx: 0 }
+}
