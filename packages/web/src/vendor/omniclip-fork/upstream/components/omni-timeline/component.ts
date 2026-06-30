@@ -220,6 +220,26 @@ export const OmniTimeline = shadow_component(use => {
 		}
 		// Only do layout work while an interaction is active.
 		if(!effectTrim.grabbed && !effectDrag.grabbed && !playheadDrag.grabbed) {return}
+		// openimago-y8qw: ZERO-RE-RENDER tracking. The residual drag jank (after fttp/9oq0/pfho/
+		// flat-clips) was the GRABBED clip's inner Effect view re-rendering ~58×/sec via setCords
+		// — rebuilding its whole lit subtree + forcing style/layout/paint each pointermove. Move
+		// the grabbed clip by a DIRECT imperative transform on its cached nodes here (composite-
+		// only, like a plain div); the reactive setCords path is skipped for it (effect.ts). The
+		// transform matches the reactive template (coordinates − grabbed.offset) so the committed
+		// drop re-render lands without a jump; on drop effect.ts reconciles to the committed
+		// resting transform (no sdin floating clip). The rAF below still drives the proposal
+		// indicator + drop placement.
+		const dn = effectDrag.directNodes
+		if(dn && effectDrag.grabbed) {
+			const bounds = get_timeline_bounds()
+			if(bounds) {
+				const coordX = Math.max(0, event.clientX - bounds.left)
+				const coordY = Math.max(0, event.clientY - bounds.top)
+				const t = `translate(${coordX - effectDrag.grabbed.offset.x}px, ${coordY - effectDrag.grabbed.offset.y}px)`
+				dn.effect.style.transform = t
+				dn.preview.style.transform = t
+			}
+		}
 		// openimago-7ca2: start the drag-scoped frame monitor for clip/trim drags only.
 		if(effectDrag.grabbed || effectTrim.grabbed) {start_frame_monitor()}
 		pending_event = event

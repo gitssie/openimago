@@ -18,6 +18,14 @@ export class EffectDragHandler {
 	onEffectDrag = pub<EffectDrag>()
 	onDrop = pub<EffectDrop>()
 
+	// openimago-y8qw: the grabbed clip's real DOM nodes (.effect + sibling .trim-handles),
+	// cached at drag start by effect.ts. While grabbed, component.ts writes their transform
+	// DIRECTLY + synchronously per pointermove (zero-latency, no per-frame reactive re-render
+	// of the inner Effect view — the ~58/s effect-inner-render that was the residual jank).
+	// On drop, effect.ts reconciles them to the COMMITTED resting transform (microtask) and
+	// nulls this, so the clip lands contiguous (no sdin floating-clip regression).
+	directNodes: {effect: HTMLElement; preview: HTMLElement} | null = null
+
 	move(position: At) {
 		if (this.#isGrabbed && this.grabbed) {
 			this.onEffectDrag.publish({ position, grabbed: this.grabbed })
@@ -53,6 +61,11 @@ export class EffectDragHandler {
 	}
 
 	#resetState() {
+		// openimago-y8qw: null the cached nodes. effect.ts's onDrop handler runs DURING the
+		// preceding onDrop.publish() (before this), captures the refs into a local, and
+		// reconciles their transform to the committed resting position in a microtask — so
+		// nulling here is safe and the clip still lands contiguous.
+		this.directNodes = null
 		this.grabbed = null
 		this.#isGrabbed = false
 		this.at = null

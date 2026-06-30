@@ -84,12 +84,30 @@ export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: Any
 
 	use.mount(() => effectDragHandler.onDrop(({grabbed}) => {
 		if(grabbed?.effect?.id === effect?.id) {
+			// openimago-y8qw: RECONCILE the direct-driven transform to the COMMITTED resting
+			// position so the clip lands contiguous (the sdin floating-clip regression came from
+			// clearing to "" / relying on lit, whose style dirty-check SKIPS re-applying when the
+			// new value equals its cached one — a no-net-move drop then kept the drag-end inline
+			// transform). Capture the nodes NOW (this runs inside onDrop.publish, before
+			// #resetState nulls them); set the exact committed transform in a microtask AFTER the
+			// synchronous drop stack (set_proposed_timecode + the ripple push) has committed
+			// positions, so we never read a pre-commit value and never fight lit. The reactive
+			// re-render (setCords below) then re-applies the same value — idempotent.
+			const nodes = effectDragHandler.directNodes
 			setPreviewPosition({
 				startAtPosition: null,
 				start: null,
 				end: null
 			})
 			setCords([null, null])
+			if(nodes) {
+				queueMicrotask(() => {
+					const live = use.context.state.effects.find(e => e.id === effect.id) ?? effect
+					const t = `translate(${calculate_start_position(live.start_at_position, use.context.state.zoom)}px, ${calculate_effect_track_placement(live.track, use.context.state.effects)}px)`
+					nodes.effect.style.transform = t
+					nodes.preview.style.transform = t
+				})
+			}
 		}
 	}))
 
@@ -129,7 +147,12 @@ export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: Any
 		effect_drag_listener() {
 			const dispose = effectDragHandler.onEffectDrag((e) => {
 				const isDragged = e.grabbed.effect.id === effect.id
-				if(isDragged) {
+				// openimago-y8qw: the grabbed clip is now moved by a DIRECT imperative transform
+				// in component.ts (no per-frame inner-Effect re-render — that ~58/s
+				// effect-inner-render rebuild was the residual jank). Only fall back to the
+				// reactive setCords when the direct node ref wasn't cached (defensive); otherwise
+				// it would re-render this whole subtree every pointermove again.
+				if(isDragged && !effectDragHandler.directNodes) {
 					const center_of_effect: V2 = [
 						e.position.coordinates[0] - e.grabbed.offset.x,
 						e.position.coordinates[1] - e.grabbed.offset.y
@@ -148,6 +171,16 @@ export const Effect = shadow_view(use => (timeline: GoldElement, any_effect: Any
 				const y = event.clientY - bounds.top
 				const at = {coordinates: [x >= 0 ? x : 0, y >= 0 ? y : 0], indicator: null} satisfies At
 				effectDragHandler.start({effect, offset: {x: event.offsetX, y: event.offsetY}}, at)
+				// openimago-y8qw: cache this clip's real DOM nodes so component.ts can drive their
+				// transform directly + synchronously on pointermove (no inner-Effect re-render per
+				// frame). Both .effect and its sibling .trim-handles live in THIS Effect view's
+				// shadow root, reachable from the pointerdown target via getRootNode().
+				const root = (event.target as Node).getRootNode() as ShadowRoot
+				const effectNode = root.querySelector(".effect") as HTMLElement | null
+				const previewNode = root.querySelector(".trim-handles") as HTMLElement | null
+				if(effectNode && previewNode) {
+					effectDragHandler.directNodes = {effect: effectNode, preview: previewNode}
+				}
 			}
 		},
 		drop(e: PointerEvent) {
