@@ -1,93 +1,233 @@
 <!--
-  ClipGenerateDialog (openimago-ciqk) — the Cut editor's 手动编辑 action.
+  ClipGenerateDialog (openimago-ciqk → redesigned openimago-816a) — the Cut editor's
+  手动编辑 action, rebuilt as an IN-TIMELINE composer.
 
-  An in-timeline q-dialog AI video re-generation editor: prompt + model + aspect
-  ratio + duration, pre-filled from the clip's SOURCE shot's last-used params
-  (StoryShotSummary.generationParams) → its authored prompt → the latest run. 生成
-  re-runs video generation for that shot with the edited params (parent calls
-  api.generateShot(…, params)); the clip's media then refreshes.
+  Per the user's hard directives this is a Quasar q-menu (an in-timeline popover),
+  NOT a q-dialog modal: it pops up near the clicked clip. The page threads the clip's
+  on-screen right-click point down as `anchor`, and the menu targets an invisible
+  0-size element positioned there (q-menu has no `view` prop — "view=timeline" means
+  anchoring within the timeline view context, which this achieves). null anchor →
+  the composer centers itself.
 
-  Mirrors WorkspaceArtifactsPanel's param-editor pattern (prompt/model/aspect/
-  duration) — native <textarea>/<select> controls — rather than reinventing them.
+  Layout mirrors the reference composer:
+    • Top: reference-material strip — thumbnails of `form.referenceImages` (asset ids
+      from openimago-v1j0) + a drop zone + an 上传 button (api.uploadAsset).
+    • Middle: prompt — a q-input textarea.
+    • Bottom: pill toolbar — reference-mode label · model · resolution · aspect ratio
+      · duration · @ · 生成. model/aspect/duration are bound q-selects; the rest are
+      static placeholders for fields the backend does not model yet.
+
+  Built entirely on Quasar controls (q-menu / q-input / q-select / q-btn) per the
+  project convention (CONTEXT.md「UI 组件遵循 Quasar 规范」). Bindings + behavior are
+  preserved from the original: prompt/model/aspectRatio/durationSeconds (durationSeconds
+  is a NUMBER), prefill from shot.generationParams, generating/disabled states, and it
+  emits `generate(params)` — now carrying `referenceImages`.
 -->
 <template>
-  <q-dialog
-    :model-value="open"
-    @update:model-value="(v) => emit('update:open', v)"
+  <!-- Invisible anchor positioned at the clicked clip; q-menu uses it as its target. -->
+  <div
+    ref="anchorEl"
+    class="clip-gen-anchor"
+    :style="anchorStyle"
+    aria-hidden="true"
   >
-    <q-card class="clip-gen-dialog" style="width: 560px; max-width: 92vw;">
-      <div class="clip-gen-dialog__header">
-        <div class="clip-gen-dialog__title">重新生成镜头</div>
-        <div v-if="shot" class="clip-gen-dialog__subtitle">
-          镜头 {{ shot.shotNumber }}
-        </div>
-      </div>
+    <q-menu
+      :model-value="open"
+      no-parent-event
+      :persistent="generating"
+      anchor="bottom middle"
+      self="top middle"
+      :offset="[0, 10]"
+      dark
+      class="clip-gen-menu"
+      @update:model-value="onMenuToggle"
+    >
+      <section
+        class="clip-gen"
+        role="dialog"
+        aria-label="重新生成镜头"
+        @dragover="onDragOver"
+        @dragleave="onDragLeave"
+        @drop="onDrop"
+      >
+        <header class="clip-gen__header">
+          <div class="clip-gen__title">重新生成镜头</div>
+          <div v-if="shot" class="clip-gen__subtitle">镜头 {{ shot.shotNumber }}</div>
+        </header>
 
-      <div class="clip-gen-dialog__form">
-        <label class="clip-gen-field">
-          <span class="clip-gen-field__label">提示词</span>
-          <textarea
-            v-model="form.prompt"
-            class="clip-gen-field__textarea"
-            rows="4"
-            placeholder="描述这个镜头要生成的画面…"
-          ></textarea>
-        </label>
-
-        <div class="clip-gen-field-row">
-          <label class="clip-gen-field">
-            <span class="clip-gen-field__label">模型</span>
-            <select v-model="form.model" class="clip-gen-field__select">
-              <option v-for="opt in modelOptions" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-          </label>
-
-          <label class="clip-gen-field">
-            <span class="clip-gen-field__label">画幅比例</span>
-            <select v-model="form.aspectRatio" class="clip-gen-field__select">
-              <option v-for="opt in aspectRatioOptions" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-          </label>
-
-          <label class="clip-gen-field">
-            <span class="clip-gen-field__label">时长</span>
-            <select v-model.number="form.durationSeconds" class="clip-gen-field__select">
-              <option v-for="opt in durationOptions" :key="opt.value" :value="Number(opt.value)">
-                {{ opt.label }}
-              </option>
-            </select>
-          </label>
-        </div>
-      </div>
-
-      <div class="clip-gen-dialog__actions">
-        <button
-          type="button"
-          class="clip-gen-dialog__cancel"
-          :disabled="generating"
-          @click="emit('update:open', false)"
+        <!-- ── Top: reference-material strip ─────────────────────────────────── -->
+        <div
+          class="clip-gen__refs"
+          :class="{ 'clip-gen__refs--drag': dragOver }"
         >
-          取消
-        </button>
-        <button
-          type="button"
-          class="clip-gen-dialog__submit"
-          :disabled="generating"
-          @click="onGenerate"
-        >
-          {{ generating ? '生成中…' : '生成' }}
-        </button>
-      </div>
-    </q-card>
-  </q-dialog>
+          <ul v-if="referenceImages.length > 0" class="clip-gen__ref-list" role="list">
+            <li
+              v-for="refId in referenceImages"
+              :key="refId"
+              class="clip-gen__ref"
+              role="listitem"
+            >
+              <img
+                v-if="refThumb(refId)"
+                :src="refThumb(refId)"
+                :alt="`参考图 ${refId}`"
+                class="clip-gen__ref-img"
+              >
+              <div v-else class="clip-gen__ref-fallback" :aria-label="`参考素材 ${refId}`">
+                <q-icon name="image" size="18px" />
+              </div>
+              <q-btn
+                round
+                dense
+                flat
+                size="xs"
+                icon="close"
+                class="clip-gen__ref-remove"
+                aria-label="移除参考图"
+                @click="removeReference(refId)"
+              />
+            </li>
+          </ul>
+
+          <div class="clip-gen__ref-dropzone">
+            <q-icon name="add_photo_alternate" size="18px" class="clip-gen__ref-dropicon" />
+            <span class="clip-gen__ref-hint">拖拽素材到此处为参考</span>
+          </div>
+
+          <q-btn
+            unelevated
+            dense
+            no-caps
+            icon="upload"
+            label="上传"
+            :loading="uploading"
+            class="clip-gen__upload-btn"
+            @click="onUploadClick"
+          />
+          <input
+            ref="fileInputEl"
+            type="file"
+            accept="image/*"
+            multiple
+            class="clip-gen__file-input"
+            aria-label="上传参考图"
+            @change="onFilesPicked"
+          >
+        </div>
+
+        <!-- ── Middle: prompt ────────────────────────────────────────────────── -->
+        <q-input
+          v-model="form.prompt"
+          type="textarea"
+          dark
+          outlined
+          dense
+          autogrow
+          :input-style="{ minHeight: '84px', maxHeight: '180px' }"
+          placeholder="描述这个镜头要生成的画面…"
+          aria-label="提示词"
+          class="clip-gen__prompt"
+        />
+
+        <!-- ── Bottom: pill toolbar ──────────────────────────────────────────── -->
+        <div class="clip-gen__toolbar">
+          <span class="clip-gen__pill clip-gen__pill--mode">
+            <q-icon name="auto_awesome" size="14px" />
+            全能参考
+          </span>
+
+          <q-select
+            v-model="form.model"
+            :options="modelOptions"
+            dark
+            dense
+            options-dense
+            borderless
+            emit-value
+            map-options
+            aria-label="模型"
+            class="clip-gen__pill clip-gen__select"
+          >
+            <template #prepend>
+              <q-icon name="smart_toy" size="14px" />
+            </template>
+          </q-select>
+
+          <span class="clip-gen__pill clip-gen__pill--static" aria-label="分辨率 720p">
+            <q-icon name="hd" size="14px" />
+            720p
+            <span class="clip-gen__badge">升级</span>
+          </span>
+
+          <q-select
+            v-model="form.aspectRatio"
+            :options="aspectRatioOptions"
+            dark
+            dense
+            options-dense
+            borderless
+            emit-value
+            map-options
+            aria-label="画幅比例"
+            class="clip-gen__pill clip-gen__select"
+          >
+            <template #prepend>
+              <q-icon name="aspect_ratio" size="14px" />
+            </template>
+          </q-select>
+
+          <q-select
+            v-model="form.durationSeconds"
+            :options="durationSelectOptions"
+            dark
+            dense
+            options-dense
+            borderless
+            emit-value
+            map-options
+            aria-label="时长"
+            class="clip-gen__pill clip-gen__select"
+          >
+            <template #prepend>
+              <q-icon name="schedule" size="14px" />
+            </template>
+          </q-select>
+
+          <q-btn
+            round
+            dense
+            flat
+            size="sm"
+            icon="alternate_email"
+            disable
+            class="clip-gen__mention"
+            aria-label="提及素材（即将支持）"
+          >
+            <q-tooltip>提及素材（即将支持）</q-tooltip>
+          </q-btn>
+
+          <q-space />
+
+          <q-btn
+            unelevated
+            no-caps
+            :loading="generating"
+            :disable="generating"
+            label="生成"
+            icon="movie_creation"
+            class="clip-gen__submit"
+            @click="onGenerate"
+          />
+        </div>
+      </section>
+    </q-menu>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { useQuasar } from 'quasar'
+import { api } from 'src/api/client'
 import type { StoryRunSummary, StoryShotSummary } from './types'
 import {
   buildClipGenerateForm,
@@ -105,8 +245,10 @@ const props = withDefaults(
     shot: StoryShotSummary | null
     latestRun?: StoryRunSummary | null
     generating?: boolean
+    /** clip's on-screen right-click point (openimago-816a); null → center. */
+    anchor?: { x: number; y: number } | null
   }>(),
-  { latestRun: null, generating: false },
+  { latestRun: null, generating: false, anchor: null },
 )
 
 const emit = defineEmits<{
@@ -114,18 +256,47 @@ const emit = defineEmits<{
   (e: 'generate', params: ShotGenerationParams): void
 }>()
 
+const $q = useQuasar()
+
 const modelOptions = CLIP_MODEL_OPTIONS
 const aspectRatioOptions = CLIP_ASPECT_RATIO_OPTIONS
-const durationOptions = CLIP_DURATION_OPTIONS
+/** durationSeconds is a NUMBER on the form — map the string-valued source options to
+ *  numeric `value`s so q-select (emit-value + map-options) round-trips the number. */
+const durationSelectOptions = computed(() =>
+  CLIP_DURATION_OPTIONS.map((opt) => ({ label: opt.label, value: Number(opt.value) })),
+)
 
 const form = reactive<ClipGenerateForm>({
   prompt: '',
   model: '',
   aspectRatio: '',
   durationSeconds: 0,
+  referenceImages: [],
 })
 
-/** (Re)seed the form from the shot every time the dialog opens for a shot. */
+/** Reference images as a non-null list for the template. */
+const referenceImages = computed<string[]>(() => form.referenceImages ?? [])
+
+/** ref value (asset id or url) → thumbnail url, populated on upload; prefilled refs
+ *  that already look like urls are shown directly (see refThumb). */
+const refPreviews = reactive<Record<string, string>>({})
+
+const anchorEl = ref<HTMLElement | null>(null)
+const fileInputEl = ref<HTMLInputElement | null>(null)
+const uploading = ref(false)
+const dragOver = ref(false)
+
+/** Position the invisible q-menu target at the clip's point, or center it when the
+ *  page passed no anchor. */
+const anchorStyle = computed(() => {
+  const a = props.anchor
+  if (a) {
+    return { position: 'fixed', left: `${a.x}px`, top: `${a.y}px`, width: '0', height: '0' } as const
+  }
+  return { position: 'fixed', left: '50%', top: '38%', width: '0', height: '0' } as const
+})
+
+/** (Re)seed the form from the shot every time the composer opens for a shot. */
 watch(
   () => [props.open, props.shot?.id] as const,
   ([open]) => {
@@ -135,9 +306,72 @@ watch(
     form.model = seeded.model
     form.aspectRatio = seeded.aspectRatio
     form.durationSeconds = seeded.durationSeconds
+    form.referenceImages = [...(seeded.referenceImages ?? [])]
   },
   { immediate: true },
 )
+
+function onMenuToggle(value: boolean): void {
+  emit('update:open', value)
+}
+
+function refThumb(refId: string): string {
+  if (refPreviews[refId]) return refPreviews[refId]
+  if (/^(https?:\/\/|\/)/.test(refId)) return refId
+  return ''
+}
+
+function onUploadClick(): void {
+  fileInputEl.value?.click()
+}
+
+function onFilesPicked(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+  void uploadFiles(files)
+}
+
+function onDragOver(event: DragEvent): void {
+  event.preventDefault()
+  dragOver.value = true
+}
+
+function onDragLeave(): void {
+  dragOver.value = false
+}
+
+function onDrop(event: DragEvent): void {
+  event.preventDefault()
+  dragOver.value = false
+  const files = Array.from(event.dataTransfer?.files ?? []).filter((f) => f.type.startsWith('image/'))
+  void uploadFiles(files)
+}
+
+async function uploadFiles(files: File[]): Promise<void> {
+  if (files.length === 0) return
+  uploading.value = true
+  try {
+    for (const file of files) {
+      const { asset } = await api.uploadAsset(file)
+      if (!form.referenceImages) form.referenceImages = []
+      if (!form.referenceImages.includes(asset.id)) {
+        form.referenceImages.push(asset.id)
+        const preview = asset.thumbnailUrl || asset.url
+        if (preview) refPreviews[asset.id] = preview
+      }
+    }
+  } catch {
+    $q.notify({ color: 'negative', message: '参考图上传失败', icon: 'error', timeout: 2000 })
+  } finally {
+    uploading.value = false
+  }
+}
+
+function removeReference(refId: string): void {
+  form.referenceImages = referenceImages.value.filter((r) => r !== refId)
+  delete refPreviews[refId]
+}
 
 function onGenerate(): void {
   emit('generate', clipFormToParams({ ...form }))
@@ -145,108 +379,219 @@ function onGenerate(): void {
 </script>
 
 <style scoped>
-.clip-gen-dialog {
-  padding: 20px 22px 16px;
+/* The anchor is a 0-size positioned point; the menu teleports to body but reads it. */
+.clip-gen-anchor {
+  pointer-events: none;
+}
+
+.clip-gen {
+  width: 560px;
+  max-width: 92vw;
+  padding: 18px 20px 16px;
   background: var(--imago-bg-surface, #15151d);
   color: var(--imago-text-primary, #f2f2f7);
   border: 1px solid var(--imago-border-soft, rgba(255, 255, 255, 0.08));
   border-radius: 14px;
-}
-
-.clip-gen-dialog__header {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin-bottom: 16px;
-}
-
-.clip-gen-dialog__title {
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.clip-gen-dialog__subtitle {
-  font-size: 12px;
-  opacity: 0.6;
-}
-
-.clip-gen-dialog__form {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
-.clip-gen-field {
+.clip-gen__header {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-.clip-gen-field__label {
-  font-size: 12px;
-  opacity: 0.7;
-}
-
-.clip-gen-field__textarea,
-.clip-gen-field__select {
-  width: 100%;
-  padding: 8px 10px;
-  background: var(--imago-bg-base, #0e0e14);
-  color: inherit;
-  border: 1px solid var(--imago-border-soft, rgba(255, 255, 255, 0.12));
-  border-radius: 8px;
-  font: inherit;
-  outline: none;
-}
-
-.clip-gen-field__textarea {
-  resize: vertical;
-  min-height: 92px;
-}
-
-.clip-gen-field__textarea:focus,
-.clip-gen-field__select:focus {
-  border-color: var(--imago-neon-cyan, #00f0ff);
-}
-
-.clip-gen-field-row {
-  display: flex;
-  gap: 12px;
-}
-
-.clip-gen-dialog__actions {
-  display: flex;
-  justify-content: flex-end;
+  align-items: baseline;
   gap: 10px;
-  margin-top: 20px;
 }
 
-.clip-gen-dialog__cancel,
-.clip-gen-dialog__submit {
-  padding: 8px 18px;
-  border-radius: 8px;
-  font: inherit;
-  cursor: pointer;
-  border: 1px solid transparent;
-}
-
-.clip-gen-dialog__cancel {
-  background: transparent;
-  color: inherit;
-  border-color: var(--imago-border-soft, rgba(255, 255, 255, 0.16));
-}
-
-.clip-gen-dialog__submit {
-  background: var(--imago-neon-cyan, #00f0ff);
-  color: #03161a;
+.clip-gen__title {
+  font-size: 16px;
   font-weight: 600;
 }
 
-.clip-gen-dialog__cancel:disabled,
-.clip-gen-dialog__submit:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.clip-gen__subtitle {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+/* ── Reference-material strip ─────────────────────────────────────────────── */
+.clip-gen__refs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  border: 1px dashed var(--imago-border-soft, rgba(255, 255, 255, 0.14));
+  border-radius: 10px;
+  background: var(--imago-bg-base, #0e0e14);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.clip-gen__refs--drag {
+  border-color: var(--imago-neon-cyan, #00f0ff);
+  background: rgba(0, 240, 255, 0.05);
+}
+
+.clip-gen__ref-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.clip-gen__ref {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--imago-border-soft, rgba(255, 255, 255, 0.12));
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.clip-gen__ref-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.clip-gen__ref-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--imago-text-dim, rgba(255, 255, 255, 0.5));
+}
+
+.clip-gen__ref-remove {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.clip-gen__ref-dropzone {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 120px;
+  color: var(--imago-text-dim, rgba(255, 255, 255, 0.5));
+  font-size: 12px;
+}
+
+.clip-gen__ref-dropicon {
+  opacity: 0.7;
+}
+
+.clip-gen__upload-btn {
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--imago-text-primary, #f2f2f7);
+}
+
+.clip-gen__file-input {
+  display: none;
+}
+
+/* ── Prompt ───────────────────────────────────────────────────────────────── */
+.clip-gen__prompt :deep(.q-field__control) {
+  background: var(--imago-bg-base, #0e0e14);
+  border-radius: 10px;
+}
+
+.clip-gen__prompt.q-field--outlined :deep(.q-field__control)::before {
+  border-color: var(--imago-border-soft, rgba(255, 255, 255, 0.12));
+}
+
+.clip-gen__prompt.q-field--outlined.q-field--focused :deep(.q-field__control)::after {
+  border-color: var(--imago-neon-cyan, #00f0ff);
+}
+
+/* ── Pill toolbar ─────────────────────────────────────────────────────────── */
+.clip-gen__toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.clip-gen__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--imago-border-soft, rgba(255, 255, 255, 0.1));
+  color: var(--imago-text-primary, #f2f2f7);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.clip-gen__pill--mode {
+  color: var(--imago-neon-cyan, #00f0ff);
+  border-color: rgba(0, 240, 255, 0.25);
+  background: rgba(0, 240, 255, 0.06);
+}
+
+.clip-gen__pill--static {
+  cursor: default;
+}
+
+.clip-gen__badge {
+  padding: 0 5px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #03161a;
+  background: var(--imago-neon-cyan, #00f0ff);
+}
+
+/* q-select styled as a pill: drop its default min-height/border chrome. */
+.clip-gen__select {
+  padding: 0 10px;
+  min-width: 96px;
+}
+
+.clip-gen__select :deep(.q-field__control),
+.clip-gen__select :deep(.q-field__control)::before,
+.clip-gen__select :deep(.q-field__control)::after {
+  min-height: 30px;
+  border: none;
+}
+
+.clip-gen__select :deep(.q-field__marginal) {
+  height: 30px;
+  color: var(--imago-text-dim, rgba(255, 255, 255, 0.55));
+}
+
+.clip-gen__select :deep(.q-field__native) {
+  padding: 0;
+  min-height: 30px;
+  color: var(--imago-text-primary, #f2f2f7);
+  font-size: 12px;
+}
+
+.clip-gen__select :deep(.q-field__prepend) {
+  padding-right: 6px;
+  height: 30px;
+}
+
+.clip-gen__mention {
+  color: var(--imago-text-dim, rgba(255, 255, 255, 0.5));
+}
+
+.clip-gen__submit {
+  border-radius: 999px;
+  padding: 0 20px;
+  height: 34px;
+  background: var(--imago-neon-cyan, #00f0ff);
+  color: #03161a;
+  font-weight: 600;
 }
 </style>
