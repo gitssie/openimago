@@ -1,59 +1,58 @@
 <!--
-  ClipGenerateDialog (openimago-ciqk → redesigned openimago-816a) — the Cut editor's
-  手动编辑 action, rebuilt as an IN-TIMELINE composer.
+  ClipGenerateDialog (openimago-ciqk → 816a → docked layout openimago-7k46) — the
+  Cut editor's 手动编辑 composer.
 
-  Per the user's hard directives this is a Quasar q-menu (an in-timeline popover),
-  NOT a q-dialog modal: it pops up near the clicked clip. The page threads the clip's
-  on-screen right-click point down as `anchor`, and the menu targets an invisible
-  0-size element positioned there (q-menu has no `view` prop — "view=timeline" means
-  anchoring within the timeline view context, which this achieves). null anchor →
-  the composer centers itself.
+  This is a FULL-WIDTH panel docked over the cut editor's player-preview region
+  (StoryCutPanel positions it as an absolute overlay at the top of the editor while
+  the omniclip editor stays mounted underneath). It is NOT a floating q-menu — the
+  only real q-menu here is the `@` element-picker dropdown. Closing it (✕) returns
+  the player preview.
 
-  Layout mirrors the reference composer:
-    • Top: reference-material strip — thumbnails of `form.referenceImages` (asset ids
-      from openimago-v1j0) + a drop zone + an 上传 button (api.uploadAsset).
-    • Middle: prompt — a q-input textarea.
-    • Bottom: pill toolbar — reference-mode label · model · resolution · aspect ratio
-      · duration · @ · 生成. model/aspect/duration are bound q-selects; the rest are
-      static placeholders for fields the backend does not model yet.
+  Full-width, 3 stacked rows matching the reference design:
+    • Row 1: reference-material strip — thumbnails of `form.referenceImages` (asset ids
+      from openimago-v1j0, each removable) + drop zone + 上传 button (api.uploadAsset).
+    • Row 2: prompt — a q-input textarea with inline element-reference chips (0f27).
+    • Row 3: pill toolbar — 全能参考(mode) · model · resolution(720p 升级) · aspect ·
+      duration · @ (element picker) … far right: ✦ enhance + primary 生成 (mint).
+      model/generationMode/aspectRatio/resolution/duration are all bound q-selects.
 
-  Built entirely on Quasar controls (q-menu / q-input / q-select / q-btn) per the
-  project convention (CONTEXT.md「UI 组件遵循 Quasar 规范」). Bindings + behavior are
-  preserved from the original: prompt/model/aspectRatio/durationSeconds (durationSeconds
-  is a NUMBER), prefill from shot.generationParams, generating/disabled states, and it
-  emits `generate(params)` — now carrying `referenceImages`.
+  Built entirely on Quasar controls (q-input / q-select / q-btn, q-menu only for @)
+  per the project convention (CONTEXT.md「UI 组件遵循 Quasar 规范」). Bindings + behavior
+  preserved: prompt/model/aspectRatio/durationSeconds(NUMBER)/generationMode/resolution,
+  prefill from shot.generationParams, generating/disabled states, emits generate(params)
+  carrying referenceImages + generationMode + resolution.
 -->
+
 <template>
-  <!-- Invisible anchor positioned at the clicked clip; q-menu uses it as its target. -->
-  <div
-    ref="anchorEl"
-    class="clip-gen-anchor"
-    :style="anchorStyle"
-    aria-hidden="true"
+  <!-- Full-width composer docked over the cut editor's player-preview region
+       (openimago-7k46). Shown while a shot regen is active; the editor stays
+       mounted underneath, so closing returns the player preview. -->
+  <section
+    v-if="open"
+    class="clip-gen clip-gen--docked"
+    role="dialog"
+    aria-label="重新生成镜头"
+    aria-modal="false"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDrop"
   >
-    <q-menu
-      :model-value="open"
-      no-parent-event
-      :persistent="generating"
-      anchor="bottom middle"
-      self="top middle"
-      :offset="[0, 10]"
-      dark
-      class="clip-gen-menu"
-      @update:model-value="onMenuToggle"
-    >
-      <section
-        class="clip-gen"
-        role="dialog"
-        aria-label="重新生成镜头"
-        @dragover="onDragOver"
-        @dragleave="onDragLeave"
-        @drop="onDrop"
-      >
-        <header class="clip-gen__header">
-          <div class="clip-gen__title">重新生成镜头</div>
-          <div v-if="shot" class="clip-gen__subtitle">镜头 {{ shot.shotNumber }}</div>
-        </header>
+    <header class="clip-gen__header">
+      <div class="clip-gen__title">重新生成镜头</div>
+      <div v-if="shot" class="clip-gen__subtitle">镜头 {{ shot.shotNumber }}</div>
+      <q-space />
+      <q-btn
+        round
+        dense
+        flat
+        size="sm"
+        icon="close"
+        class="clip-gen__close"
+        aria-label="关闭"
+        :disable="generating"
+        @click="onClose"
+      />
+    </header>
 
         <!-- ── Top: reference-material strip ─────────────────────────────────── -->
         <div
@@ -297,19 +296,30 @@
           <q-space />
 
           <q-btn
+            round
+            dense
+            flat
+            size="sm"
+            icon="auto_awesome"
+            class="clip-gen__enhance"
+            aria-label="增强提示词（即将支持）"
+            disable
+          >
+            <q-tooltip>增强提示词（即将支持）</q-tooltip>
+          </q-btn>
+
+          <q-btn
             unelevated
             no-caps
             :loading="generating"
             :disable="generating"
             label="生成"
-            icon="movie_creation"
+            icon-right="arrow_upward"
             class="clip-gen__submit"
             @click="onGenerate"
           />
         </div>
       </section>
-    </q-menu>
-  </div>
 </template>
 
 <script setup lang="ts">
@@ -346,13 +356,11 @@ const props = withDefaults(
     shot: StoryShotSummary | null
     latestRun?: StoryRunSummary | null
     generating?: boolean
-    /** clip's on-screen right-click point (openimago-816a); null → center. */
-    anchor?: { x: number; y: number } | null
     /** Bible elements (characters/scenes) for the @-mention picker (openimago-0f27).
      *  Each carries a concept-art thumbnail used as the mention's reference image. */
     elements?: ElementCardVM[]
   }>(),
-  { latestRun: null, generating: false, anchor: null, elements: () => [] },
+  { latestRun: null, generating: false, elements: () => [] },
 )
 
 const emit = defineEmits<{
@@ -401,20 +409,9 @@ const promptChips = computed(() =>
   extractElementMentions(form.prompt).map((token) => ({ token, label: mentionLabel(token) })),
 )
 
-const anchorEl = ref<HTMLElement | null>(null)
 const fileInputEl = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
 const dragOver = ref(false)
-
-/** Position the invisible q-menu target at the clip's point, or center it when the
- *  page passed no anchor. */
-const anchorStyle = computed(() => {
-  const a = props.anchor
-  if (a) {
-    return { position: 'fixed', left: `${a.x}px`, top: `${a.y}px`, width: '0', height: '0' } as const
-  }
-  return { position: 'fixed', left: '50%', top: '38%', width: '0', height: '0' } as const
-})
 
 /** (Re)seed the form from the shot every time the composer opens for a shot. */
 watch(
@@ -466,8 +463,9 @@ async function resolveReferenceThumbnails(): Promise<void> {
   )
 }
 
-function onMenuToggle(value: boolean): void {
-  emit('update:open', value)
+function onClose(): void {
+  if (props.generating) return
+  emit('update:open', false)
 }
 
 function refThumb(refId: string): string {
@@ -563,28 +561,30 @@ function onGenerate(): void {
 </script>
 
 <style scoped>
-/* The anchor is a 0-size positioned point; the menu teleports to body but reads it. */
-.clip-gen-anchor {
-  pointer-events: none;
-}
-
-.clip-gen {
-  width: 560px;
-  max-width: 92vw;
-  padding: 18px 20px 16px;
+/* Full-width composer docked over the cut editor's player-preview region. Overlays
+   the top of .story-cut__editor (positioned by StoryCutPanel); the editor stays
+   mounted underneath. */
+.clip-gen--docked {
+  width: 100%;
+  padding: 14px 18px 14px;
   background: var(--imago-bg-surface, #15151d);
   color: var(--imago-text-primary, #f2f2f7);
-  border: 1px solid var(--imago-border-soft, rgba(255, 255, 255, 0.08));
-  border-radius: 14px;
+  border-bottom: 1px solid var(--imago-border-soft, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 .clip-gen__header {
   display: flex;
   align-items: baseline;
   gap: 10px;
+}
+
+.clip-gen__close {
+  align-self: center;
+  color: var(--imago-text-dim, rgba(255, 255, 255, 0.6));
 }
 
 .clip-gen__title {
@@ -781,16 +781,18 @@ function onGenerate(): void {
   height: 30px;
 }
 
-.clip-gen__mention {
+.clip-gen__mention,
+.clip-gen__enhance {
   color: var(--imago-text-dim, rgba(255, 255, 255, 0.5));
 }
 
 .clip-gen__submit {
   border-radius: 999px;
-  padding: 0 20px;
+  padding: 0 22px;
   height: 34px;
-  background: var(--imago-neon-cyan, #00f0ff);
-  color: #03161a;
+  /* mint/green gradient primary per the reference design */
+  background: linear-gradient(135deg, #35e0a1, #22c493);
+  color: #04231a;
   font-weight: 600;
 }
 </style>
