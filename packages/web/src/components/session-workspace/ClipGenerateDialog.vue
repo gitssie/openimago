@@ -115,7 +115,31 @@
           >
         </div>
 
-        <!-- ── Middle: prompt ────────────────────────────────────────────────── -->
+        <!-- ── Middle: prompt (with inline element-reference chips) ──────────── -->
+        <div
+          v-if="promptChips.length > 0"
+          class="clip-gen__chips"
+          role="list"
+          aria-label="提示词中的元素引用"
+        >
+          <q-chip
+            v-for="chip in promptChips"
+            :key="chip.token"
+            dense
+            removable
+            dark
+            square
+            color="transparent"
+            text-color="cyan-4"
+            icon="alternate_email"
+            class="clip-gen__chip"
+            :label="chip.label"
+            role="listitem"
+            :aria-label="`元素引用 ${chip.label}`"
+            @remove="onRemoveChip(chip.token)"
+          />
+        </div>
+
         <q-input
           v-model="form.prompt"
           type="textarea"
@@ -199,11 +223,43 @@
             flat
             size="sm"
             icon="alternate_email"
-            disable
             class="clip-gen__mention"
-            aria-label="提及素材（即将支持）"
+            aria-label="提及元素"
           >
-            <q-tooltip>提及素材（即将支持）</q-tooltip>
+            <q-tooltip>提及元素（角色 / 场景）</q-tooltip>
+            <q-menu dark anchor="top right" self="bottom right" class="clip-gen__mention-menu">
+              <q-list dark dense style="min-width: 220px">
+                <q-item-label header>提及元素</q-item-label>
+                <template v-if="elements.length > 0">
+                  <q-item
+                    v-for="el in elements"
+                    :key="el.id"
+                    v-close-popup
+                    clickable
+                    :aria-label="`提及 ${el.title}`"
+                    @click="onMentionElement(el)"
+                  >
+                    <q-item-section avatar>
+                      <q-avatar size="28px" rounded>
+                        <img v-if="elementThumb(el)" :src="elementThumb(el)" :alt="''">
+                        <q-icon
+                          v-else
+                          :name="el.kind === 'scene' ? 'landscape' : 'person'"
+                          size="16px"
+                        />
+                      </q-avatar>
+                    </q-item-section>
+                    <q-item-section>
+                      <q-item-label class="ellipsis">{{ el.title }}</q-item-label>
+                      <q-item-label caption>{{ el.kind === 'scene' ? '场景' : '角色' }}</q-item-label>
+                    </q-item-section>
+                  </q-item>
+                </template>
+                <q-item v-else>
+                  <q-item-section class="text-grey-6">暂无可提及的元素</q-item-section>
+                </q-item>
+              </q-list>
+            </q-menu>
           </q-btn>
 
           <q-space />
@@ -229,6 +285,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useQuasar } from 'quasar'
 import { api } from 'src/api/client'
 import type { StoryRunSummary, StoryShotSummary } from './types'
+import type { ElementCardVM } from './left-panel/types'
 import {
   buildClipGenerateForm,
   clipFormToParams,
@@ -238,6 +295,13 @@ import {
   type ClipGenerateForm,
   type ShotGenerationParams,
 } from 'src/utils/cut/clip-generate-form'
+import {
+  appendMention,
+  removeMention,
+  extractElementMentions,
+  mentionLabel,
+  elementRefToken,
+} from 'src/utils/cut/clip-element-mention'
 
 const props = withDefaults(
   defineProps<{
@@ -247,8 +311,11 @@ const props = withDefaults(
     generating?: boolean
     /** clip's on-screen right-click point (openimago-816a); null → center. */
     anchor?: { x: number; y: number } | null
+    /** Bible elements (characters/scenes) for the @-mention picker (openimago-0f27).
+     *  Each carries a concept-art thumbnail used as the mention's reference image. */
+    elements?: ElementCardVM[]
   }>(),
-  { latestRun: null, generating: false, anchor: null },
+  { latestRun: null, generating: false, anchor: null, elements: () => [] },
 )
 
 const emit = defineEmits<{
@@ -277,9 +344,19 @@ const form = reactive<ClipGenerateForm>({
 /** Reference images as a non-null list for the template. */
 const referenceImages = computed<string[]>(() => form.referenceImages ?? [])
 
-/** ref value (asset id or url) → thumbnail url, populated on upload; prefilled refs
- *  that already look like urls are shown directly (see refThumb). */
+/** ref value (asset id or url) → thumbnail url, populated on upload or by resolving
+ *  bare asset ids (see resolveReferenceThumbnails); refs that already look like urls
+ *  are shown directly (see refThumb). */
 const refPreviews = reactive<Record<string, string>>({})
+
+/** mention token → the reference-image value it added, so removing the chip also
+ *  drops its reference image (unifies @-mention + chip + referenceImages). */
+const mentionRefs = reactive<Record<string, string>>({})
+
+/** Element tokens currently present in the prompt, rendered as removable chips. */
+const promptChips = computed(() =>
+  extractElementMentions(form.prompt).map((token) => ({ token, label: mentionLabel(token) })),
+)
 
 const anchorEl = ref<HTMLElement | null>(null)
 const fileInputEl = ref<HTMLInputElement | null>(null)
@@ -307,9 +384,33 @@ watch(
     form.aspectRatio = seeded.aspectRatio
     form.durationSeconds = seeded.durationSeconds
     form.referenceImages = [...(seeded.referenceImages ?? [])]
+    clearRecord(refPreviews)
+    clearRecord(mentionRefs)
+    void resolveReferenceThumbnails()
   },
   { immediate: true },
 )
+
+function clearRecord(record: Record<string, string>): void {
+  for (const key of Object.keys(record)) delete record[key]
+}
+
+/** Resolve bare asset-id refs (no url) to real thumbnails via api.getAsset so the
+ *  reference strip shows previews instead of icon fallbacks (openimago-0f27). */
+async function resolveReferenceThumbnails(): Promise<void> {
+  const ids = referenceImages.value.filter((r) => refThumb(r) === '')
+  await Promise.all(
+    ids.map(async (id) => {
+      try {
+        const asset = await api.getAsset(id)
+        const preview = asset.thumbnailUrl || asset.url
+        if (preview) refPreviews[id] = preview
+      } catch {
+        // Leave the icon fallback in place when an id can't be resolved.
+      }
+    }),
+  )
+}
 
 function onMenuToggle(value: boolean): void {
   emit('update:open', value)
@@ -371,6 +472,35 @@ async function uploadFiles(files: File[]): Promise<void> {
 function removeReference(refId: string): void {
   form.referenceImages = referenceImages.value.filter((r) => r !== refId)
   delete refPreviews[refId]
+}
+
+/** First non-null concept-art thumbnail for an element (its reference image). */
+function elementThumb(el: ElementCardVM): string {
+  return el.thumbnails.find((t): t is string => !!t) ?? ''
+}
+
+/** @-mention an element: insert its chip token into the prompt AND add its concept-art
+ *  reference image to form.referenceImages (openimago-0f27). */
+function onMentionElement(el: ElementCardVM): void {
+  const token = elementRefToken(el.title)
+  if (!token) return
+  form.prompt = appendMention(form.prompt, token)
+  const refImg = elementThumb(el)
+  if (refImg) {
+    if (!form.referenceImages) form.referenceImages = []
+    if (!form.referenceImages.includes(refImg)) form.referenceImages.push(refImg)
+    mentionRefs[token] = refImg
+  }
+}
+
+/** Remove a prompt chip: strip its token AND drop the reference image it added. */
+function onRemoveChip(token: string): void {
+  form.prompt = removeMention(form.prompt, token)
+  const refImg = mentionRefs[token]
+  if (refImg) {
+    removeReference(refImg)
+    delete mentionRefs[token]
+  }
 }
 
 function onGenerate(): void {
@@ -495,6 +625,20 @@ function onGenerate(): void {
 
 .clip-gen__file-input {
   display: none;
+}
+
+/* ── Inline element-reference chips ───────────────────────────────────────── */
+.clip-gen__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: -6px;
+}
+
+.clip-gen__chip {
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  background: rgba(0, 240, 255, 0.06);
+  border-radius: 8px;
 }
 
 /* ── Prompt ───────────────────────────────────────────────────────────────── */

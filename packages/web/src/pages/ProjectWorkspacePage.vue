@@ -303,6 +303,7 @@
       :shot="clipGenDialog?.shot ?? null"
       :latest-run="clipGenDialog?.latestRun ?? null"
       :anchor="clipGenDialog?.anchor ?? null"
+      :elements="leftPanelElements"
       :generating="clipGenerating"
       @update:open="(open) => { if (!open && !clipGenerating) clipGenDialog = null }"
       @generate="onClipGenerate"
