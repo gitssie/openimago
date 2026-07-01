@@ -246,38 +246,34 @@
             size="sm"
             icon="alternate_email"
             class="clip-gen__mention"
-            aria-label="提及元素"
+            aria-label="提及参考图"
           >
-            <q-tooltip>提及元素（角色 / 场景）</q-tooltip>
+            <q-tooltip>提及参考图</q-tooltip>
             <q-menu ref="mentionMenuRef" dark anchor="top right" self="bottom right" class="clip-gen__mention-menu">
               <q-list dark dense style="min-width: 220px">
-                <q-item-label header>提及元素</q-item-label>
-                <template v-if="elements.length > 0">
+                <q-item-label header>选择参考图</q-item-label>
+                <template v-if="referenceImages.length > 0">
                   <q-item
-                    v-for="el in elements"
-                    :key="el.id"
+                    v-for="refId in referenceImages"
+                    :key="refId"
                     clickable
-                    :aria-label="`提及 ${el.title}`"
-                    @click="onMentionElement(el)"
+                    :aria-label="`引用参考图 ${refNames[refId] ?? 'Image'}`"
+                    @click="onMentionRef(refId)"
                   >
                     <q-item-section avatar>
                       <q-avatar size="28px" rounded>
-                        <img v-if="elementThumb(el)" :src="elementThumb(el)" :alt="''">
-                        <q-icon
-                          v-else
-                          :name="el.kind === 'scene' ? 'landscape' : 'person'"
-                          size="16px"
-                        />
+                        <img v-if="refThumb(refId)" :src="refThumb(refId)" :alt="''">
+                        <q-icon v-else name="image" size="16px" />
                       </q-avatar>
                     </q-item-section>
                     <q-item-section>
-                      <q-item-label class="ellipsis">{{ el.title }}</q-item-label>
-                      <q-item-label caption>{{ el.kind === 'scene' ? '场景' : '角色' }}</q-item-label>
+                      <q-item-label class="ellipsis">{{ refNames[refId] ?? 'Image' }}</q-item-label>
+                      <q-item-label caption>图片</q-item-label>
                     </q-item-section>
                   </q-item>
                 </template>
                 <q-item v-else>
-                  <q-item-section class="text-grey-6">暂无可提及的元素</q-item-section>
+                  <q-item-section class="text-grey-6">请先上传参考图</q-item-section>
                 </q-item>
               </q-list>
             </q-menu>
@@ -396,6 +392,10 @@ const referenceImages = computed<string[]>(() => form.referenceImages ?? [])
  *  are shown directly (see refThumb). */
 const refPreviews = reactive<Record<string, string>>({})
 
+/** ref value (asset id/url) → display name (uploaded file name, extension stripped),
+ *  shown in the @ picker + the inline chip for uploaded references (openimago-ves3). */
+const refNames = reactive<Record<string, string>>({})
+
 // The contenteditable prompt region (openimago-212y). @-mentions render as inline
 // chips inside it; form.prompt is kept in sync from the DOM via serializePromptEl, and
 // element reference images are recovered from the chips at generate time (not stored on
@@ -453,6 +453,7 @@ watch(
     form.resolution = seeded.resolution
     revokeAllObjectUrls()
     clearRecord(refPreviews)
+    clearRecord(refNames)
     void resolveReferenceThumbnails()
     // Rebuild the contenteditable AFTER the DOM commits (promptRef must be mounted),
     // reconstructing inline chips for any element tokens carried in the seeded prompt.
@@ -553,6 +554,8 @@ async function uploadFiles(files: File[]): Promise<void> {
       if (!form.referenceImages) form.referenceImages = []
       if (!form.referenceImages.includes(asset.id)) {
         form.referenceImages.push(asset.id)
+        // Remember the uploaded file's name (extension stripped) for the @ picker + chip.
+        refNames[asset.id] = file.name.replace(/\.[^.]+$/, '')
         // asset.url is the authed download endpoint → load it WITH the token.
         const downloadUrl = asset.thumbnailUrl || asset.url
         if (downloadUrl) {
@@ -573,18 +576,16 @@ function removeReference(refId: string): void {
   const preview = refPreviews[refId]
   if (preview) revokeObjectUrl(preview)
   delete refPreviews[refId]
+  delete refNames[refId]
 }
 
-/** First non-null concept-art thumbnail for an element (its reference image). */
-function elementThumb(el: ElementCardVM): string {
-  return el.thumbnails.find((t): t is string => !!t) ?? ''
-}
-
-/** Look up an element by its mention token → its concept-art thumbnail (chip avatar);
- *  '' when the element isn't in the current list (renders a text-only chip). */
+/** Legacy hydrate support: a seeded prompt may still carry `Element_X_ref_img` tokens
+ *  from the old element-mention design — resolve one to a Bible element's concept-art
+ *  thumbnail when the parent still passes that element, else '' (text-only chip). The
+ *  live @ picker no longer inserts element tokens (it inserts uploaded-reference chips). */
 function thumbForToken(token: string): string {
   const el = props.elements?.find((e) => elementRefToken(e.title) === token)
-  return el ? elementThumb(el) : ''
+  return el?.thumbnails.find((t): t is string => !!t) ?? ''
 }
 
 /** Rebuild the contenteditable from a prompt string, reconstructing inline chips for
@@ -602,21 +603,13 @@ function onPromptInput(): void {
   form.prompt = serializePromptEl(promptRef.value).text
 }
 
-/** @-mention an element: insert its chip at the caret inside the prompt (openimago-212y).
- *  The element's reference image rides on the chip (recovered at generate time), so it is
- *  NOT pushed into form.referenceImages — the reference strip stays uploads-only. */
-function onMentionElement(el: ElementCardVM): void {
-  // Close ONLY the inner picker menu — never the outer persistent composer q-menu.
-  mentionMenuRef.value?.hide()
-  const token = elementRefToken(el.title)
-  if (!token) return
-
-  const chip = createMentionChip({ token, label: el.title, refImg: elementThumb(el) })
+/** Insert a chip into the contenteditable at the caret (when it's inside the prompt),
+ *  else append to the end (e.g. the picker menu had focus), then re-sync form.prompt. */
+function insertChipAtCaret(chip: HTMLElement): void {
   const promptEl = promptRef.value
   const sel = window.getSelection()
 
   if (promptEl && sel && sel.rangeCount > 0 && promptEl.contains(sel.getRangeAt(0).commonAncestorContainer)) {
-    // Caret is inside the prompt — insert at it.
     const range = sel.getRangeAt(0)
     range.deleteContents()
     range.insertNode(chip)
@@ -625,25 +618,34 @@ function onMentionElement(el: ElementCardVM): void {
     sel.removeAllRanges()
     sel.addRange(range)
   } else if (promptEl) {
-    // Caret elsewhere (e.g. the picker menu had focus) — append to the end.
     promptEl.appendChild(chip)
   }
 
   onPromptInput()
 }
 
-/** Merge uploaded/dragged reference images with the element images carried by the inline
- *  chips, and send the serialized prompt text (still containing the readable tokens). */
+/** @-mention an uploaded reference image: insert a chip (mini avatar + file name) at the
+ *  caret in the prompt (openimago-ves3). The image is already in form.referenceImages, so
+ *  the chip carries no text token — it's a visual citation. The avatar shows the resolved
+ *  object-url / thumbnail (the raw asset id is not a displayable src). */
+function onMentionRef(refId: string): void {
+  // Close ONLY the inner picker menu — never the outer persistent composer q-menu.
+  mentionMenuRef.value?.hide()
+  const chip = createMentionChip({
+    token: '',
+    label: refNames[refId] ?? 'Image',
+    refImg: refId,
+    imgSrc: refPreviews[refId] || refThumb(refId),
+  })
+  insertChipAtCaret(chip)
+}
+
+/** Send the serialized prompt text plus the union of the reference-strip images and the
+ *  images cited by inline chips. De-duped (a cited upload is already in the strip). */
 function onGenerate(): void {
   const { text, elementRefImgs } = serializePromptEl(promptRef.value)
-  emit(
-    'generate',
-    clipFormToParams({
-      ...form,
-      prompt: text,
-      referenceImages: [...(form.referenceImages ?? []), ...elementRefImgs],
-    }),
-  )
+  const referenceImages = [...new Set([...(form.referenceImages ?? []), ...elementRefImgs])]
+  emit('generate', clipFormToParams({ ...form, prompt: text, referenceImages }))
 }
 
 onBeforeUnmount(revokeAllObjectUrls)

@@ -34,6 +34,26 @@ describe('createMentionChip', () => {
     expect(chip.querySelector('img')).toBeNull()
     expect(chip.querySelector('.mention-chip__name')?.textContent).toBe('Jiang Cheng')
   })
+
+  it('displays imgSrc for the avatar but stores refImg in data-refimg (openimago-ves3)', () => {
+    // Uploaded refs: data-refimg is the asset id (recovered at generate time), while the
+    // avatar shows the resolved object-url / thumbnail.
+    const chip = createMentionChip({
+      token: '',
+      label: 'photo',
+      refImg: 'asset_123',
+      imgSrc: 'blob:preview',
+    })
+    expect(chip.dataset.token).toBe('')
+    expect(chip.dataset.refimg).toBe('asset_123')
+    expect(chip.querySelector('img')?.getAttribute('src')).toBe('blob:preview')
+  })
+
+  it('suppresses the avatar when imgSrc is empty even if refImg is a bare id', () => {
+    // A bare asset id is not a displayable src, so an unresolved thumb → text-only chip.
+    const chip = createMentionChip({ token: '', label: 'photo', refImg: 'asset_123', imgSrc: '' })
+    expect(chip.querySelector('img')).toBeNull()
+  })
 })
 
 describe('serializePromptEl', () => {
@@ -68,6 +88,18 @@ describe('serializePromptEl', () => {
     const { text, elementRefImgs } = serializePromptEl(root)
     expect(text).toContain(JIANG)
     expect(elementRefImgs).toEqual([])
+  })
+
+  it('emits NO text token for an uploaded-ref chip (token="") but collects its ref image', () => {
+    const root = makeRoot()
+    root.appendChild(document.createTextNode('cat by the window'))
+    root.appendChild(
+      createMentionChip({ token: '', label: 'photo', refImg: 'asset_123', imgSrc: 'blob:x' }),
+    )
+    const { text, elementRefImgs } = serializePromptEl(root)
+    expect(text).toBe('cat by the window')
+    expect(text).not.toContain('asset_123')
+    expect(elementRefImgs).toEqual(['asset_123'])
   })
 })
 

@@ -25,12 +25,19 @@ import { ELEMENT_MENTION_RE, mentionLabel } from './clip-element-mention'
 export const MENTION_CHIP_CLASS = 'mention-chip'
 
 export interface MentionChipData {
-  /** The `Element_X_ref_img` token embedded in the prompt text for the model. */
+  /** The `Element_X_ref_img` token embedded in the prompt text for the model. Empty
+   *  for uploaded-reference chips — those carry no text token (the image is already in
+   *  form.referenceImages), so serialize emits nothing for them. */
   token: string
   /** Human-readable name shown in the chip (mentionLabel(token) by default). */
   label: string
-  /** Reference-image src for the chip avatar; '' renders a text-only chip. */
+  /** The reference identity stored on the chip (data-refimg) — an asset id/url recovered
+   *  at generate time. '' with no imgSrc renders a text-only chip. */
   refImg: string
+  /** Optional display src for the avatar img when it differs from refImg (e.g. a
+   *  Bearer-authed asset whose raw url 401s, so an object-url blob is shown instead).
+   *  Falls back to refImg when absent. */
+  imgSrc?: string
 }
 
 /** Build one inline mention chip: an atomic (contenteditable=false) span carrying the
@@ -43,9 +50,10 @@ export function createMentionChip(data: MentionChipData): HTMLSpanElement {
   chip.dataset.token = data.token
   chip.dataset.refimg = data.refImg
 
-  if (data.refImg) {
+  const avatarSrc = data.imgSrc ?? data.refImg
+  if (avatarSrc) {
     const img = document.createElement('img')
-    img.src = data.refImg
+    img.src = avatarSrc
     img.alt = ''
     img.className = 'mention-chip__avatar'
     chip.appendChild(img)
