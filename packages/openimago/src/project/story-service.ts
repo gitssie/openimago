@@ -262,6 +262,10 @@ export interface ShotGenerationParams {
   model?: string
   aspectRatio?: string
   durationSeconds?: number
+  /** Reference images (uploaded asset ids or media urls) the video model
+   *  generates FROM (openimago-v1j0). Optional — absent/empty for text-only
+   *  generation. Mirrors the web `ShotGenerationParams`. */
+  referenceImages?: string[]
 }
 
 /** A single shot appended by the UI (ADR 0004 EpisodeShot, ADR 0005 write). */
@@ -296,6 +300,9 @@ export interface GenerationRun {
     // Recorded when supplied so the run history reflects the exact request.
     aspectRatio?: string
     durationSeconds?: number
+    // Reference images the video model generates FROM (openimago-v1j0): asset ids
+    // or media urls. Recorded for the future image-to-video provider (PROVIDER SEAM).
+    referenceImages?: string[]
     // Voiceover runs (ADR 0004 ResolvedRunParams) carry the speaking line's
     // character, resolved voice, text, and an optional TTS style from emotion.
     characterId?: string
@@ -930,12 +937,31 @@ export class StoryService {
       typeof params?.durationSeconds === "number" && Number.isFinite(params.durationSeconds)
         ? params.durationSeconds
         : undefined
+    // Reference images the video model generates FROM (openimago-v1j0): asset ids
+    // or media urls. Keep only non-empty strings; undefined when none supplied.
+    const referenceImages =
+      Array.isArray(params?.referenceImages)
+        ? params.referenceImages.filter(
+            (r): r is string => typeof r === "string" && r.trim().length > 0,
+          )
+        : undefined
+    const hasReferenceImages = Array.isArray(referenceImages) && referenceImages.length > 0
 
     // ── Mock provider result (playable MP4, like opencode mockVideoProvider) ──
     // Deterministic per-shot clip with a committed filmstrip sprite + real
     // duration, so the timeline renders continuous distinct frames (openimago-0t9m).
+    // PROVIDER SEAM (openimago-v1j0): referenceImages are recorded on run.params and
+    // carried to this mock boundary, but buildMockVideoRun does NOT condition its
+    // output on them — real Seedance image-to-video is a bounded follow-up. When the
+    // real provider is wired, pass `referenceImages` into its request here.
     const now = new Date().toISOString()
-    const run = this.buildMockVideoRun(shotId, { prompt, model, aspectRatio, durationSeconds })
+    const run = this.buildMockVideoRun(shotId, {
+      prompt,
+      model,
+      aspectRatio,
+      durationSeconds,
+      ...(hasReferenceImages ? { referenceImages } : {}),
+    })
 
     // ── Append to runs.json (append-only; initialize when missing) ──
     const runsWrite = await this.appendRun(dir, projectId, episodeId, run)
@@ -950,6 +976,7 @@ export class StoryService {
       ...(typeof params?.model === "string" && params.model.trim() ? { model } : {}),
       ...(aspectRatio !== undefined ? { aspectRatio } : {}),
       ...(durationSeconds !== undefined ? { durationSeconds } : {}),
+      ...(hasReferenceImages ? { referenceImages } : {}),
     }
     const hasSuppliedParams = Object.keys(suppliedParams).length > 0
     const updatedShots = shots.map((s, i) => {
@@ -1144,7 +1171,13 @@ export class StoryService {
    */
   private buildMockVideoRun(
     shotId: string,
-    resolved: { prompt: string; model: string; aspectRatio?: string; durationSeconds?: number },
+    resolved: {
+      prompt: string
+      model: string
+      aspectRatio?: string
+      durationSeconds?: number
+      referenceImages?: string[]
+    },
     extra?: { parentArtifactId?: string },
   ): GenerationRun {
     const clip = mockVideoClip(`${shotId}${resolved.prompt}`)
@@ -1159,6 +1192,11 @@ export class StoryService {
         model: resolved.model,
         ...(resolved.aspectRatio !== undefined ? { aspectRatio: resolved.aspectRatio } : {}),
         ...(resolved.durationSeconds !== undefined ? { durationSeconds: resolved.durationSeconds } : {}),
+        // PROVIDER SEAM (openimago-v1j0): recorded for the future image-to-video
+        // provider; the mock output is NOT conditioned on these.
+        ...(resolved.referenceImages && resolved.referenceImages.length > 0
+          ? { referenceImages: resolved.referenceImages }
+          : {}),
       },
       result: {
         artifactId: `mock_${randomSlug()}`,

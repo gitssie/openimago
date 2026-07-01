@@ -259,6 +259,54 @@ test("generateShot records posted generation params on the run and persists them
   })
 })
 
+test("generateShot records referenceImages on the run and persists them on the shot", async () => {
+  const token = await registerUser("gnrefimg", "gnrefimg@example.com")
+  const project = await createProject(token, "GenRefImages")
+  const shotId = await addShot(token, project.id, "ep_001")
+
+  const params = {
+    prompt: "a neon alley street race at night",
+    model: "seedance-2.0",
+    referenceImages: ["asset_ref_a", "https://cdn.example.com/ref-b.png"],
+  }
+  const res = await generateReq(token, project.id, "ep_001", shotId, params)
+  expect(res.status).toBe(201)
+  const body = (await res.json()) as Record<string, any>
+
+  // Recorded on the run's params so the provider boundary can condition on them.
+  expect(body.run.params.referenceImages).toEqual([
+    "asset_ref_a",
+    "https://cdn.example.com/ref-b.png",
+  ])
+
+  // Persisted on the shot so the dialog re-opens with the reference strip filled.
+  const ep = await readJson(project.directory, "story/episodes/ep_001.json")
+  const shot = ep.shots.find((s: any) => s.id === shotId)
+  expect(shot.generationParams.referenceImages).toEqual([
+    "asset_ref_a",
+    "https://cdn.example.com/ref-b.png",
+  ])
+})
+
+test("generateShot leaves referenceImages absent when none are posted", async () => {
+  const token = await registerUser("gnnorefimg", "gnnorefimg@example.com")
+  const project = await createProject(token, "GenNoRefImages")
+  const shotId = await addShot(token, project.id, "ep_001")
+
+  const res = await generateReq(token, project.id, "ep_001", shotId, {
+    prompt: "no references here",
+    model: "seedance-2.0",
+  })
+  expect(res.status).toBe(201)
+  const body = (await res.json()) as Record<string, any>
+
+  // Empty/absent stays optional — no key on the run or the persisted shot params.
+  expect(body.run.params.referenceImages).toBeUndefined()
+  const ep = await readJson(project.directory, "story/episodes/ep_001.json")
+  const shot = ep.shots.find((s: any) => s.id === shotId)
+  expect("referenceImages" in (shot.generationParams ?? {})).toBe(false)
+})
+
 test("generateShot falls back to shot.description + mock model when no params posted", async () => {
   const token = await registerUser("gnnoparams", "gnnoparams@example.com")
   const project = await createProject(token, "GenNoParams")
