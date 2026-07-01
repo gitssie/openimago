@@ -187,11 +187,33 @@
             </template>
           </q-select>
 
-          <span class="clip-gen__pill clip-gen__pill--static" aria-label="分辨率 720p">
-            <q-icon name="hd" size="14px" />
-            720p
-            <span class="clip-gen__badge">升级</span>
-          </span>
+          <q-select
+            v-model="form.resolution"
+            :options="resolutionOptions"
+            dark
+            dense
+            options-dense
+            borderless
+            emit-value
+            map-options
+            aria-label="分辨率"
+            class="clip-gen__pill clip-gen__select"
+          >
+            <template #prepend>
+              <q-icon name="hd" size="14px" />
+            </template>
+            <template #append>
+              <span class="clip-gen__badge">升级</span>
+            </template>
+            <template #option="scope">
+              <q-item v-bind="scope.itemProps">
+                <q-item-section>{{ scope.opt.label }}</q-item-section>
+                <q-item-section side>
+                  <span class="clip-gen__badge">升级</span>
+                </q-item-section>
+              </q-item>
+            </template>
+          </q-select>
 
           <q-select
             v-model="form.aspectRatio"
@@ -302,7 +324,9 @@ import {
   CLIP_MODEL_OPTIONS,
   CLIP_ASPECT_RATIO_OPTIONS,
   CLIP_DURATION_OPTIONS,
+  CLIP_RESOLUTION_OPTIONS,
   DEFAULT_GENERATION_MODE,
+  DEFAULT_CLIP_RESOLUTION,
   supportedGenerationModes,
   resolveGenerationMode,
   type ClipGenerateForm,
@@ -340,6 +364,7 @@ const $q = useQuasar()
 
 const modelOptions = CLIP_MODEL_OPTIONS
 const aspectRatioOptions = CLIP_ASPECT_RATIO_OPTIONS
+const resolutionOptions = CLIP_RESOLUTION_OPTIONS
 /** durationSeconds is a NUMBER on the form — map the string-valued source options to
  *  numeric `value`s so q-select (emit-value + map-options) round-trips the number. */
 const durationSelectOptions = computed(() =>
@@ -353,6 +378,7 @@ const form = reactive<ClipGenerateForm>({
   durationSeconds: 0,
   referenceImages: [],
   generationMode: DEFAULT_GENERATION_MODE,
+  resolution: DEFAULT_CLIP_RESOLUTION,
 })
 
 /** Generation modes supported by the currently-selected model (openimago-ggxt). */
@@ -402,6 +428,7 @@ watch(
     form.durationSeconds = seeded.durationSeconds
     form.referenceImages = [...(seeded.referenceImages ?? [])]
     form.generationMode = seeded.generationMode
+    form.resolution = seeded.resolution
     clearRecord(refPreviews)
     clearRecord(mentionRefs)
     void resolveReferenceThumbnails()
@@ -713,10 +740,6 @@ function onGenerate(): void {
 .clip-gen__pill--mode :deep(.q-field__native),
 .clip-gen__pill--mode :deep(.q-field__marginal) {
   color: var(--imago-neon-cyan, #00f0ff);
-}
-
-.clip-gen__pill--static {
-  cursor: default;
 }
 
 .clip-gen__badge {
