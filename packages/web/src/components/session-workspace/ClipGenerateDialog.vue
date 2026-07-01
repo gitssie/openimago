@@ -131,40 +131,16 @@
           >
         </div>
 
-        <!-- ── Middle: prompt (with inline element-reference chips) ──────────── -->
+        <!-- ── Middle: prompt — contenteditable with inline @-mention chips ──── -->
         <div
-          v-if="promptChips.length > 0"
-          class="clip-gen__chips"
-          role="list"
-          aria-label="提示词中的元素引用"
-        >
-          <q-chip
-            v-for="chip in promptChips"
-            :key="chip.token"
-            dense
-            removable
-            dark
-            square
-            color="transparent"
-            text-color="cyan-4"
-            icon="alternate_email"
-            class="clip-gen__chip"
-            :label="chip.label"
-            role="listitem"
-            :aria-label="`元素引用 ${chip.label}`"
-            @remove="onRemoveChip(chip.token)"
-          />
-        </div>
-
-        <q-input
-          v-model="form.prompt"
-          type="textarea"
-          dark
-          outlined
-          dense
-          placeholder="描述这个镜头要生成的画面…"
+          ref="promptRef"
+          contenteditable="true"
+          class="clip-gen__prompt clip-gen__prompt--editable"
+          role="textbox"
+          aria-multiline="true"
           aria-label="提示词"
-          class="clip-gen__prompt"
+          data-placeholder="描述这个镜头要生成的画面…"
+          @input="onPromptInput"
         />
 
         <!-- ── Bottom: pill toolbar ──────────────────────────────────────────── -->
@@ -338,7 +314,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch, onBeforeUnmount } from 'vue'
+import { computed, nextTick, reactive, ref, watch, onBeforeUnmount } from 'vue'
 import { useQuasar } from 'quasar'
 import { api } from 'src/api/client'
 import type { StoryRunSummary, StoryShotSummary } from './types'
@@ -357,13 +333,12 @@ import {
   type ClipGenerateForm,
   type ShotGenerationParams,
 } from 'src/utils/cut/clip-generate-form'
+import { elementRefToken } from 'src/utils/cut/clip-element-mention'
 import {
-  appendMention,
-  removeMention,
-  extractElementMentions,
-  mentionLabel,
-  elementRefToken,
-} from 'src/utils/cut/clip-element-mention'
+  createMentionChip,
+  serializePromptEl,
+  hydratePromptEl,
+} from 'src/utils/cut/clip-prompt-dom'
 
 const props = withDefaults(
   defineProps<{
@@ -421,14 +396,11 @@ const referenceImages = computed<string[]>(() => form.referenceImages ?? [])
  *  are shown directly (see refThumb). */
 const refPreviews = reactive<Record<string, string>>({})
 
-/** mention token → the reference-image value it added, so removing the chip also
- *  drops its reference image (unifies @-mention + chip + referenceImages). */
-const mentionRefs = reactive<Record<string, string>>({})
-
-/** Element tokens currently present in the prompt, rendered as removable chips. */
-const promptChips = computed(() =>
-  extractElementMentions(form.prompt).map((token) => ({ token, label: mentionLabel(token) })),
-)
+// The contenteditable prompt region (openimago-212y). @-mentions render as inline
+// chips inside it; form.prompt is kept in sync from the DOM via serializePromptEl, and
+// element reference images are recovered from the chips at generate time (not stored on
+// the form) so the reference strip stays uploads-only.
+const promptRef = ref<HTMLElement | null>(null)
 
 const fileInputEl = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
@@ -481,8 +453,10 @@ watch(
     form.resolution = seeded.resolution
     revokeAllObjectUrls()
     clearRecord(refPreviews)
-    clearRecord(mentionRefs)
     void resolveReferenceThumbnails()
+    // Rebuild the contenteditable AFTER the DOM commits (promptRef must be mounted),
+    // reconstructing inline chips for any element tokens carried in the seeded prompt.
+    void nextTick(() => hydratePrompt(seeded.prompt))
   },
   { immediate: true },
 )
@@ -606,41 +580,70 @@ function elementThumb(el: ElementCardVM): string {
   return el.thumbnails.find((t): t is string => !!t) ?? ''
 }
 
-/** @-mention an element: insert its chip token into the prompt AND add its concept-art
- *  reference image to form.referenceImages (openimago-0f27). */
+/** Look up an element by its mention token → its concept-art thumbnail (chip avatar);
+ *  '' when the element isn't in the current list (renders a text-only chip). */
+function thumbForToken(token: string): string {
+  const el = props.elements?.find((e) => elementRefToken(e.title) === token)
+  return el ? elementThumb(el) : ''
+}
+
+/** Rebuild the contenteditable from a prompt string, reconstructing inline chips for
+ *  any element tokens it carries, then re-sync form.prompt from the resulting DOM. */
+function hydratePrompt(prompt: string): void {
+  const el = promptRef.value
+  if (!el) return
+  hydratePromptEl(el, prompt, thumbForToken)
+  onPromptInput()
+}
+
+/** Mirror the contenteditable DOM back into form.prompt (chips serialize to their
+ *  tokens) so validation + any prompt consumers see the live text. */
+function onPromptInput(): void {
+  form.prompt = serializePromptEl(promptRef.value).text
+}
+
+/** @-mention an element: insert its chip at the caret inside the prompt (openimago-212y).
+ *  The element's reference image rides on the chip (recovered at generate time), so it is
+ *  NOT pushed into form.referenceImages — the reference strip stays uploads-only. */
 function onMentionElement(el: ElementCardVM): void {
   // Close ONLY the inner picker menu — never the outer persistent composer q-menu.
   mentionMenuRef.value?.hide()
   const token = elementRefToken(el.title)
   if (!token) return
-  form.prompt = appendMention(form.prompt, token)
-  const refImg = elementThumb(el)
-  if (refImg) {
-    if (!form.referenceImages) form.referenceImages = []
-    if (!form.referenceImages.includes(refImg)) form.referenceImages.push(refImg)
-    mentionRefs[token] = refImg
-    // Element concept art is usually a same-origin /mock URL (shown directly), but if
-    // it points at the authed asset endpoint, load it WITH the token like uploads.
-    if (isAuthedAssetUrl(refImg) && !(refImg in refPreviews)) {
-      void api.assetObjectUrl(refImg).then((obj) => {
-        if (obj) refPreviews[refImg] = trackObjectUrl(obj)
-      })
-    }
+
+  const chip = createMentionChip({ token, label: el.title, refImg: elementThumb(el) })
+  const promptEl = promptRef.value
+  const sel = window.getSelection()
+
+  if (promptEl && sel && sel.rangeCount > 0 && promptEl.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+    // Caret is inside the prompt — insert at it.
+    const range = sel.getRangeAt(0)
+    range.deleteContents()
+    range.insertNode(chip)
+    range.setStartAfter(chip)
+    range.collapse(true)
+    sel.removeAllRanges()
+    sel.addRange(range)
+  } else if (promptEl) {
+    // Caret elsewhere (e.g. the picker menu had focus) — append to the end.
+    promptEl.appendChild(chip)
   }
+
+  onPromptInput()
 }
 
-/** Remove a prompt chip: strip its token AND drop the reference image it added. */
-function onRemoveChip(token: string): void {
-  form.prompt = removeMention(form.prompt, token)
-  const refImg = mentionRefs[token]
-  if (refImg) {
-    removeReference(refImg)
-    delete mentionRefs[token]
-  }
-}
-
+/** Merge uploaded/dragged reference images with the element images carried by the inline
+ *  chips, and send the serialized prompt text (still containing the readable tokens). */
 function onGenerate(): void {
-  emit('generate', clipFormToParams({ ...form }))
+  const { text, elementRefImgs } = serializePromptEl(promptRef.value)
+  emit(
+    'generate',
+    clipFormToParams({
+      ...form,
+      prompt: text,
+      referenceImages: [...(form.referenceImages ?? []), ...elementRefImgs],
+    }),
+  )
 }
 
 onBeforeUnmount(revokeAllObjectUrls)
@@ -771,50 +774,56 @@ onBeforeUnmount(revokeAllObjectUrls)
   display: none;
 }
 
-/* ── Inline element-reference chips ───────────────────────────────────────── */
-.clip-gen__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: -6px;
-}
-
-.clip-gen__chip {
-  border: 1px solid rgba(0, 240, 255, 0.25);
-  background: rgba(0, 240, 255, 0.06);
-  border-radius: 8px;
-}
-
-/* ── Prompt — grows to fill the middle so the toolbar pins to the bottom ────── */
-.clip-gen__prompt {
+/* ── Prompt — contenteditable, grows to fill the middle; toolbar pins bottom ── */
+.clip-gen__prompt--editable {
   flex: 1 1 auto;
   min-height: 96px;
-  display: flex;
-}
-
-.clip-gen__prompt :deep(.q-field__inner),
-.clip-gen__prompt :deep(.q-field__control),
-.clip-gen__prompt :deep(.q-field__control-container) {
-  height: 100%;
-}
-
-.clip-gen__prompt :deep(.q-field__control) {
+  padding: 10px 12px;
+  outline: none;
+  overflow-y: auto;
   background: var(--imago-bg-base, #0e0e14);
+  border: 1px solid var(--imago-border-soft, rgba(255, 255, 255, 0.12));
   border-radius: 10px;
+  line-height: 1.6;
+  word-break: break-word;
+  white-space: pre-wrap;
+  color: var(--imago-text-primary, #f2f2f7);
+  transition: border-color 0.15s ease;
 }
 
-.clip-gen__prompt :deep(.q-field__native) {
-  height: 100% !important;
-  max-height: none;
-  resize: none;
-}
-
-.clip-gen__prompt.q-field--outlined :deep(.q-field__control)::before {
-  border-color: var(--imago-border-soft, rgba(255, 255, 255, 0.12));
-}
-
-.clip-gen__prompt.q-field--outlined.q-field--focused :deep(.q-field__control)::after {
+.clip-gen__prompt--editable:focus {
   border-color: var(--imago-neon-cyan, #00f0ff);
+}
+
+/* Placeholder — shown only while the editable region is empty. */
+.clip-gen__prompt--editable[data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  color: rgba(255, 255, 255, 0.4);
+  pointer-events: none;
+}
+
+/* ── Inline @-mention chips (embedded in the flowing prompt text) ──────────── */
+.clip-gen__prompt--editable :deep(.mention-chip) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 255, 200, 0.12);
+  border: 1px solid rgba(0, 255, 200, 0.3);
+  border-radius: 4px;
+  padding: 1px 6px 1px 2px;
+  margin: 0 2px;
+  vertical-align: middle;
+  user-select: none;
+  cursor: default;
+  font-size: 12px;
+  color: #00ffc8;
+}
+
+.clip-gen__prompt--editable :deep(.mention-chip__avatar) {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  object-fit: cover;
 }
 
 /* ── Pill toolbar — pinned to the bottom edge (footer, above the timeline) ──── */
