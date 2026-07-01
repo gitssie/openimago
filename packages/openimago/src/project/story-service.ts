@@ -266,6 +266,11 @@ export interface ShotGenerationParams {
    *  generates FROM (openimago-v1j0). Optional — absent/empty for text-only
    *  generation. Mirrors the web `ShotGenerationParams`. */
   referenceImages?: string[]
+  /** Video generation mode (openimago-ggxt) — the generation TYPE the chosen model
+   *  runs in (e.g. 全能参考 / 图生视频). Available modes depend on the model (owned by
+   *  the web CLIP_GENERATION_MODE_OPTIONS). Recorded/persisted like aspectRatio;
+   *  per-mode input variations are a follow-up. Mirrors the web type. */
+  generationMode?: string
 }
 
 /** A single shot appended by the UI (ADR 0004 EpisodeShot, ADR 0005 write). */
@@ -303,6 +308,8 @@ export interface GenerationRun {
     // Reference images the video model generates FROM (openimago-v1j0): asset ids
     // or media urls. Recorded for the future image-to-video provider (PROVIDER SEAM).
     referenceImages?: string[]
+    // Video generation mode (openimago-ggxt): the generation type the model ran in.
+    generationMode?: string
     // Voiceover runs (ADR 0004 ResolvedRunParams) carry the speaking line's
     // character, resolved voice, text, and an optional TTS style from emotion.
     characterId?: string
@@ -946,6 +953,11 @@ export class StoryService {
           )
         : undefined
     const hasReferenceImages = Array.isArray(referenceImages) && referenceImages.length > 0
+    // Video generation mode (openimago-ggxt): recorded/persisted like aspectRatio.
+    const generationMode =
+      typeof params?.generationMode === "string" && params.generationMode.trim()
+        ? params.generationMode.trim()
+        : undefined
 
     // ── Mock provider result (playable MP4, like opencode mockVideoProvider) ──
     // Deterministic per-shot clip with a committed filmstrip sprite + real
@@ -961,6 +973,7 @@ export class StoryService {
       aspectRatio,
       durationSeconds,
       ...(hasReferenceImages ? { referenceImages } : {}),
+      ...(generationMode !== undefined ? { generationMode } : {}),
     })
 
     // ── Append to runs.json (append-only; initialize when missing) ──
@@ -977,6 +990,7 @@ export class StoryService {
       ...(aspectRatio !== undefined ? { aspectRatio } : {}),
       ...(durationSeconds !== undefined ? { durationSeconds } : {}),
       ...(hasReferenceImages ? { referenceImages } : {}),
+      ...(generationMode !== undefined ? { generationMode } : {}),
     }
     const hasSuppliedParams = Object.keys(suppliedParams).length > 0
     const updatedShots = shots.map((s, i) => {
@@ -1177,6 +1191,7 @@ export class StoryService {
       aspectRatio?: string
       durationSeconds?: number
       referenceImages?: string[]
+      generationMode?: string
     },
     extra?: { parentArtifactId?: string },
   ): GenerationRun {
@@ -1196,6 +1211,9 @@ export class StoryService {
         // provider; the mock output is NOT conditioned on these.
         ...(resolved.referenceImages && resolved.referenceImages.length > 0
           ? { referenceImages: resolved.referenceImages }
+          : {}),
+        ...(resolved.generationMode !== undefined
+          ? { generationMode: resolved.generationMode }
           : {}),
       },
       result: {

@@ -20,6 +20,11 @@ export interface ShotGenerationParams {
    *  generates FROM. Optional — absent/empty for text-only generation. The
    *  ClipGenerateDialog reference-material strip binds to `form.referenceImages`. */
   referenceImages?: string[]
+  /** Video generation mode (openimago-ggxt) — the generation TYPE the chosen model
+   *  runs in (e.g. 全能参考 / 图生视频 / 首尾帧生视频 / 对口型数字人). The available
+   *  modes depend on `model`; see CLIP_GENERATION_MODE_OPTIONS. Per-mode input
+   *  variations are a follow-up. Mirrors the backend `ShotGenerationParams`. */
+  generationMode?: string
 }
 
 export interface ClipGenerateForm {
@@ -31,6 +36,9 @@ export interface ClipGenerateForm {
    *  the form shell (the redesigned ClipGenerateDialog seeds/binds it); treated as
    *  an empty list when absent, and mapped to the optional param field. */
   referenceImages?: string[]
+  /** Selected video generation mode (openimago-ggxt); always one of the current
+   *  model's supported modes (see resolveGenerationMode). */
+  generationMode: string
 }
 
 /** Minimal shot shape the prefill needs (a subset of StoryShotSummary). */
@@ -79,6 +87,36 @@ export const DEFAULT_CLIP_MODEL = 'seedance-2.0'
 export const DEFAULT_CLIP_ASPECT_RATIO = '9:16'
 export const DEFAULT_CLIP_DURATION_SECONDS = 8
 
+/** Fallback mode present for every model. */
+export const DEFAULT_GENERATION_MODE = '全能参考'
+
+/**
+ * Video generation modes each model supports (openimago-ggxt). The 全能参考 pill is a
+ * generation-TYPE selector whose options change per model. Seedance 2.0 supports the
+ * full set; lesser models expose a sensible subset. Every model includes 全能参考.
+ */
+export const CLIP_GENERATION_MODE_OPTIONS: Record<string, string[]> = {
+  'seedance-2.0': ['全能参考', '图生视频', '首尾帧生视频', '对口型数字人'],
+  'seedance-1.0-pro': ['全能参考', '图生视频', '首尾帧生视频'],
+  'seedance-1.0': ['全能参考', '图生视频'],
+  'mock-video-model': ['全能参考'],
+}
+
+/** Supported generation modes for a model; falls back to [DEFAULT_GENERATION_MODE]
+ *  for unknown models so the selector always has at least one option. */
+export function supportedGenerationModes(model: string): string[] {
+  const modes = CLIP_GENERATION_MODE_OPTIONS[model]
+  return modes && modes.length > 0 ? modes : [DEFAULT_GENERATION_MODE]
+}
+
+/** Reconcile a mode against a model: keep it when the model supports it, else fall
+ *  back to that model's first supported mode (the default). */
+export function resolveGenerationMode(model: string, mode: string | undefined): string {
+  const modes = supportedGenerationModes(model)
+  if (mode && modes.includes(mode)) return mode
+  return modes[0] ?? DEFAULT_GENERATION_MODE
+}
+
 /**
  * Pre-fill the re-gen form for a clip's source shot. Priority: the shot's persisted
  * `generationParams` (what was last (re)generated through this dialog) → the shot's
@@ -103,7 +141,8 @@ export function buildClipGenerateForm(
   const referenceImages = Array.isArray(gp?.referenceImages)
     ? gp.referenceImages.filter((r): r is string => typeof r === 'string')
     : []
-  return { prompt, model, aspectRatio, durationSeconds, referenceImages }
+  const generationMode = resolveGenerationMode(model, gp?.generationMode)
+  return { prompt, model, aspectRatio, durationSeconds, referenceImages, generationMode }
 }
 
 /** Map the dialog form to the request body (trim the prompt; carry params through).
@@ -114,6 +153,7 @@ export function clipFormToParams(form: ClipGenerateForm): ShotGenerationParams {
     model: form.model,
     aspectRatio: form.aspectRatio,
     durationSeconds: form.durationSeconds,
+    generationMode: form.generationMode,
     ...(form.referenceImages && form.referenceImages.length > 0
       ? { referenceImages: [...form.referenceImages] }
       : {}),

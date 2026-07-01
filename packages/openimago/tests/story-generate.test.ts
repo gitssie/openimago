@@ -288,6 +288,47 @@ test("generateShot records referenceImages on the run and persists them on the s
   ])
 })
 
+test("generateShot records generationMode on the run and persists it on the shot", async () => {
+  const token = await registerUser("gnmode", "gnmode@example.com")
+  const project = await createProject(token, "GenMode")
+  const shotId = await addShot(token, project.id, "ep_001")
+
+  const params = {
+    prompt: "a lip-synced close-up",
+    model: "seedance-2.0",
+    generationMode: "对口型数字人",
+  }
+  const res = await generateReq(token, project.id, "ep_001", shotId, params)
+  expect(res.status).toBe(201)
+  const body = (await res.json()) as Record<string, any>
+
+  // Recorded on the run's params (the generation type the model ran in).
+  expect(body.run.params.generationMode).toBe("对口型数字人")
+
+  // Persisted on the shot so the dialog re-opens with the mode selected.
+  const ep = await readJson(project.directory, "story/episodes/ep_001.json")
+  const shot = ep.shots.find((s: any) => s.id === shotId)
+  expect(shot.generationParams.generationMode).toBe("对口型数字人")
+})
+
+test("generateShot leaves generationMode absent when none is posted", async () => {
+  const token = await registerUser("gnnomode", "gnnomode@example.com")
+  const project = await createProject(token, "GenNoMode")
+  const shotId = await addShot(token, project.id, "ep_001")
+
+  const res = await generateReq(token, project.id, "ep_001", shotId, {
+    prompt: "no mode here",
+    model: "seedance-2.0",
+  })
+  expect(res.status).toBe(201)
+  const body = (await res.json()) as Record<string, any>
+
+  expect(body.run.params.generationMode).toBeUndefined()
+  const ep = await readJson(project.directory, "story/episodes/ep_001.json")
+  const shot = ep.shots.find((s: any) => s.id === shotId)
+  expect("generationMode" in (shot.generationParams ?? {})).toBe(false)
+})
+
 test("generateShot leaves referenceImages absent when none are posted", async () => {
   const token = await registerUser("gnnorefimg", "gnnorefimg@example.com")
   const project = await createProject(token, "GenNoRefImages")

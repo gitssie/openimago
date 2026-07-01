@@ -5,6 +5,9 @@ import {
   DEFAULT_CLIP_MODEL,
   DEFAULT_CLIP_ASPECT_RATIO,
   DEFAULT_CLIP_DURATION_SECONDS,
+  DEFAULT_GENERATION_MODE,
+  supportedGenerationModes,
+  resolveGenerationMode,
   type ClipGenerateFormSource,
 } from '../clip-generate-form'
 
@@ -23,6 +26,7 @@ describe('buildClipGenerateForm', () => {
       aspectRatio: DEFAULT_CLIP_ASPECT_RATIO,
       durationSeconds: DEFAULT_CLIP_DURATION_SECONDS,
       referenceImages: [],
+      generationMode: DEFAULT_GENERATION_MODE,
     })
   })
 
@@ -54,6 +58,7 @@ describe('buildClipGenerateForm', () => {
       aspectRatio: '16:9',
       durationSeconds: 12,
       referenceImages: [],
+      generationMode: DEFAULT_GENERATION_MODE,
     })
   })
 
@@ -82,6 +87,58 @@ describe('buildClipGenerateForm', () => {
     )
     expect(form.referenceImages).toEqual(['asset_a', 'asset_b'])
   })
+
+  it('keeps a persisted generationMode the model still supports', () => {
+    const form = buildClipGenerateForm(
+      {
+        description: 'd',
+        generationParams: { model: 'seedance-2.0', generationMode: '对口型数字人' },
+      },
+      null,
+    )
+    expect(form.generationMode).toBe('对口型数字人')
+  })
+
+  it('resets a persisted generationMode the (persisted) model no longer supports', () => {
+    const form = buildClipGenerateForm(
+      {
+        description: 'd',
+        // 对口型数字人 is a seedance-2.0-only mode; seedance-1.0 does not support it.
+        generationParams: { model: 'seedance-1.0', generationMode: '对口型数字人' },
+      },
+      null,
+    )
+    expect(form.generationMode).toBe('全能参考')
+  })
+})
+
+describe('supportedGenerationModes', () => {
+  it('returns the full set for seedance-2.0', () => {
+    expect(supportedGenerationModes('seedance-2.0')).toEqual([
+      '全能参考',
+      '图生视频',
+      '首尾帧生视频',
+      '对口型数字人',
+    ])
+  })
+
+  it('falls back to [全能参考] for an unknown model', () => {
+    expect(supportedGenerationModes('some-future-model')).toEqual([DEFAULT_GENERATION_MODE])
+  })
+})
+
+describe('resolveGenerationMode', () => {
+  it('keeps a supported mode', () => {
+    expect(resolveGenerationMode('seedance-2.0', '图生视频')).toBe('图生视频')
+  })
+
+  it('falls back to the model first mode when unsupported', () => {
+    expect(resolveGenerationMode('seedance-1.0', '对口型数字人')).toBe('全能参考')
+  })
+
+  it('falls back to the first mode when none is given', () => {
+    expect(resolveGenerationMode('seedance-2.0', undefined)).toBe('全能参考')
+  })
 })
 
 describe('clipFormToParams', () => {
@@ -93,12 +150,14 @@ describe('clipFormToParams', () => {
         aspectRatio: '9:16',
         durationSeconds: 8,
         referenceImages: [],
+        generationMode: '图生视频',
       }),
     ).toEqual({
       prompt: 'windy night',
       model: 'seedance-2.0',
       aspectRatio: '9:16',
       durationSeconds: 8,
+      generationMode: '图生视频',
     })
   })
 
@@ -110,6 +169,7 @@ describe('clipFormToParams', () => {
         aspectRatio: '9:16',
         durationSeconds: 8,
         referenceImages: ['asset_a', 'asset_b'],
+        generationMode: '全能参考',
       }).referenceImages,
     ).toEqual(['asset_a', 'asset_b'])
   })
@@ -121,7 +181,21 @@ describe('clipFormToParams', () => {
       aspectRatio: '9:16',
       durationSeconds: 8,
       referenceImages: [],
+      generationMode: '全能参考',
     })
     expect('referenceImages' in params).toBe(false)
+  })
+
+  it('carries generationMode through', () => {
+    expect(
+      clipFormToParams({
+        prompt: 'p',
+        model: 'seedance-2.0',
+        aspectRatio: '9:16',
+        durationSeconds: 8,
+        referenceImages: [],
+        generationMode: '首尾帧生视频',
+      }).generationMode,
+    ).toBe('首尾帧生视频')
   })
 })
