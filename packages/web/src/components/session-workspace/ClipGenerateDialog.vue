@@ -435,6 +435,35 @@ const fileInputEl = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
 const dragOver = ref(false)
 
+// Object URLs created for authed asset thumbnails, tracked so we can revoke them
+// (openimago-7k46 fix). Asset download URLs (/api/platform/assets/:id/download) are
+// gated by Bearer auth, so a plain <img src> 401s → broken image; we fetch the bytes
+// WITH the token (api.assetObjectUrl) and bind an object URL instead. Same-origin
+// /mock URLs (e.g. @ element concept art) need no auth and are used directly.
+// NOTE: declared BEFORE the immediate seed watcher below — that watcher runs
+// synchronously during setup and calls revokeAllObjectUrls(), so `objectUrls` must
+// already be initialized (a const is not hoisted → TDZ otherwise).
+const objectUrls = new Set<string>()
+
+/** True for URLs behind the authed asset-download endpoint (need a token to fetch). */
+function isAuthedAssetUrl(value: string): boolean {
+  return value.includes('/api/platform/assets/')
+}
+
+function trackObjectUrl(url: string): string {
+  objectUrls.add(url)
+  return url
+}
+
+function revokeObjectUrl(url: string): void {
+  if (objectUrls.delete(url)) URL.revokeObjectURL(url)
+}
+
+function revokeAllObjectUrls(): void {
+  for (const url of objectUrls) URL.revokeObjectURL(url)
+  objectUrls.clear()
+}
+
 /** (Re)seed the form from the shot every time the composer opens for a shot. */
 watch(
   () => [props.open, props.shot?.id] as const,
@@ -467,32 +496,6 @@ watch(
 
 function clearRecord(record: Record<string, string>): void {
   for (const key of Object.keys(record)) delete record[key]
-}
-
-// Object URLs created for authed asset thumbnails, tracked so we can revoke them
-// (openimago-7k46 fix). Asset download URLs (/api/platform/assets/:id/download) are
-// gated by Bearer auth, so a plain <img src> 401s → broken image; we fetch the bytes
-// WITH the token (api.assetObjectUrl) and bind an object URL instead. Same-origin
-// /mock URLs (e.g. @ element concept art) need no auth and are used directly.
-const objectUrls = new Set<string>()
-
-/** True for URLs behind the authed asset-download endpoint (need a token to fetch). */
-function isAuthedAssetUrl(value: string): boolean {
-  return value.includes('/api/platform/assets/')
-}
-
-function trackObjectUrl(url: string): string {
-  objectUrls.add(url)
-  return url
-}
-
-function revokeObjectUrl(url: string): void {
-  if (objectUrls.delete(url)) URL.revokeObjectURL(url)
-}
-
-function revokeAllObjectUrls(): void {
-  for (const url of objectUrls) URL.revokeObjectURL(url)
-  objectUrls.clear()
 }
 
 /** Resolve refs that can't be shown by a plain <img> into displayable previews
