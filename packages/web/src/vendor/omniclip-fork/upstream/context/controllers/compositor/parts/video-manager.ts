@@ -78,7 +78,7 @@ export class VideoManager extends Map<string, {sprite: PIXI.Sprite, transformer:
 		// canvas (scale = max(canvasW/vidW, canvasH/vidH)) centered — overriding the rect
 		// width/height scaling above. Uses the <video>'s INTRINSIC size, so it runs once
 		// metadata is known (this is the single creation point → race-free on add + recreate).
-		this.#cover_fit(sprite, element, effect)
+		this.#cover_fit(sprite, element)
 		//@ts-ignore
 		const transformer = new PIXI.Transformer({
 			boxRotationEnabled: true,
@@ -110,7 +110,7 @@ export class VideoManager extends Map<string, {sprite: PIXI.Sprite, transformer:
 	// Uniformly scale `sprite` to COVER the project canvas, centered (openimago-wmns B.6).
 	// Reads the <video>'s INTRINSIC size; if metadata isn't loaded yet (videoWidth 0), defers
 	// once to `loadedmetadata` (the HTML-spec guarantee that videoWidth/Height are populated).
-	#cover_fit(sprite: PIXI.Sprite, element: HTMLVideoElement, effect: VideoEffect) {
+	#cover_fit(sprite: PIXI.Sprite, element: HTMLVideoElement) {
 		const apply = () => {
 			const vidW = element.videoWidth
 			const vidH = element.videoHeight
@@ -124,12 +124,6 @@ export class VideoManager extends Map<string, {sprite: PIXI.Sprite, transformer:
 			sprite.pivot.set(vidW / 2, vidH / 2)
 			sprite.position.set(canvasW / 2, canvasH / 2)
 			sprite.scale.set(scale, scale)
-			// Persist cover-fit values back into effect.rect so update_canvas_objects does not
-			// override them on subsequent compose_effects calls (openimago-wmns Bug 1 fix).
-			effect.rect.scaleX = scale
-			effect.rect.scaleY = scale
-			effect.rect.pivot = { x: vidW / 2, y: vidH / 2 }
-			effect.rect.position_on_canvas = { x: canvasW / 2, y: canvasH / 2 }
 			// Force GPU texture upload + repaint so first frame isn't black (openimago-wmns Bug 2 fix).
 			sprite.texture.baseTexture.update()
 			this.compositor.request_render()

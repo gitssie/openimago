@@ -457,12 +457,18 @@ export class Compositor {
 				const object_effect = object.effect as Exclude<AnyEffect, AudioEffect>
 				const effect = state.effects.find(effect => effect.id === object_effect?.id) as Exclude<AnyEffect, AudioEffect>
 				if(effect) {
-					object.x = effect.rect.position_on_canvas.x
-					object.y = effect.rect.position_on_canvas.y
-					object.angle = effect.rect.rotation
-					object.scale.x = effect.rect.scaleX
-					object.scale.y = effect.rect.scaleY
-					object.pivot.set(effect.rect.pivot.x, effect.rect.pivot.y)
+					// openimago-wmns: skip transform reset for video effects — VideoManager.#cover_fit
+					// owns the sprite's position/scale/pivot (cover-fit, applied async on loadedmetadata).
+					// Applying effect.rect here would reset the sprite to unscaled fullFrameRect values
+					// (scaleX:1, pos:0,0) on every compose_effects call, permanently overriding cover-fit.
+					if (effect.kind !== 'video') {
+						object.x = effect.rect.position_on_canvas.x
+						object.y = effect.rect.position_on_canvas.y
+						object.angle = effect.rect.rotation
+						object.scale.x = effect.rect.scaleX
+						object.scale.y = effect.rect.scaleY
+						object.pivot.set(effect.rect.pivot.x, effect.rect.pivot.y)
+					}
 					this.#render()
 				}
 			}
