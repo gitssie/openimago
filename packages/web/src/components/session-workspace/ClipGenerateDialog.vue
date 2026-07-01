@@ -162,8 +162,6 @@
           dark
           outlined
           dense
-          autogrow
-          :input-style="{ minHeight: '84px', maxHeight: '180px' }"
           placeholder="描述这个镜头要生成的画面…"
           aria-label="提示词"
           class="clip-gen__prompt"
@@ -733,10 +731,28 @@ function onGenerate(): void {
   border-radius: 8px;
 }
 
-/* ── Prompt ───────────────────────────────────────────────────────────────── */
+/* ── Prompt — grows to fill the middle so the toolbar pins to the bottom ────── */
+.clip-gen__prompt {
+  flex: 1 1 auto;
+  min-height: 96px;
+  display: flex;
+}
+
+.clip-gen__prompt :deep(.q-field__inner),
+.clip-gen__prompt :deep(.q-field__control),
+.clip-gen__prompt :deep(.q-field__control-container) {
+  height: 100%;
+}
+
 .clip-gen__prompt :deep(.q-field__control) {
   background: var(--imago-bg-base, #0e0e14);
   border-radius: 10px;
+}
+
+.clip-gen__prompt :deep(.q-field__native) {
+  height: 100% !important;
+  max-height: none;
+  resize: none;
 }
 
 .clip-gen__prompt.q-field--outlined :deep(.q-field__control)::before {
@@ -747,8 +763,9 @@ function onGenerate(): void {
   border-color: var(--imago-neon-cyan, #00f0ff);
 }
 
-/* ── Pill toolbar ─────────────────────────────────────────────────────────── */
+/* ── Pill toolbar — pinned to the bottom edge (footer, above the timeline) ──── */
 .clip-gen__toolbar {
+  margin-top: auto;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
