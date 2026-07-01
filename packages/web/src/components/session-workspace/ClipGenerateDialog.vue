@@ -155,10 +155,20 @@
 
         <!-- ── Bottom: pill toolbar ──────────────────────────────────────────── -->
         <div class="clip-gen__toolbar">
-          <span class="clip-gen__pill clip-gen__pill--mode">
-            <q-icon name="auto_awesome" size="14px" />
-            全能参考
-          </span>
+          <q-select
+            v-model="form.generationMode"
+            :options="generationModeOptions"
+            dark
+            dense
+            options-dense
+            borderless
+            aria-label="生成模式"
+            class="clip-gen__pill clip-gen__pill--mode clip-gen__select"
+          >
+            <template #prepend>
+              <q-icon name="auto_awesome" size="14px" />
+            </template>
+          </q-select>
 
           <q-select
             v-model="form.model"
@@ -292,6 +302,9 @@ import {
   CLIP_MODEL_OPTIONS,
   CLIP_ASPECT_RATIO_OPTIONS,
   CLIP_DURATION_OPTIONS,
+  DEFAULT_GENERATION_MODE,
+  supportedGenerationModes,
+  resolveGenerationMode,
   type ClipGenerateForm,
   type ShotGenerationParams,
 } from 'src/utils/cut/clip-generate-form'
@@ -339,7 +352,11 @@ const form = reactive<ClipGenerateForm>({
   aspectRatio: '',
   durationSeconds: 0,
   referenceImages: [],
+  generationMode: DEFAULT_GENERATION_MODE,
 })
+
+/** Generation modes supported by the currently-selected model (openimago-ggxt). */
+const generationModeOptions = computed(() => supportedGenerationModes(form.model))
 
 /** Reference images as a non-null list for the template. */
 const referenceImages = computed<string[]>(() => form.referenceImages ?? [])
@@ -384,11 +401,21 @@ watch(
     form.aspectRatio = seeded.aspectRatio
     form.durationSeconds = seeded.durationSeconds
     form.referenceImages = [...(seeded.referenceImages ?? [])]
+    form.generationMode = seeded.generationMode
     clearRecord(refPreviews)
     clearRecord(mentionRefs)
     void resolveReferenceThumbnails()
   },
   { immediate: true },
+)
+
+/** When the model changes, keep the selected mode if the new model supports it,
+ *  else reset to that model's first supported mode (openimago-ggxt). */
+watch(
+  () => form.model,
+  (model) => {
+    form.generationMode = resolveGenerationMode(model, form.generationMode)
+  },
 )
 
 function clearRecord(record: Record<string, string>): void {
@@ -681,6 +708,11 @@ function onGenerate(): void {
   color: var(--imago-neon-cyan, #00f0ff);
   border-color: rgba(0, 240, 255, 0.25);
   background: rgba(0, 240, 255, 0.06);
+}
+
+.clip-gen__pill--mode :deep(.q-field__native),
+.clip-gen__pill--mode :deep(.q-field__marginal) {
+  color: var(--imago-neon-cyan, #00f0ff);
 }
 
 .clip-gen__pill--static {
