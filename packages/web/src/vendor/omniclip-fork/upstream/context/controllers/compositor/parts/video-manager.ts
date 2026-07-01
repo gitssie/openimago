@@ -119,9 +119,46 @@ export class VideoManager extends Map<string, {sprite: PIXI.Sprite, transformer:
 			sprite.pivot.set(vidW / 2, vidH / 2)
 			sprite.position.set(canvasW / 2, canvasH / 2)
 			sprite.scale.set(scale, scale)
-			// Force GPU texture upload + repaint so first frame isn't black (openimago-wmns Bug 2 fix).
-			sprite.texture.baseTexture.update()
-			this.compositor.request_render()
+			// Force GPU texture upload + repaint so first frame isn't black
+			// (openimago-wmns Bug 2 fix, extended for initial-decode race openimago-lpbf).
+			//
+			// readyState=4 (HAVE_ENOUGH_DATA) does NOT guarantee the browser has decoded the
+			// current frame for texImage2D: a freshly-created <video> at currentTime=0 with no
+			// prior play/seek has buffered the bitstream but NOT rendered the frame into its
+			// video decoder output buffer — drawImage/texImage2D returns transparent [0,0,0,0],
+			// so the PIXI canvas shows solid-black instead of the first video frame.
+			//
+			// The drag-to-seek path works because compose_effects sets element.currentTime
+			// (explicit seek → frame decode → texture upload). The initial load path must do
+			// the same. We seek +1 ms to force frame decode, then flush the texture once the
+			// frame is truly available for texImage2D.
+			//
+			// KEY RACE: `seeked` fires when currentTime updates, but gl.texImage2D may still
+			// return [0,0,0,0] at that instant — the browser's video decode pipeline hasn't
+			// finished writing the frame into the compositable buffer yet. Lab confirmation:
+			// bt.update()+app.render() in a `seeked` callback → black; the SAME call 200–500 ms
+			// later → correct frame. `requestVideoFrameCallback` is the correct hook:
+			// it fires in the browser's rendering phase AFTER the frame is compositable (i.e.
+			// safe for texImage2D), and BEFORE the screen paint — no flicker, no race.
+			// flush() marks the texture dirty + synchronously renders the stage so the
+			// first frame shows immediately. Must run AFTER the video frame is available
+			// for gl.texImage2D — not inside requestVideoFrameCallback (which fires
+			// before the frame is compositable in WebGL) but in the rAF that follows it.
+			const flush = () => {
+				sprite.texture.baseTexture.update()
+				this.compositor.app.render()
+			}
+			if("requestVideoFrameCallback" in element) {
+				// rVFC fires when the frame is about to be displayed, but gl.texImage2D
+				// is NOT reliably usable inside the rVFC callback itself in Chrome (the
+				// frame hasn't been committed to the WebGL compositing path yet). Defer
+				// the actual texture upload + render to the NEXT rAF so WebGL can see it.
+				;(element as any).requestVideoFrameCallback(() => requestAnimationFrame(flush))
+			} else {
+				// Fallback: seeked + one rAF to let the decode pipeline settle.
+				element.addEventListener("seeked", () => requestAnimationFrame(flush), {once: true})
+			}
+			element.currentTime = element.currentTime + 0.001
 		}
 		if(element.videoWidth && element.videoHeight) {
 			apply()
