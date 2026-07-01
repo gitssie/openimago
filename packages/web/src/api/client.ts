@@ -478,6 +478,26 @@ export const api = {
   },
   getAsset: (id: string) =>
     request<{ asset: OpenimagoAsset }>(`/api/platform/assets/${id}`).then((r) => r.asset),
+  /**
+   * Fetch an authed asset URL (e.g. `/api/platform/assets/:id/download`) WITH the
+   * Bearer token and return an object URL usable as an `<img src>`. A plain `<img>`
+   * can't send the Authorization header, so asset-download URLs 401 → broken image;
+   * this loads the bytes with auth instead. The caller owns the returned object URL
+   * and must `URL.revokeObjectURL` it when done. Returns null on failure.
+   */
+  assetObjectUrl: async (url: string): Promise<string | null> => {
+    const auth = useAuthStore()
+    const headers: Record<string, string> = {}
+    if (auth.token) headers['Authorization'] = `Bearer ${auth.token}`
+    try {
+      const res = await fetch(apiUrl(url), { headers })
+      if (!res.ok) return null
+      const blob = await res.blob()
+      return URL.createObjectURL(blob)
+    } catch {
+      return null
+    }
+  },
   uploadAsset: (file: File, onProgress?: (percent: number) => void): Promise<{ asset: OpenimagoAsset }> => {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest()

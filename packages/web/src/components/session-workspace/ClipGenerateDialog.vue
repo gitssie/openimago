@@ -339,7 +339,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch, onBeforeUnmount } from 'vue'
 import { useQuasar } from 'quasar'
 import { api } from 'src/api/client'
 import type { StoryRunSummary, StoryShotSummary } from './types'
@@ -448,6 +448,7 @@ watch(
     form.referenceImages = [...(seeded.referenceImages ?? [])]
     form.generationMode = seeded.generationMode
     form.resolution = seeded.resolution
+    revokeAllObjectUrls()
     clearRecord(refPreviews)
     clearRecord(mentionRefs)
     void resolveReferenceThumbnails()
@@ -468,18 +469,46 @@ function clearRecord(record: Record<string, string>): void {
   for (const key of Object.keys(record)) delete record[key]
 }
 
-/** Resolve bare asset-id refs (no url) to real thumbnails via api.getAsset so the
- *  reference strip shows previews instead of icon fallbacks (openimago-0f27). */
+// Object URLs created for authed asset thumbnails, tracked so we can revoke them
+// (openimago-7k46 fix). Asset download URLs (/api/platform/assets/:id/download) are
+// gated by Bearer auth, so a plain <img src> 401s → broken image; we fetch the bytes
+// WITH the token (api.assetObjectUrl) and bind an object URL instead. Same-origin
+// /mock URLs (e.g. @ element concept art) need no auth and are used directly.
+const objectUrls = new Set<string>()
+
+/** True for URLs behind the authed asset-download endpoint (need a token to fetch). */
+function isAuthedAssetUrl(value: string): boolean {
+  return value.includes('/api/platform/assets/')
+}
+
+function trackObjectUrl(url: string): string {
+  objectUrls.add(url)
+  return url
+}
+
+function revokeObjectUrl(url: string): void {
+  if (objectUrls.delete(url)) URL.revokeObjectURL(url)
+}
+
+function revokeAllObjectUrls(): void {
+  for (const url of objectUrls) URL.revokeObjectURL(url)
+  objectUrls.clear()
+}
+
+/** Resolve refs that can't be shown by a plain <img> into displayable previews
+ *  (openimago-0f27 + 7k46): bare asset ids → api.getAsset → its authed download URL,
+ *  and authed asset URLs → both fetched WITH the token as an object URL. */
 async function resolveReferenceThumbnails(): Promise<void> {
-  const ids = referenceImages.value.filter((r) => refThumb(r) === '')
+  const pending = referenceImages.value.filter((r) => refThumb(r) === '' && !(r in refPreviews))
   await Promise.all(
-    ids.map(async (id) => {
+    pending.map(async (ref) => {
       try {
-        const asset = await api.getAsset(id)
-        const preview = asset.thumbnailUrl || asset.url
-        if (preview) refPreviews[id] = preview
+        const downloadUrl = isAuthedAssetUrl(ref) ? ref : (await api.getAsset(ref)).url
+        if (!downloadUrl) return
+        const obj = await api.assetObjectUrl(downloadUrl)
+        if (obj) refPreviews[ref] = trackObjectUrl(obj)
       } catch {
-        // Leave the icon fallback in place when an id can't be resolved.
+        // Leave the icon fallback in place when a ref can't be resolved.
       }
     }),
   )
@@ -502,6 +531,9 @@ function onClose(): void {
 
 function refThumb(refId: string): string {
   if (refPreviews[refId]) return refPreviews[refId]
+  // Authed asset URLs can't be shown by a plain <img> — resolve to an object URL first.
+  if (isAuthedAssetUrl(refId)) return ''
+  // Same-origin /mock or public http(s) URLs render directly.
   if (/^(https?:\/\/|\/)/.test(refId)) return refId
   return ''
 }
@@ -542,8 +574,12 @@ async function uploadFiles(files: File[]): Promise<void> {
       if (!form.referenceImages) form.referenceImages = []
       if (!form.referenceImages.includes(asset.id)) {
         form.referenceImages.push(asset.id)
-        const preview = asset.thumbnailUrl || asset.url
-        if (preview) refPreviews[asset.id] = preview
+        // asset.url is the authed download endpoint → load it WITH the token.
+        const downloadUrl = asset.thumbnailUrl || asset.url
+        if (downloadUrl) {
+          const obj = await api.assetObjectUrl(downloadUrl)
+          if (obj) refPreviews[asset.id] = trackObjectUrl(obj)
+        }
       }
     }
   } catch {
@@ -555,6 +591,8 @@ async function uploadFiles(files: File[]): Promise<void> {
 
 function removeReference(refId: string): void {
   form.referenceImages = referenceImages.value.filter((r) => r !== refId)
+  const preview = refPreviews[refId]
+  if (preview) revokeObjectUrl(preview)
   delete refPreviews[refId]
 }
 
@@ -574,6 +612,13 @@ function onMentionElement(el: ElementCardVM): void {
     if (!form.referenceImages) form.referenceImages = []
     if (!form.referenceImages.includes(refImg)) form.referenceImages.push(refImg)
     mentionRefs[token] = refImg
+    // Element concept art is usually a same-origin /mock URL (shown directly), but if
+    // it points at the authed asset endpoint, load it WITH the token like uploads.
+    if (isAuthedAssetUrl(refImg) && !(refImg in refPreviews)) {
+      void api.assetObjectUrl(refImg).then((obj) => {
+        if (obj) refPreviews[refImg] = trackObjectUrl(obj)
+      })
+    }
   }
 }
 
@@ -590,6 +635,8 @@ function onRemoveChip(token: string): void {
 function onGenerate(): void {
   emit('generate', clipFormToParams({ ...form }))
 }
+
+onBeforeUnmount(revokeAllObjectUrls)
 </script>
 
 <style scoped>
