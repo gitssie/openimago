@@ -218,10 +218,15 @@
             @cut-changed="onCutChanged"
             @cut-conflict="onCutConflict"
             @cut-error="onCutError"
+            :regen-composer="clipGenDialog"
+            :regen-elements="leftPanelElements"
+            :regen-generating="clipGenerating"
             @clip-regenerate="onClipRegenerate"
             @clip-manual-edit="onClipManualEdit"
             @clip-delete="onClipDelete"
             @clip-add-to-chat="onClipAddToChat"
+            @clip-generate="onClipGenerate"
+            @clip-generate-close="() => { if (!clipGenerating) clipGenDialog = null }"
           />
 
           <!-- 时间线 tab, no episode selected → empty-state guidance -->
@@ -296,18 +301,6 @@
         />
       </div>
     </q-dialog>
-
-    <!-- ── 手动编辑: in-timeline AI re-generation dialog (clip context menu) ── -->
-    <ClipGenerateDialog
-      :open="clipGenDialog !== null"
-      :shot="clipGenDialog?.shot ?? null"
-      :latest-run="clipGenDialog?.latestRun ?? null"
-      :anchor="clipGenDialog?.anchor ?? null"
-      :elements="leftPanelElements"
-      :generating="clipGenerating"
-      @update:open="(open) => { if (!open && !clipGenerating) clipGenDialog = null }"
-      @generate="onClipGenerate"
-    />
 
     <!-- ── Output context menu (Rerun + Download + Delete) — openimago-oy1l/wc96 ── -->
     <!-- Seeded at the click position. Rerun re-executes the run behind the output. -->
@@ -691,7 +684,6 @@ import { workspaceFileToAIOutputItem, mergeAIOutputItems } from 'src/utils/sessi
 import { formatRelativeTime } from 'src/utils/format-time'
 import StoryOverviewPanel from 'src/components/session-workspace/StoryOverviewPanel.vue'
 import StoryCutPanel from 'src/components/session-workspace/StoryCutPanel.vue'
-import ClipGenerateDialog from 'src/components/session-workspace/ClipGenerateDialog.vue'
 import StoryTimelineEmpty from 'src/components/session-workspace/StoryTimelineEmpty.vue'
 import type { EpisodeCut } from 'src/utils/cut/cut-types'
 import { rawCutToEpisodeCut } from 'src/utils/cut/cut-api-mapper'
@@ -812,9 +804,6 @@ const previewHdActive = ref(false)
 const clipGenDialog = ref<{
   shot: StoryShotSummary
   latestRun: StoryRunSummary | null
-  /** clip's on-screen right-click point (openimago-816a) so the composer QMenu
-   *  anchors near the clicked clip; null → the composer centers itself. */
-  anchor: { x: number; y: number } | null
 } | null>(null)
 const clipGenerating = ref(false)
 const projectFiles = ref<OutputItem[]>([])
@@ -1515,10 +1504,7 @@ function onClipRegenerate(sourceShotId: string): void {
  * authored prompt + the latest run's model). 生成 re-runs video generation with the
  * edited params via onClipGenerate; the clip's media then refreshes.
  */
-function onClipManualEdit(
-  sourceShotId: string,
-  anchor: { x: number; y: number } | null = null,
-): void {
+function onClipManualEdit(sourceShotId: string): void {
   const shot = currentStoryShots.value.find((s) => s.id === sourceShotId)
   if (!shot) {
     $q.notify({ color: 'warning', message: '该镜头已不存在', icon: 'info', timeout: 1800 })
@@ -1528,7 +1514,7 @@ function onClipManualEdit(
     currentStoryRuns.value
       .filter((r) => r.shotId === sourceShotId && r.status === 'completed')
       .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))[0] ?? null
-  clipGenDialog.value = { shot, latestRun, anchor }
+  clipGenDialog.value = { shot, latestRun }
 }
 
 /**

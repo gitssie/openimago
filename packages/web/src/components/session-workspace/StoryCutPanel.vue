@@ -70,6 +70,20 @@
         <p v-else-if="hydrating" class="story-cut__loading story-cut__loading--hydrating">
           正在加载粗剪…
         </p>
+
+        <!-- 手动编辑 composer, docked over the player-preview region (openimago-7k46).
+             The omniclip editor stays mounted underneath; closing returns the preview. -->
+        <ClipGenerateDialog
+          v-if="regenComposer"
+          :open="true"
+          :shot="regenComposer.shot"
+          :latest-run="regenComposer.latestRun"
+          :elements="regenElements ?? []"
+          :generating="regenGenerating ?? false"
+          class="story-cut__composer"
+          @update:open="(v) => { if (!v) emit('clip-generate-close') }"
+          @generate="(p) => emit('clip-generate', p)"
+        />
       </div>
 
       <!-- ── Selection-driven contextual control bar (openimago-e6k1) ──
@@ -189,12 +203,14 @@ import { makeShotMediaResolver } from 'src/utils/cut/shot-media-resolver'
 import { buildHydrationPayload, type BgmMediaSource } from 'src/utils/cut/cut-hydration'
 import { dispatchCutEdit, type CutEdit } from 'src/utils/cut/cut-edit-dispatcher'
 import { buildClipMenuItems } from 'src/utils/cut/clip-menu-items'
-import { isClipContextTarget } from 'src/utils/cut/clip-menu-target'
 import { transitionBoundaries, resolveBgmLabel } from 'src/utils/cut/cut-controls'
 import { bgmAuthHeaders } from 'src/utils/cut/bgm-auth'
 import type { LoadOmniclipFork, OmniclipForkApi } from 'src/utils/cut/fork-contract'
 import { api, ApiError, type OpenimagoAsset } from 'src/api/client'
 import { useAuthStore } from 'src/stores/auth'
+import ClipGenerateDialog from 'src/components/session-workspace/ClipGenerateDialog.vue'
+import type { ElementCardVM } from 'src/components/session-workspace/left-panel/types'
+import type { ShotGenerationParams } from 'src/utils/cut/clip-generate-form'
 
 /** Default transition length (s) when a kind is first chosen on a boundary. */
 const DEFAULT_TRANSITION_SECONDS = 0.5
@@ -212,6 +228,13 @@ const props = defineProps<{
   cut: EpisodeCut | null
   shots: StoryShotSummary[]
   runs: StoryRunSummary[]
+  /** Active 手动编辑 regen target (openimago-7k46). When set, the full-width composer
+   *  docks over the player-preview region. null → the player preview shows. */
+  regenComposer?: { shot: StoryShotSummary; latestRun: StoryRunSummary | null } | null
+  /** Bible elements for the composer's @-mention picker. */
+  regenElements?: ElementCardVM[]
+  /** Whether a regen is in flight (disables the composer's controls). */
+  regenGenerating?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -227,14 +250,17 @@ const emit = defineEmits<{
   (e: 'cut-error'): void
   /** clip menu (openimago-e0n3): regenerate the source shot's media. */
   (e: 'clip-regenerate', sourceShotId: string): void
-  /** clip menu: open the in-timeline 手动编辑 composer for the source shot. The
-   *  optional anchor is the clip's on-screen right-click point (openimago-816a),
-   *  so the page can pop the composer QMenu near the clicked clip. */
-  (e: 'clip-manual-edit', sourceShotId: string, anchor: { x: number; y: number } | null): void
+  /** clip menu: open the 手动编辑 composer for the source shot (openimago-7k46 docks
+   *  it over the player region; the page owns the composer state). */
+  (e: 'clip-manual-edit', sourceShotId: string): void
   /** clip menu: delete the CLIP (not the shot). */
   (e: 'clip-delete', clipId: string): void
   /** clip menu: attach the clip's media to the chat as a reference. */
   (e: 'clip-add-to-chat', sourceShotId: string): void
+  /** composer 生成 — re-run generation for the regen target's shot (openimago-7k46). */
+  (e: 'clip-generate', params: ShotGenerationParams): void
+  /** composer closed without generating (openimago-7k46). */
+  (e: 'clip-generate-close'): void
 }>()
 
 const editorHost = ref<HTMLElement | null>(null)
@@ -261,24 +287,6 @@ const lastUpdatedAt = ref<string | undefined>(props.cut?.updatedAt)
 
 let fork: OmniclipForkApi | null = null
 let unregisterClipMenu: (() => void) | null = null
-
-// openimago-816a: the clip's on-screen point at right-click time, so the 手动编辑
-// composer (an in-timeline QMenu) anchors near the clicked clip. The omniclip menu
-// lives in the fork's shadow DOM, but `contextmenu` is a composed event, so a
-// capture-phase listener on the light-DOM editorHost still sees it with the correct
-// clientX/clientY. isClipContextTarget gates on composedPath so we only record
-// points originating on a clip (body or its trim-handle overlay).
-let lastClipContextPoint: { x: number; y: number } | null = null
-
-function onEditorContextMenu(event: MouseEvent): void {
-  const classLists = event
-    .composedPath()
-    .map((el) => (el instanceof Element ? el.classList : null))
-    .filter((c): c is DOMTokenList => c !== null)
-  if (isClipContextTarget(classLists)) {
-    lastClipContextPoint = { x: event.clientX, y: event.clientY }
-  }
-}
 let unsubscribeEdits: (() => void) | null = null
 let unsubscribeSelection: (() => void) | null = null
 
@@ -547,7 +555,7 @@ async function mountAndHydrate(): Promise<void> {
     unregisterClipMenu = fork.registerClipMenuItems(
       buildClipMenuItems({
         onRegenerate: (sourceShotId) => emit('clip-regenerate', sourceShotId),
-        onManualEdit: (sourceShotId) => emit('clip-manual-edit', sourceShotId, lastClipContextPoint),
+        onManualEdit: (sourceShotId) => emit('clip-manual-edit', sourceShotId),
         onDeleteClip: (clipId) => emit('clip-delete', clipId),
         onAddToChat: (sourceShotId) => emit('clip-add-to-chat', sourceShotId),
       }),
@@ -647,19 +655,13 @@ function remountEditor(): void {
   void nextTick(() => mountAndHydrate())
 }
 
-// First mount: the host div exists by onMounted, so this never early-returns. The
-// contextmenu capture listener is attached to the stable editorHost (which persists
-// across re-mounts) exactly once here (openimago-816a).
-onMounted(() => {
-  editorHost.value?.addEventListener('contextmenu', onEditorContextMenu, { capture: true })
-  remountEditor()
-})
+// First mount: the host div exists by onMounted, so this never early-returns.
+onMounted(remountEditor)
 
 // Re-mount when the episode changes or the cut transitions empty↔non-empty.
 watch(() => [props.episodeId, isEmptyCut.value] as const, remountEditor)
 
 onBeforeUnmount(() => {
-  editorHost.value?.removeEventListener('contextmenu', onEditorContextMenu, { capture: true })
   unsubscribeEdits?.()
   unsubscribeEdits = null
   unsubscribeSelection?.()
@@ -736,6 +738,16 @@ defineExpose({ persistEdit, rehydrate })
 // must FILL the editor host for the panes to split its height. A custom element
 // defaults to display:inline, so its :host{height:100%} would not take effect
 // without an explicit block + full height here.
+// 手动编辑 composer docked over the top (player-preview) region of the editor
+// (openimago-7k46). Absolute so it overlays without unmounting the omniclip editor.
+.story-cut__composer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+}
+
 .story-cut__construct {
   display: block;
   width: 100%;
