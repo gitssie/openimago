@@ -19,6 +19,7 @@ import { eq } from "drizzle-orm"
 import { db } from "../src/db/client"
 import { assets, projects, users, userAuths, workspaceGeneratedFiles } from "../src/db/schema"
 import { WorkspaceTable } from "../src/db/workspace-schema"
+import { billingService } from "../src/billing/service"
 import { projectService } from "../src/project/service"
 import { storyService } from "../src/project/story-service"
 import { statSync } from "node:fs"
@@ -134,6 +135,42 @@ async function seedUser(): Promise<{ userId: string; workspaceId: string }> {
 
   logger.info({ userId: effectiveUserId, email: SEED_USER_EMAIL }, "seed: user ready")
   return { userId: effectiveUserId, workspaceId: effectiveWorkspaceId }
+}
+
+// ── Billing ─────────────────────────────────────────────────────────────────
+
+// Generous stable test balance so media generation never runs dry. The inline
+// media pre-charge path (ADR 0010) rejects with 402 when the user has no billing
+// account or insufficient balance, so the seed user needs a funded account.
+const SEED_TARGET_BALANCE_MICROS = 1_000_000_000 // 1000 CNY (1e6 micros = 1 CNY)
+
+/**
+ * Provision a funded billing account for the seed user.
+ *
+ * Idempotent by TOP-UP-TO-TARGET, not by unconditional credit: re-runs read the
+ * current balance and credit only the positive shortfall to reach
+ * SEED_TARGET_BALANCE_MICROS, so repeated seeds converge on a stable balance
+ * instead of growing it without bound. Returns the resulting balance for the
+ * seed report.
+ */
+async function seedBilling(userId: string): Promise<number> {
+  const account = await billingService.getOrCreateAccount(userId)
+  const shortfall = SEED_TARGET_BALANCE_MICROS - account.balanceMicros
+
+  if (shortfall > 0) {
+    await billingService.createCredit(account.id, shortfall, userId, { seed: true })
+    logger.info(
+      { userId, accountId: account.id, credited: shortfall, target: SEED_TARGET_BALANCE_MICROS },
+      "seed: billing topped up to target",
+    )
+    return SEED_TARGET_BALANCE_MICROS
+  }
+
+  logger.info(
+    { userId, accountId: account.id, balance: account.balanceMicros },
+    "seed: billing already at/above target — no top-up",
+  )
+  return account.balanceMicros
 }
 
 // ── Project + story ─────────────────────────────────────────────────────────
@@ -304,9 +341,10 @@ async function seedBgmCut(userId: string): Promise<void> {
 
 async function main(): Promise<void> {
   const { userId, workspaceId } = await seedUser()
+  const balanceMicros = await seedBilling(userId)
   await seedProject(userId, workspaceId)
   logger.info(
-    { email: SEED_USER_EMAIL, projectId: SEED_PROJECT_ID },
+    { email: SEED_USER_EMAIL, projectId: SEED_PROJECT_ID, balanceMicros },
     "seed: done — login with the seed credentials; project URL uses the stable projectId",
   )
 }
