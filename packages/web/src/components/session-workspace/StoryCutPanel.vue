@@ -189,6 +189,7 @@ import { makeShotMediaResolver } from 'src/utils/cut/shot-media-resolver'
 import { buildHydrationPayload, type BgmMediaSource } from 'src/utils/cut/cut-hydration'
 import { dispatchCutEdit, type CutEdit } from 'src/utils/cut/cut-edit-dispatcher'
 import { buildClipMenuItems } from 'src/utils/cut/clip-menu-items'
+import { isClipContextTarget } from 'src/utils/cut/clip-menu-target'
 import { transitionBoundaries, resolveBgmLabel } from 'src/utils/cut/cut-controls'
 import { bgmAuthHeaders } from 'src/utils/cut/bgm-auth'
 import type { LoadOmniclipFork, OmniclipForkApi } from 'src/utils/cut/fork-contract'
@@ -226,8 +227,10 @@ const emit = defineEmits<{
   (e: 'cut-error'): void
   /** clip menu (openimago-e0n3): regenerate the source shot's media. */
   (e: 'clip-regenerate', sourceShotId: string): void
-  /** clip menu: edit the source shot's description. */
-  (e: 'clip-manual-edit', sourceShotId: string): void
+  /** clip menu: open the in-timeline 手动编辑 composer for the source shot. The
+   *  optional anchor is the clip's on-screen right-click point (openimago-816a),
+   *  so the page can pop the composer QMenu near the clicked clip. */
+  (e: 'clip-manual-edit', sourceShotId: string, anchor: { x: number; y: number } | null): void
   /** clip menu: delete the CLIP (not the shot). */
   (e: 'clip-delete', clipId: string): void
   /** clip menu: attach the clip's media to the chat as a reference. */
@@ -258,6 +261,24 @@ const lastUpdatedAt = ref<string | undefined>(props.cut?.updatedAt)
 
 let fork: OmniclipForkApi | null = null
 let unregisterClipMenu: (() => void) | null = null
+
+// openimago-816a: the clip's on-screen point at right-click time, so the 手动编辑
+// composer (an in-timeline QMenu) anchors near the clicked clip. The omniclip menu
+// lives in the fork's shadow DOM, but `contextmenu` is a composed event, so a
+// capture-phase listener on the light-DOM editorHost still sees it with the correct
+// clientX/clientY. isClipContextTarget gates on composedPath so we only record
+// points originating on a clip (body or its trim-handle overlay).
+let lastClipContextPoint: { x: number; y: number } | null = null
+
+function onEditorContextMenu(event: MouseEvent): void {
+  const classLists = event
+    .composedPath()
+    .map((el) => (el instanceof Element ? el.classList : null))
+    .filter((c): c is DOMTokenList => c !== null)
+  if (isClipContextTarget(classLists)) {
+    lastClipContextPoint = { x: event.clientX, y: event.clientY }
+  }
+}
 let unsubscribeEdits: (() => void) | null = null
 let unsubscribeSelection: (() => void) | null = null
 
@@ -526,7 +547,7 @@ async function mountAndHydrate(): Promise<void> {
     unregisterClipMenu = fork.registerClipMenuItems(
       buildClipMenuItems({
         onRegenerate: (sourceShotId) => emit('clip-regenerate', sourceShotId),
-        onManualEdit: (sourceShotId) => emit('clip-manual-edit', sourceShotId),
+        onManualEdit: (sourceShotId) => emit('clip-manual-edit', sourceShotId, lastClipContextPoint),
         onDeleteClip: (clipId) => emit('clip-delete', clipId),
         onAddToChat: (sourceShotId) => emit('clip-add-to-chat', sourceShotId),
       }),
@@ -626,13 +647,19 @@ function remountEditor(): void {
   void nextTick(() => mountAndHydrate())
 }
 
-// First mount: the host div exists by onMounted, so this never early-returns.
-onMounted(remountEditor)
+// First mount: the host div exists by onMounted, so this never early-returns. The
+// contextmenu capture listener is attached to the stable editorHost (which persists
+// across re-mounts) exactly once here (openimago-816a).
+onMounted(() => {
+  editorHost.value?.addEventListener('contextmenu', onEditorContextMenu, { capture: true })
+  remountEditor()
+})
 
 // Re-mount when the episode changes or the cut transitions empty↔non-empty.
 watch(() => [props.episodeId, isEmptyCut.value] as const, remountEditor)
 
 onBeforeUnmount(() => {
+  editorHost.value?.removeEventListener('contextmenu', onEditorContextMenu, { capture: true })
   unsubscribeEdits?.()
   unsubscribeEdits = null
   unsubscribeSelection?.()

@@ -302,6 +302,7 @@
       :open="clipGenDialog !== null"
       :shot="clipGenDialog?.shot ?? null"
       :latest-run="clipGenDialog?.latestRun ?? null"
+      :anchor="clipGenDialog?.anchor ?? null"
       :generating="clipGenerating"
       @update:open="(open) => { if (!open && !clipGenerating) clipGenDialog = null }"
       @generate="onClipGenerate"
@@ -807,7 +808,13 @@ const previewHdActive = ref(false)
 // 手动编辑 clip action (openimago-ciqk): the in-timeline AI re-generation dialog.
 // null = closed; otherwise the source shot being re-generated + its latest run
 // (for prefill). clipGenerating gates the 生成 button while the request is in flight.
-const clipGenDialog = ref<{ shot: StoryShotSummary; latestRun: StoryRunSummary | null } | null>(null)
+const clipGenDialog = ref<{
+  shot: StoryShotSummary
+  latestRun: StoryRunSummary | null
+  /** clip's on-screen right-click point (openimago-816a) so the composer QMenu
+   *  anchors near the clicked clip; null → the composer centers itself. */
+  anchor: { x: number; y: number } | null
+} | null>(null)
 const clipGenerating = ref(false)
 const projectFiles = ref<OutputItem[]>([])
 const projectFilesLoading = ref(false)
@@ -1507,7 +1514,10 @@ function onClipRegenerate(sourceShotId: string): void {
  * authored prompt + the latest run's model). 生成 re-runs video generation with the
  * edited params via onClipGenerate; the clip's media then refreshes.
  */
-function onClipManualEdit(sourceShotId: string): void {
+function onClipManualEdit(
+  sourceShotId: string,
+  anchor: { x: number; y: number } | null = null,
+): void {
   const shot = currentStoryShots.value.find((s) => s.id === sourceShotId)
   if (!shot) {
     $q.notify({ color: 'warning', message: '该镜头已不存在', icon: 'info', timeout: 1800 })
@@ -1517,7 +1527,7 @@ function onClipManualEdit(sourceShotId: string): void {
     currentStoryRuns.value
       .filter((r) => r.shotId === sourceShotId && r.status === 'completed')
       .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))[0] ?? null
-  clipGenDialog.value = { shot, latestRun }
+  clipGenDialog.value = { shot, latestRun, anchor }
 }
 
 /**
