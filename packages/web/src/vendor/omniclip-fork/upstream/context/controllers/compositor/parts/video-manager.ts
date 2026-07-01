@@ -68,8 +68,7 @@ export class VideoManager extends Map<string, {sprite: PIXI.Sprite, transformer:
 		sprite.rotation = effect.rect.rotation * (Math.PI / 180)
 		sprite.width = effect.rect.width
 		sprite.height = effect.rect.height
-		sprite.eventMode = "static"
-		sprite.cursor = "pointer"
+		sprite.eventMode = "none"
 		sprite.filters = []
 		// COVER-FIT (openimago-wmns Pass B.6; pixi adaptation of video-manager.patch.ts).
 		// The lines above size the sprite to effect.rect (the 1080×1920 portrait canvas for a
@@ -92,10 +91,6 @@ export class VideoManager extends Map<string, {sprite: PIXI.Sprite, transformer:
 		})
 		transformer.name = generate_id()
 		transformer.ignoreAlign = true
-		sprite.on('pointerdown', (e) => {
-			this.compositor.canvasElementDrag.onDragStart(e, sprite, transformer)
-			this.compositor.app.stage.addChild(transformer)
-		})
 		;(sprite as any).effect = { ...effect }
 		//@ts-ignore
 		sprite.ignoreAlign = false
