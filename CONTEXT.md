@@ -11,11 +11,15 @@ The AI agent engine (`opencode serve`). Runs as a shared backend container servi
 ### User
 Each user has a unique `userId`. Users can have multiple OpenCode workspaces linked via `workspace_refs`. Users authenticate to openimago via JWT; openimago authenticates to OpenCode via shared Basic Auth.
 
+### Workspace (the one entity)
+A **directory** plus its `workspace` row. There is only one underlying thing — a folder. "Session-level" and "Project-level" are not two kinds of entity; they are the same folder differing only in **whether it is shared and named**. Anything keyed to a workspace (Story, attachments, outputs) is keyed to its **directory**, not to whether a project record exists.
+_Avoid_: treating session-folder and project-folder as structurally different.
+
 ### Session-level Workspace
-A transient workspace created per standalone session (`POST /api/session` without projectId). Linked to the user via `workspace_refs` with `projectId = null`. Lives in opencode's `workspace` table with `type = "local"`.
+A workspace folder used by **exactly one** standalone session (`POST /api/session` without projectId), `workspace_refs.projectId = null`, directory `/work/{workspaceId}`. Transient and unnamed. Structurally identical to a project folder — it just isn't shared or persisted as a named project.
 
 ### Project-level Workspace
-A persistent workspace tied to a project. Multiple sessions within the same project share one workspace. Linked to the user via `workspace_refs` with `projectId` set. Created at project creation time.
+A workspace folder that is **named, persisted, and shared by many sessions** (`workspace_refs.projectId` set, directory `/mnt/cos/{projectId}`). The only real differences from a session-level workspace: a name, soft-delete lifecycle, and reuse across sessions.
 
 ### Project
 A user-created named workspace. Has a persistent directory at `/mnt/cos/{projectId}`. Multiple sessions can share the same project directory. Soft-deleted (archived, never physically removed).
@@ -71,7 +75,7 @@ All sessions in this deployment have `project_id = "global"` because directories
 
 ## Story Domain
 
-The structured creative state of a Project, authored by the AI agent and stored as schema JSON files in the project directory (ADR 0004). The filesystem is the source of truth; the frontend reads these via the `projectStory*` APIs.
+The structured creative state of a **Workspace (directory)**, authored by the AI agent and stored as schema JSON files in that directory (ADR 0004). The filesystem is the source of truth. Story is **directory-scoped, not project-scoped** (ADR 0009): a workspace's `projectId` (or a session's `sessionId`) is only a key used to *resolve the directory* + check ownership — so a standalone session folder can hold Story exactly like a project folder. The single folder-driven Workspace page shows the Story tabs (故事板/时间线/概览) whenever the resolved directory has Story files, regardless of whether it is a named project.
 
 ### Bible
 Global, episode-independent canon for a Project: world settings, **Characters**, **Scenes**, and **Style Seeds**. Stored in `story/bible.json`. Characters/Scenes/StyleSeeds are reusable definitions referenced by Shots.
@@ -113,6 +117,41 @@ Two distinct planes of work on a Project, deliberately decoupled:
 The **first** version of a Cut is *assembled by the agent* (a generation-layer action that writes `cut.json` — it stitches the Episode's Shots into a rough cut with voiceover + BGM, the "粗剪版本已生成" flow). Thereafter the user *edits* that Cut in the non-AI edit layer. Both the agent and the user write `cut.json`; ADR 0005 optimistic concurrency arbitrates the rare race. A Clip's "重新生成" menu item is the one bridge from the edit layer back to the generation layer; otherwise the two planes do not mix.
 
 ---
+
+## Billing
+
+There are **two distinct charge paths**, by design — keep them separate:
+1. **LLM token cost → CDC (automatic, out-of-band).** OpenCode accumulates conversation token cost onto `session.cost`; the CDC Worker turns each increase into a Ledger Charge.
+2. **Media generation cost → inline tool charge.** Image/video generation tools charge the ledger **inline** (post to `billingService.chargeToolCall`) — media cost does **NOT** flow through `session.cost` or the CDC Worker.
+
+### Billing CDC Worker
+A standalone **golang** service (`packages/compute`, module `billing-cdc-worker`) that tails the OpenCode `public.session` table's change stream (CDC). It charges **only the LLM-token path**: automatically, out-of-band, from `session.cost` deltas. It does NOT see media generation cost.
+_Avoid_: calling it the "billing service" (that is the TS ledger API); assuming it bills media generation.
+
+### session.cost (LLM-token charge source)
+The `cost` column on the OpenCode `session` row — the source of truth **for LLM token charges only**. When OpenCode increases `session.cost`, the CDC Worker turns the **delta** into a Ledger Charge. Media generation cost does NOT live here.
+
+### Media generation charge (inline)
+The charge for an image/video generation, posted **inline** by the media tool/service to `billingService.chargeToolCall` after a successful provider result (openimago-xqr). This is the path a media **rerun** also bills through — never CDC.
+
+### Ledger Charge
+A negative-micros entry in the billing ledger (`amountMicros < 0`). For the CDC path: `delta = (afterCost − beforeCost) × 1e6`, user resolved via the session's `workspace_id`, written + a CDC-processed marker in **one idempotent DB transaction** (deduped by LSN::txid::table::op::pk). For the inline media path: written directly by `chargeToolCall`.
+_Avoid_: positive charge amounts, double-charging on replay.
+
+### billingService (TS)
+The TypeScript ledger API in `packages/openimago/src/billing` (`getOrCreateAccount`, `chargeToolCall`, `checkBalance`). Backs the **inline media charge** path and balance gating (proxy routes check balance before a prompt). Distinct from the CDC Worker (which does automatic LLM-token charging).
+
+### Pre-charge lifecycle (media)
+The media inline path is **pre-charge → execute → confirm | refund**, with an expiry safety net (ADR 0010):
+- **Pre-charge**: debit the ledger *before* calling the provider; stamp `expiresAt = now + TTL` (TTL is config, no hidden default).
+- **Confirm**: on provider success, mark the pre-charge CONFIRMED and clear its expiry (the debit stands).
+- **Refund**: on provider failure, reverse the debit.
+- **Expiry release**: a pre-charge past `expiresAt` still unconfirmed and unrefunded (e.g. the process crashed mid-generation) is auto-refunded by the **Billing CDC Worker's** per-minute expiry ticker (idempotent SQL). Distinguishes a *stuck* pre-charge from a *succeeded* one via the CONFIRMED marker.
+_Avoid_: assuming a success signal exists without Confirm; auto-refunding confirmed charges.
+
+### Reservation (full hold→settle, NOT built)
+The larger hold-doesn't-debit-until-settle model with an async video reserve→submit→poll→settle flow (openimago-3xp full scope). Deliberately deferred — only the pre-charge expiry safety net (above) is built.
+_Avoid_: assuming true hold/settle exists; treating pre-charge as a non-debiting hold.
 
 ## Visual Direction
 
