@@ -60,7 +60,16 @@
 
       <!-- omniclip's editor custom element (registered by the fork on load). -->
       <div ref="editorHost" class="story-cut__editor" data-testid="cut-editor-host">
-        <construct-editor v-if="editorReady" class="story-cut__construct" />
+        <!-- While hydrating, HIDE the real editor entirely (visibility:hidden — stays
+             mounted so media isn't re-imported, but nothing paints) so its empty-timeline
+             shell (gutter waveform icons, white playhead) can't bleed through above the
+             skeleton overlay (openimago-l9qs). visibility inherits through the shadow
+             boundary, so the whole editor goes invisible. Revealed when hydration ends. -->
+        <construct-editor
+          v-if="editorReady"
+          class="story-cut__construct"
+          :class="{ 'story-cut__construct--hidden': hydrating }"
+        />
         <p v-if="!editorReady" class="story-cut__loading">
           {{ editorError ? editorError : '正在加载剪辑器…' }}
         </p>
@@ -846,6 +855,14 @@ defineExpose({ persistEdit, rehydrate })
   background: transparent;
 }
 
+// While hydrating, hide the real editor entirely so its empty-timeline shell can't
+// bleed through above the skeleton (openimago-l9qs). visibility (not display:none)
+// keeps it laid out + mounted — no media re-import — and inherits through the shadow
+// boundary, so all of omniclip's shadow content (gutter icons, playhead) goes invisible.
+.story-cut__construct--hidden {
+  visibility: hidden;
+}
+
 .story-cut__loading {
   position: absolute;
   inset: 0;
@@ -871,7 +888,9 @@ defineExpose({ persistEdit, rehydrate })
 .story-cut__hydrating {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  // Above the <construct-editor> sibling (which is also visibility:hidden while
+  // hydrating) so the opaque cover wins regardless of the editor's internal stacking.
+  z-index: 5;
   background: var(--imago-bg-void);
   display: flex;
   flex-direction: column;
