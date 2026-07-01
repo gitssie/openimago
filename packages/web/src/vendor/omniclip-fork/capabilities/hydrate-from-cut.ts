@@ -106,6 +106,22 @@ export async function hydrateFromCut(
   // add two more. Effects reference tracks by INDEX, so fresh ids are irrelevant.
   ensureThreeTracks(ctx)
 
+  // Force the preview to PORTRAIT 9:16 (openimago cut-preview-portrait). omniclip's
+  // default project settings are LANDSCAPE 16:9 (1920×1080; upstream state.ts) and the
+  // PIXI renderer is created at that size (compositor `new PIXI.Application(1920×1080)`)
+  // and never resized — nothing set the aspect on hydrate. But every clip effect is
+  // authored in a PORTRAIT coordinate space (fullFrameRect = 1080×1920 at 0,0), so on
+  // the 16:9 canvas the video only used the left/top portion, and the 16:9 canvas then
+  // top-aligned inside the CSS 9:16 media-player pane → black below. Set the state aspect
+  // AND resize the live canvas to 1080×1920 so the renderer matches the effect rects and
+  // the pane, filling it (video centered + maximized).
+  // FOLLOW-UP (cut-preview-aspect-from-settings): source the aspect from the Cut/project
+  // settings once such a field exists — there is none today (the per-shot
+  // generationParams.aspectRatio is not a cut-level setting), so 9:16 is hardcoded, matching
+  // fullFrameRect() + the composer default + the filmstrip + cut_panel.png.
+  ctx.actions.set_aspect_ratio('9/16')
+  ctx.controllers.compositor.set_canvas_resolution(1080, 1920)
+
   if (import.meta.env.DEV) {
     console.time('[omniclip-fork] hydrateFromCut total')
   }
