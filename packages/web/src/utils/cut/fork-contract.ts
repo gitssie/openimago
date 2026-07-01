@@ -127,12 +127,15 @@ export const ORPHAN_CLIP_ATTRIBUTE = 'data-no-file'
  * as a JS option, hence concrete hex here.
  */
 export const BGM_WAVEFORM_COLORS = {
-  /** Flat BGM-bar fill. Sampled directly from docs/images/cut_panel.png — the bed
-   *  bar is a MUTED sage green rgb(85,117,95), not the vivid #4ec273 a literal
-   *  CapCut-green read suggested (openimago-g1hb pixel audit). */
-  wave: '#55755f',
-  /** played (progress) portion — a touch deeper so the playhead reads. */
-  progress: '#41614b',
+  /** Flat BGM-bar fill. The earlier pixel-audit color (muted sage #55755f,
+   *  openimago-g1hb) sampled from docs/images/cut_panel.png was too dark to read on
+   *  the dark navy lane background — the bar rendered but looked empty (openimago-w1dj).
+   *  Bumped to a vivid CapCut-style green that reads clearly on the dark theme
+   *  (fix/openimago-r7to-bgm-waveform-green). */
+  wave: '#4ec273',
+  /** played (progress) portion — a touch deeper than the fill so the playhead reads,
+   *  while staying bright enough to remain visible on the dark lane. */
+  progress: '#38a460',
 } as const
 
 /**
