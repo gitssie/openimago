@@ -16,6 +16,10 @@ export interface ShotGenerationParams {
   model?: string
   aspectRatio?: string
   durationSeconds?: number
+  /** Reference images (uploaded asset ids or media urls) the video model
+   *  generates FROM. Optional — absent/empty for text-only generation. The
+   *  ClipGenerateDialog reference-material strip binds to `form.referenceImages`. */
+  referenceImages?: string[]
 }
 
 export interface ClipGenerateForm {
@@ -23,6 +27,10 @@ export interface ClipGenerateForm {
   model: string
   aspectRatio: string
   durationSeconds: number
+  /** Reference images bound by the dialog's reference-material strip. Optional on
+   *  the form shell (the redesigned ClipGenerateDialog seeds/binds it); treated as
+   *  an empty list when absent, and mapped to the optional param field. */
+  referenceImages?: string[]
 }
 
 /** Minimal shot shape the prefill needs (a subset of StoryShotSummary). */
@@ -92,15 +100,22 @@ export function buildClipGenerateForm(
     typeof gp?.durationSeconds === 'number' && Number.isFinite(gp.durationSeconds)
       ? gp.durationSeconds
       : DEFAULT_CLIP_DURATION_SECONDS
-  return { prompt, model, aspectRatio, durationSeconds }
+  const referenceImages = Array.isArray(gp?.referenceImages)
+    ? gp.referenceImages.filter((r): r is string => typeof r === 'string')
+    : []
+  return { prompt, model, aspectRatio, durationSeconds, referenceImages }
 }
 
-/** Map the dialog form to the request body (trim the prompt; carry params through). */
+/** Map the dialog form to the request body (trim the prompt; carry params through).
+ *  `referenceImages` is omitted when empty so it stays an optional param. */
 export function clipFormToParams(form: ClipGenerateForm): ShotGenerationParams {
   return {
     prompt: form.prompt.trim(),
     model: form.model,
     aspectRatio: form.aspectRatio,
     durationSeconds: form.durationSeconds,
+    ...(form.referenceImages && form.referenceImages.length > 0
+      ? { referenceImages: [...form.referenceImages] }
+      : {}),
   }
 }

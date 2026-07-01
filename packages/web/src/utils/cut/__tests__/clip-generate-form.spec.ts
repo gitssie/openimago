@@ -22,6 +22,7 @@ describe('buildClipGenerateForm', () => {
       model: DEFAULT_CLIP_MODEL,
       aspectRatio: DEFAULT_CLIP_ASPECT_RATIO,
       durationSeconds: DEFAULT_CLIP_DURATION_SECONDS,
+      referenceImages: [],
     })
   })
 
@@ -52,12 +53,34 @@ describe('buildClipGenerateForm', () => {
       model: 'seedance-2.0',
       aspectRatio: '16:9',
       durationSeconds: 12,
+      referenceImages: [],
     })
   })
 
   it('uses the latest run model when the shot has no persisted model', () => {
     const form = buildClipGenerateForm(bareShot, { model: 'seedance-1.0', prompt: 'p' })
     expect(form.model).toBe('seedance-1.0')
+  })
+
+  it('defaults referenceImages to an empty array when the shot has none', () => {
+    const form = buildClipGenerateForm(bareShot, null)
+    expect(form.referenceImages).toEqual([])
+  })
+
+  it('pre-fills referenceImages from the persisted generationParams', () => {
+    const form = buildClipGenerateForm(
+      {
+        description: 'desc',
+        visualPrompt: 'visual',
+        generationParams: {
+          prompt: 'a neon alley street race',
+          model: 'seedance-2.0',
+          referenceImages: ['asset_a', 'asset_b'],
+        },
+      },
+      null,
+    )
+    expect(form.referenceImages).toEqual(['asset_a', 'asset_b'])
   })
 })
 
@@ -69,6 +92,7 @@ describe('clipFormToParams', () => {
         model: 'seedance-2.0',
         aspectRatio: '9:16',
         durationSeconds: 8,
+        referenceImages: [],
       }),
     ).toEqual({
       prompt: 'windy night',
@@ -76,5 +100,28 @@ describe('clipFormToParams', () => {
       aspectRatio: '9:16',
       durationSeconds: 8,
     })
+  })
+
+  it('carries referenceImages through when present', () => {
+    expect(
+      clipFormToParams({
+        prompt: 'p',
+        model: 'seedance-2.0',
+        aspectRatio: '9:16',
+        durationSeconds: 8,
+        referenceImages: ['asset_a', 'asset_b'],
+      }).referenceImages,
+    ).toEqual(['asset_a', 'asset_b'])
+  })
+
+  it('omits referenceImages when empty (stays optional)', () => {
+    const params = clipFormToParams({
+      prompt: 'p',
+      model: 'seedance-2.0',
+      aspectRatio: '9:16',
+      durationSeconds: 8,
+      referenceImages: [],
+    })
+    expect('referenceImages' in params).toBe(false)
   })
 })
