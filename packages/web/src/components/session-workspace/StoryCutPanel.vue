@@ -76,42 +76,59 @@
           aria-live="polite"
           aria-label="正在加载粗剪"
         >
-          <!-- Top: player-preview region — a large centered 9:16 block. -->
+          <!-- Top: player region (= editor height − 300px, flex:1). Centered 9:16 block
+               sized to the region height, matching the real media-player preview. -->
           <div class="story-cut__hydrating-player">
             <q-skeleton animation="wave" class="story-cut__sk-player" />
           </div>
 
-          <!-- Middle: transport bar — control clusters + play + timecode. -->
-          <div class="story-cut__hydrating-transport" aria-hidden="true">
-            <div class="story-cut__hydrating-group">
-              <q-skeleton animation="wave" class="story-cut__sk-ctl" />
-              <q-skeleton animation="wave" class="story-cut__sk-ctl" />
-              <q-skeleton animation="wave" class="story-cut__sk-ctl" />
+          <!-- Bottom: the FIXED 300px timeline pane (TIMELINE_PANE_PX). Internals match
+               the real omni-timeline: transport bar (46px) · ruler (20px) · 3 lanes
+               (50/25/25px, 8px gaps) with a 60px gutter icon per lane. -->
+          <div class="story-cut__hydrating-timeline" :style="{ height: `${TIMELINE_PANE_PX}px` }">
+            <!-- Transport bar (46px): control clusters + play + timecode. -->
+            <div class="story-cut__hydrating-transport" aria-hidden="true">
+              <div class="story-cut__hydrating-group">
+                <q-skeleton animation="wave" class="story-cut__sk-ctl" />
+                <q-skeleton animation="wave" class="story-cut__sk-ctl" />
+                <q-skeleton animation="wave" class="story-cut__sk-ctl" />
+              </div>
+              <div class="story-cut__hydrating-group">
+                <q-skeleton animation="wave" type="circle" class="story-cut__sk-play" />
+                <q-skeleton animation="wave" class="story-cut__sk-timecode" />
+              </div>
+              <div class="story-cut__hydrating-group">
+                <q-skeleton animation="wave" class="story-cut__sk-ctl" />
+                <q-skeleton animation="wave" class="story-cut__sk-ctl" />
+                <q-skeleton animation="wave" class="story-cut__sk-ctl" />
+              </div>
             </div>
-            <div class="story-cut__hydrating-group">
-              <q-skeleton animation="wave" type="circle" class="story-cut__sk-play" />
-              <q-skeleton animation="wave" class="story-cut__sk-timecode" />
-            </div>
-            <div class="story-cut__hydrating-group">
-              <q-skeleton animation="wave" class="story-cut__sk-ctl" />
-              <q-skeleton animation="wave" class="story-cut__sk-ctl" />
-              <q-skeleton animation="wave" class="story-cut__sk-ctl" />
-            </div>
-          </div>
 
-          <!-- Bottom: 3 timeline tracks — gutter icon + lane; row 1 taller (video). -->
-          <div class="story-cut__hydrating-tracks" aria-hidden="true">
-            <div class="story-cut__hydrating-row story-cut__hydrating-row--video">
-              <q-skeleton animation="wave" class="story-cut__sk-icon" />
-              <q-skeleton animation="wave" class="story-cut__sk-lane story-cut__sk-lane--video" />
+            <!-- Ruler (20px), offset past the 60px gutter like the real time-ruler. -->
+            <div class="story-cut__hydrating-ruler" aria-hidden="true">
+              <q-skeleton animation="wave" class="story-cut__sk-ruler" />
             </div>
-            <div class="story-cut__hydrating-row">
-              <q-skeleton animation="wave" class="story-cut__sk-icon" />
-              <q-skeleton animation="wave" class="story-cut__sk-lane" />
-            </div>
-            <div class="story-cut__hydrating-row">
-              <q-skeleton animation="wave" class="story-cut__sk-icon" />
-              <q-skeleton animation="wave" class="story-cut__sk-lane" />
+
+            <!-- 3 lanes: gutter icon (60px) + lane bar; heights 50 / 25 / 25, 8px gaps. -->
+            <div class="story-cut__hydrating-tracks" aria-hidden="true">
+              <div class="story-cut__hydrating-row story-cut__hydrating-row--video">
+                <div class="story-cut__hydrating-gutter">
+                  <q-skeleton animation="wave" class="story-cut__sk-icon" />
+                </div>
+                <q-skeleton animation="wave" class="story-cut__sk-lane story-cut__sk-lane--video" />
+              </div>
+              <div class="story-cut__hydrating-row story-cut__hydrating-row--audio">
+                <div class="story-cut__hydrating-gutter">
+                  <q-skeleton animation="wave" class="story-cut__sk-icon" />
+                </div>
+                <q-skeleton animation="wave" class="story-cut__sk-lane story-cut__sk-lane--audio" />
+              </div>
+              <div class="story-cut__hydrating-row story-cut__hydrating-row--audio">
+                <div class="story-cut__hydrating-gutter">
+                  <q-skeleton animation="wave" class="story-cut__sk-icon" />
+                </div>
+                <q-skeleton animation="wave" class="story-cut__sk-lane story-cut__sk-lane--audio" />
+              </div>
             </div>
           </div>
 
@@ -840,9 +857,17 @@ defineExpose({ persistEdit, rehydrate })
   color: var(--imago-text-faint);
 }
 
-// ── Hydration SKELETON (mirrors the editor: player · transport · 3 tracks) ──────
-// Opaque void base covering the not-yet-hydrated editor; a wave-animated skeleton
-// shaped like the real layout so the ~7s wait reads as intentional.
+// ── Hydration SKELETON — pixel-coincident with the real editor (no jump on swap) ──
+// Opaque void base covering the not-yet-hydrated editor. Layout mirrors the real
+// metrics EXACTLY so the skeleton and the hydrated editor occupy the same boxes.
+// Source of truth (mirrored — keep in sync):
+//   • timeline pane   = TIMELINE_PANE_PX 300px  (construct-editor-styles.patch.ts)
+//   • transport bar   = 46px               (toolbar-styles.ts .toolbar min-height)
+//   • time ruler      = 20px               (time-ruler/styles.ts)
+//   • gutter          = 60px               (timeline-gutter.ts GUTTER_PX)
+//   • lanes           = 50 / 25 / 25 px    (timeline-lanes.ts VIDEO/AUDIO_LANE_PX)
+//   • inter-lane gap  = 8px                (timeline-lanes.ts LANE_GAP_PX)
+// No outer padding/gap → the player/timeline split is exact (player = height − 300).
 .story-cut__hydrating {
   position: absolute;
   inset: 0;
@@ -850,8 +875,6 @@ defineExpose({ persistEdit, rehydrate })
   background: var(--imago-bg-void);
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px 18px;
 }
 
 // Skeletons: slightly lighter than the panel so they read on the dark bg, with a
@@ -870,7 +893,7 @@ defineExpose({ persistEdit, rehydrate })
   );
 }
 
-// Top — player preview: a large centered 9:16 block filling the region above.
+// Top — player region = editor height − 300 (flex:1 above the fixed 300px pane).
 .story-cut__hydrating-player {
   flex: 1 1 auto;
   min-height: 0;
@@ -879,21 +902,29 @@ defineExpose({ persistEdit, rehydrate })
   justify-content: center;
 }
 
+// Centered 9:16 preview sized to the region HEIGHT (width = height × 9/16).
 .story-cut__hydrating .story-cut__sk-player {
   height: 100%;
   aspect-ratio: 9 / 16;
-  max-width: 60%;
-  border-radius: 12px;
+  border-radius: 8px;
 }
 
-// Middle — transport bar: three control clusters (left tools · play+timecode · right tools).
-.story-cut__hydrating-transport {
+// Bottom — the FIXED 300px timeline pane (height bound to TIMELINE_PANE_PX inline).
+.story-cut__hydrating-timeline {
   flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+// Transport bar — real .toolbar min-height 46px.
+.story-cut__hydrating-transport {
+  flex: 0 0 46px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 0 4px;
+  padding: 0 12px;
 }
 
 .story-cut__hydrating-group {
@@ -903,24 +934,39 @@ defineExpose({ persistEdit, rehydrate })
 }
 
 .story-cut__hydrating .story-cut__sk-ctl {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
 }
 
 .story-cut__hydrating .story-cut__sk-play {
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
 }
 
 .story-cut__hydrating .story-cut__sk-timecode {
   width: 92px;
-  height: 14px;
+  height: 12px;
   border-radius: 4px;
 }
 
-// Bottom — 3 timeline tracks: gutter icon + lane; row 1 taller (video filmstrip).
+// Time ruler — real height 20px, content offset past the 60px gutter.
+.story-cut__hydrating-ruler {
+  flex: 0 0 20px;
+  display: flex;
+  align-items: center;
+  padding-left: 60px;
+}
+
+.story-cut__hydrating .story-cut__sk-ruler {
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 2px;
+}
+
+// Lanes — each row = 60px gutter icon + lane bar; 50 / 25 / 25 px with 8px gaps.
 .story-cut__hydrating-tracks {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -928,24 +974,35 @@ defineExpose({ persistEdit, rehydrate })
 
 .story-cut__hydrating-row {
   display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+.story-cut__hydrating-row--video { height: 50px; }
+.story-cut__hydrating-row--audio { height: 25px; }
+
+// Gutter — real GUTTER_PX 60px column, icon centered per lane.
+.story-cut__hydrating-gutter {
+  flex: 0 0 60px;
+  display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
 }
 
 .story-cut__hydrating .story-cut__sk-icon {
-  flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
+}
+
+.story-cut__hydrating-row--audio .story-cut__sk-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .story-cut__hydrating .story-cut__sk-lane {
   flex: 1 1 auto;
-  height: 32px;
-  border-radius: 6px;
-}
-
-.story-cut__hydrating .story-cut__sk-lane--video {
-  height: 46px;
+  height: 100%;
+  border-radius: 4px;
 }
 
 // Subtle centered label with a shimmer spinner, pinned near the top.
