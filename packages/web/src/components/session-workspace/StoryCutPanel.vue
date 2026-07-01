@@ -172,6 +172,21 @@
            chip on the RIGHT (always shown — BGM is a property of the whole cut).
            Replaces the old always-on all-boundaries dock. -->
       <div class="story-cut__bar" data-testid="cut-controls">
+        <!-- While hydrating, skeletonize the footer too (openimago-l9qs) so the whole
+             panel top-to-bottom is one cohesive skeleton — no real transition hint or
+             BGM control pokes through. -->
+        <template v-if="hydrating">
+          <div class="story-cut__bar-context" aria-hidden="true">
+            <q-skeleton animation="wave" class="story-cut__sk-hint" />
+          </div>
+          <div class="story-cut__bgm-chip story-cut__bgm-chip--sk" aria-hidden="true">
+            <q-skeleton animation="wave" type="circle" class="story-cut__sk-bgm-icon" />
+            <q-skeleton animation="wave" class="story-cut__sk-bgm-label" />
+            <q-skeleton animation="wave" class="story-cut__sk-bgm-btn" />
+          </div>
+        </template>
+
+        <template v-else>
         <!-- LEFT: contextual transition editor for the selected clip's boundary. -->
         <div class="story-cut__bar-context">
           <div
@@ -268,6 +283,7 @@
             </ul>
           </div>
         </div>
+        </template>
       </div>
     </template>
   </section>
@@ -1035,6 +1051,53 @@ defineExpose({ persistEdit, rehydrate })
   gap: 8px;
   font-size: 12.5px;
   color: var(--imago-text-faint);
+}
+
+// ── Footer (operations bar) skeleton — same dark wave treatment as the editor ──
+// So the whole panel is one cohesive skeleton during hydration (no real transition
+// hint / BGM control poking through). These skeletons live in .story-cut__bar, not
+// .story-cut__hydrating, so they need the base color rule applied here too.
+.story-cut__bar :deep(.q-skeleton) {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+}
+
+.story-cut__bar :deep(.q-skeleton--anim-wave)::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--imago-neon-cyan) 8%, rgba(255, 255, 255, 0.08)),
+    transparent
+  );
+}
+
+.story-cut__bar .story-cut__sk-hint {
+  width: 168px;
+  height: 12px;
+  border-radius: 4px;
+}
+
+.story-cut__bgm-chip--sk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.story-cut__bar .story-cut__sk-bgm-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.story-cut__bar .story-cut__sk-bgm-label {
+  width: 104px;
+  height: 12px;
+  border-radius: 4px;
+}
+
+.story-cut__bar .story-cut__sk-bgm-btn {
+  width: 40px;
+  height: 20px;
+  border-radius: 6px;
 }
 
 // Quiet inline notice — NOT a loud alert. Muted pink derived from the token so no
