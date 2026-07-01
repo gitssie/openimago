@@ -126,10 +126,16 @@
               </label>
               <label class="param-field param-field--half">
                 <span class="param-field__label">比例</span>
-                <select v-model="paramForm.aspectRatio" class="param-field__select">
-                  <option value="">默认</option>
-                  <option v-for="ratio in ASPECT_RATIOS" :key="ratio" :value="ratio">{{ ratio }}</option>
-                </select>
+                <q-select
+                  v-model="paramForm.aspectRatio"
+                  :options="aspectRatioSelectOptions"
+                  dark
+                  outlined
+                  dense
+                  emit-value
+                  map-options
+                  class="param-field__control"
+                />
               </label>
             </div>
 
@@ -380,6 +386,13 @@ const advancedJson = ref('')
 const jsonError = ref('')
 
 const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:2'] as const
+
+/** q-select options — `默认` maps to '' so an unset ratio is omitted from the rerun
+ *  payload exactly as the native `<option value="">` did. */
+const aspectRatioSelectOptions = computed(() => [
+  { label: '默认', value: '' },
+  ...ASPECT_RATIOS.map((ratio) => ({ label: ratio, value: ratio })),
+])
 
 function extractParam(value: unknown, fallback: string): string {
   return typeof value === 'string' ? value : fallback
@@ -941,6 +954,24 @@ function kindChip(kind: WorkspaceArtifact['kind']): string {
 .param-field__select {
   appearance: none;
   cursor: pointer;
+}
+
+/* Quasar q-select cohesion with the param-editor dark surface. */
+.param-field__control :deep(.q-field__control) {
+  min-height: 34px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--imago-text-primary);
+  font-size: 12px;
+}
+
+.param-field__control.q-field--outlined :deep(.q-field__control)::before {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.param-field__control.q-field--outlined.q-field--focused :deep(.q-field__control)::after,
+.param-field__control.q-field--outlined:hover :deep(.q-field__control)::before {
+  border-color: rgba(0, 240, 255, 0.35);
 }
 
 .param-field-row {

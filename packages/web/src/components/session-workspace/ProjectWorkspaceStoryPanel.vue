@@ -51,27 +51,21 @@
           当前集数
         </label>
         <div class="story-panel__select-wrap">
-          <select
-            id="story-episode-select"
+          <q-select
             v-model="selectedEpisodeIdModel"
-            class="story-panel__select"
-            :disabled="episodes.length === 0 || isLoading"
+            for="story-episode-select"
+            :options="episodeSelectOptions"
+            :disable="episodes.length === 0 || isLoading"
+            :display-value="episodes.length === 0 ? '暂无集数' : undefined"
+            dark
+            outlined
+            dense
+            emit-value
+            map-options
             aria-label="选择集数"
-            @change="handleEpisodeChange(($event.target as HTMLSelectElement).value)"
-          >
-            <option v-if="episodes.length === 0" value="" disabled>
-              暂无集数
-            </option>
-            <option
-              v-for="episode in episodes"
-              :key="episode.id"
-              :value="episode.id"
-            >
-              EP{{ String(episode.episodeNumber).padStart(2, '0') }} ·
-              {{ episode.title || '未命名' }}
-            </option>
-          </select>
-          <q-icon name="expand_more" size="18px" class="story-panel__select-icon" />
+            class="story-panel__q-select"
+            @update:model-value="handleEpisodeChange"
+          />
         </div>
         <span
           v-if="currentEpisode"
@@ -752,6 +746,15 @@ const sceneFilter = ref<string | null>(null)
 
 const SPROCKET_COUNT = 28
 
+/** q-select options for the episode picker — same label/value shape the native
+ *  <option>s produced (value = episode id). */
+const episodeSelectOptions = computed(() =>
+  props.episodes.map((episode) => ({
+    label: `EP${String(episode.episodeNumber).padStart(2, '0')} · ${episode.title || '未命名'}`,
+    value: episode.id,
+  })),
+)
+
 const ariaLabel = computed(() => {
   const ep = currentEpisode.value
   if (!ep) return '故事工作台'
@@ -1093,37 +1096,37 @@ function runStatusLabel(status: StoryRunSummary['status']): string {
   align-items: center;
 }
 
-.story-panel__select {
-  appearance: none;
-  -webkit-appearance: none;
+// ── Episode picker (Quasar q-select on the dark imago surface) ───────────────
+.story-panel__q-select {
   min-width: 220px;
   max-width: 320px;
-  padding: 8px 32px 8px 12px;
-  border: 1px solid var(--imago-border-light);
-  border-radius: var(--imago-radius-md);
-  background: var(--imago-bg-surface);
-  color: var(--imago-text-primary);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: border-color var(--imago-ease-fast), background var(--imago-ease-fast);
 
-  &:hover { border-color: var(--imago-border-cyan); }
-  &:focus-visible {
-    outline: 2px solid var(--imago-neon-cyan);
-    outline-offset: 2px;
+  :deep(.q-field__control) {
+    border-radius: var(--imago-radius-md);
+    background: var(--imago-bg-surface);
+    color: var(--imago-text-primary);
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  &.q-field--outlined :deep(.q-field__control)::before {
+    border-color: var(--imago-border-light);
+  }
+
+  &.q-field--outlined:hover :deep(.q-field__control)::before {
+    border-color: var(--imago-border-cyan);
+  }
+
+  &.q-field--outlined.q-field--focused :deep(.q-field__control)::after {
     border-color: var(--imago-border-cyan-active);
   }
-  &:disabled { opacity: 0.5; cursor: not-allowed; }
-}
 
-.story-panel__select-icon {
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--imago-text-muted);
-  pointer-events: none;
+  &.q-field--disabled { opacity: 0.5; }
+
+  :deep(.q-field__native),
+  :deep(.q-field__append) {
+    color: var(--imago-text-muted);
+  }
 }
 
 .story-panel__episode-status {
