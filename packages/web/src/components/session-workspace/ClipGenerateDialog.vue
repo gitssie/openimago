@@ -273,14 +273,13 @@
             aria-label="提及元素"
           >
             <q-tooltip>提及元素（角色 / 场景）</q-tooltip>
-            <q-menu dark anchor="top right" self="bottom right" class="clip-gen__mention-menu">
+            <q-menu ref="mentionMenuRef" dark anchor="top right" self="bottom right" class="clip-gen__mention-menu">
               <q-list dark dense style="min-width: 220px">
                 <q-item-label header>提及元素</q-item-label>
                 <template v-if="elements.length > 0">
                   <q-item
                     v-for="el in elements"
                     :key="el.id"
-                    v-close-popup
                     clickable
                     :aria-label="`提及 ${el.title}`"
                     @click="onMentionElement(el)"
@@ -434,6 +433,9 @@ const promptChips = computed(() =>
 const fileInputEl = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
 const dragOver = ref(false)
+// The inner @ element-picker q-menu. Closed explicitly on pick so ONLY it dismisses —
+// v-close-popup would propagate up and close the outer persistent composer q-menu too.
+const mentionMenuRef = ref<{ hide: () => void } | null>(null)
 
 // Object URLs created for authed asset thumbnails, tracked so we can revoke them
 // (openimago-7k46 fix). Asset download URLs (/api/platform/assets/:id/download) are
@@ -607,6 +609,8 @@ function elementThumb(el: ElementCardVM): string {
 /** @-mention an element: insert its chip token into the prompt AND add its concept-art
  *  reference image to form.referenceImages (openimago-0f27). */
 function onMentionElement(el: ElementCardVM): void {
+  // Close ONLY the inner picker menu — never the outer persistent composer q-menu.
+  mentionMenuRef.value?.hide()
   const token = elementRefToken(el.title)
   if (!token) return
   form.prompt = appendMention(form.prompt, token)
