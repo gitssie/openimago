@@ -138,6 +138,22 @@ export const layer = Layer.effect(
 
           try {
             const result = yield* provider.generateImage(params)
+            // Provider succeeded — confirm the pre-charge so the expiry
+            // safety net (ADR 0010) won't auto-refund a good charge.
+            // Best-effort: a confirm failure must NOT fail the generation.
+            yield* billing.reportConfirm({
+              usage: estimatedUsage,
+              toolName: "image_generate",
+              sessionId: params.sessionId ?? "",
+              directory: params.directory ?? "",
+              originalChargeSourceId: sourceId,
+            }).pipe(
+              Effect.catchAll((confirmError) =>
+                Effect.logError(
+                  `Confirm failed after provider success: ${(confirmError as Error).message}`,
+                ),
+              ),
+            )
             return result
           } catch (error) {
             // Provider failed after pre-charge — refund
@@ -183,6 +199,22 @@ export const layer = Layer.effect(
 
           try {
             const result = yield* provider.generateVideo(params)
+            // Provider succeeded — confirm the pre-charge so the expiry
+            // safety net (ADR 0010) won't auto-refund a good charge.
+            // Best-effort: a confirm failure must NOT fail the generation.
+            yield* billing.reportConfirm({
+              usage: estimatedUsage,
+              toolName: "video_generate",
+              sessionId: params.sessionId ?? "",
+              directory: params.directory ?? "",
+              originalChargeSourceId: sourceId,
+            }).pipe(
+              Effect.catchAll((confirmError) =>
+                Effect.logError(
+                  `Confirm failed after provider success: ${(confirmError as Error).message}`,
+                ),
+              ),
+            )
             return result
           } catch (error) {
             // Provider failed after pre-charge — refund
@@ -238,6 +270,22 @@ export const layer = Layer.effect(
 
           try {
             const result = yield* provider.generateAudio(params)
+            // Provider succeeded — confirm the pre-charge so the expiry
+            // safety net (ADR 0010) won't auto-refund a good charge.
+            // Best-effort: a confirm failure must NOT fail the generation.
+            yield* billing.reportConfirm({
+              usage: estimatedUsage,
+              toolName: "audio_generate",
+              sessionId: params.sessionId ?? "",
+              directory: params.directory ?? "",
+              originalChargeSourceId: sourceId,
+            }).pipe(
+              Effect.catchAll((confirmError) =>
+                Effect.logError(
+                  `Confirm failed after provider success: ${(confirmError as Error).message}`,
+                ),
+              ),
+            )
             return result
           } catch (error) {
             // Provider failed after pre-charge — refund
