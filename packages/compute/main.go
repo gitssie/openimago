@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/openimago/billing-cdc-worker/cdc"
 	"github.com/openimago/billing-cdc-worker/config"
@@ -93,6 +94,16 @@ func main() {
 	log.Println("Starting CDC connector...")
 	connector.Start(ctx)
 	log.Println("CDC connector started successfully")
+
+	// --- Start media pre-charge expiry releaser (ADR 0010) ---
+	// Single-instance worker = single runner, so this in-process ticker needs no
+	// distributed lock. Runs alongside the CDC consumer against the same repo.
+	expiryInterval := time.Duration(cfg.ExpiryTickIntervalMs) * time.Millisecond
+	releaser := cdc.NewExpiryReleaser(billingRepo, expiryInterval)
+	releaseCtx, cancelRelease := context.WithCancel(context.Background())
+	defer cancelRelease()
+	go releaser.Run(releaseCtx)
+	log.Printf("Expiry releaser scheduled every %s", expiryInterval)
 
 	// --- Start HTTP health endpoint ---
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

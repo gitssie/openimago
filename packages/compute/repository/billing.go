@@ -47,9 +47,12 @@ type BillingLedger struct {
 	AmountMicros       int64     `gorm:"column:amount_micros"`
 	BalanceAfterMicros int64     `gorm:"column:balance_after_micros"`
 	Currency           string    `gorm:"column:currency"`
-	PricingSnapshot    string    `gorm:"column:pricing_snapshot;type:jsonb"`
-	Metadata           string    `gorm:"column:metadata;type:jsonb"`
-	CreatedAt          time.Time `gorm:"column:created_at"`
+	PricingSnapshot    string     `gorm:"column:pricing_snapshot;type:jsonb"`
+	Metadata           string     `gorm:"column:metadata;type:jsonb"`
+	CreatedAt          time.Time  `gorm:"column:created_at"`
+	// ExpiresAt is the media pre-charge expiry stamp (ADR 0010). NULL means no
+	// TTL (a session-token charge) or a confirmed/refunded pre-charge.
+	ExpiresAt *time.Time `gorm:"column:expires_at"`
 }
 
 func (BillingLedger) TableName() string { return "billing_ledger" }
@@ -351,6 +354,165 @@ func escapeJson(s string) string {
 		return "null"
 	}
 	return string(b)
+}
+
+// ReleasedPrecharge describes a single expired media pre-charge that was
+// released (auto-refunded) by ReleaseExpiredPrecharges.
+type ReleasedPrecharge struct {
+	// ChargeSourceID is the source_id of the original pre-charge entry.
+	ChargeSourceID string
+	AccountID      string
+	UserID         string
+	// RefundMicros is the positive amount credited back to the account.
+	RefundMicros int64
+}
+
+// ReleaseExpiredPrecharges finds media pre-charges that expired while still
+// unconfirmed and unrefunded, and auto-refunds each in its own idempotent
+// transaction (ADR 0010 expiry safety net).
+//
+// A stuck pre-charge is a billing_ledger row with:
+//   entry_type='charge' AND source_type='toolcall'
+//   AND expires_at IS NOT NULL AND expires_at < NOW()
+//   AND no matching refund entry.
+//
+// Confirm sets source_status='confirmed' and clears expires_at, so a confirmed
+// (or already-refunded) pre-charge is excluded by construction. A single scan
+// query per tick locates the candidates; each release re-checks under a row
+// lock, making re-runs idempotent (the refund written on a prior tick removes
+// the charge from the next scan).
+func (r *BillingRepository) ReleaseExpiredPrecharges() ([]ReleasedPrecharge, error) {
+	charges, err := r.findExpiredPrecharges()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query expired pre-charges: %w", err)
+	}
+
+	var released []ReleasedPrecharge
+	var errs []error
+	for i := range charges {
+		charge := charges[i]
+		ok, err := r.releaseOnePrecharge(&charge)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("release pre-charge %s: %w", charge.SourceID, err))
+			continue
+		}
+		if ok {
+			released = append(released, ReleasedPrecharge{
+				ChargeSourceID: charge.SourceID,
+				AccountID:      charge.AccountID,
+				UserID:         charge.UserID,
+				RefundMicros:   -charge.AmountMicros,
+			})
+		}
+	}
+
+	return released, errors.Join(errs...)
+}
+
+// findExpiredPrecharges scans for stuck pre-charges in a single query.
+func (r *BillingRepository) findExpiredPrecharges() ([]BillingLedger, error) {
+	var charges []BillingLedger
+	err := r.db.Raw(`
+		SELECT * FROM billing_ledger c
+		WHERE c.entry_type = 'charge'
+		  AND c.source_type = 'toolcall'
+		  AND c.expires_at IS NOT NULL
+		  AND c.expires_at < NOW()
+		  AND NOT EXISTS (
+			SELECT 1 FROM billing_ledger r
+			WHERE r.entry_type = 'refund'
+			  AND r.account_id = c.account_id
+			  AND r.metadata->>'originalChargeSourceId' = c.source_id
+		  )
+	`).Scan(&charges).Error
+	if err != nil {
+		return nil, err
+	}
+	return charges, nil
+}
+
+// releaseOnePrecharge writes a refund/release entry for a single expired
+// pre-charge in one transaction. Returns false without error when a refund
+// already exists (idempotent no-op).
+func (r *BillingRepository) releaseOnePrecharge(charge *BillingLedger) (bool, error) {
+	released := false
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		// Lock the account row so balance updates serialize.
+		var account BillingAccount
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", charge.AccountID).
+			First(&account).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("billing account not found: %s", charge.AccountID)
+			}
+			return fmt.Errorf("failed to lock account: %w", err)
+		}
+
+		// Idempotency guard: re-check under lock that no refund exists yet.
+		var refundCount int64
+		err = tx.Model(&BillingLedger{}).
+			Where("entry_type = ? AND account_id = ? AND metadata->>'originalChargeSourceId' = ?",
+				"refund", charge.AccountID, charge.SourceID).
+			Count(&refundCount).Error
+		if err != nil {
+			return fmt.Errorf("failed to check existing refund: %w", err)
+		}
+		if refundCount > 0 {
+			return nil // already refunded — no-op
+		}
+
+		refundMicros := -charge.AmountMicros
+		newBalance := account.BalanceMicros + refundMicros
+
+		err = tx.Model(&BillingAccount{}).
+			Where("id = ?", charge.AccountID).
+			Updates(map[string]interface{}{
+				"balance_micros": newBalance,
+				"updated_at":     time.Now(),
+			}).Error
+		if err != nil {
+			return fmt.Errorf("failed to update balance: %w", err)
+		}
+
+		refund := BillingLedger{
+			ID:                 "bdl_" + generateShortUUID(),
+			AccountID:          charge.AccountID,
+			UserID:             charge.UserID,
+			WorkspaceID:        charge.WorkspaceID,
+			ProjectID:          charge.ProjectID,
+			SessionID:          charge.SessionID,
+			EntryType:          "refund",
+			SourceType:         "toolcall_refund",
+			SourceID:           "tcr_" + generateShortUUID(),
+			SourceStatus:       "completed",
+			AmountMicros:       refundMicros,
+			BalanceAfterMicros: newBalance,
+			Currency:           charge.Currency,
+			PricingSnapshot:    "{}",
+			Metadata:           buildReleaseMetadata(charge.SourceID),
+			CreatedAt:          time.Now(),
+		}
+		if err := tx.Create(&refund).Error; err != nil {
+			return fmt.Errorf("failed to insert refund entry: %w", err)
+		}
+
+		released = true
+		return nil
+	})
+	return released, err
+}
+
+// buildReleaseMetadata builds the refund metadata JSON. The
+// originalChargeSourceId key mirrors the TS refundToolCallPrecharge contract so
+// the "no matching refund" scan dedups correctly.
+func buildReleaseMetadata(originalChargeSourceID string) string {
+	return fmt.Sprintf(
+		`{"originalChargeSourceId": %s, "reason": %s, "released_by": %s}`,
+		escapeJson(originalChargeSourceID),
+		escapeJson("expiry_release"),
+		escapeJson("cdc-worker"),
+	)
 }
 
 // Close closes the underlying database connection pool.

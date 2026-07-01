@@ -31,6 +31,7 @@ func TestLoadConfigWithRequiredEnvVars(t *testing.T) {
 	assert.Equal(t, "openimago_billing", cfg.TopicPrefix)
 	assert.Equal(t, "never", cfg.SnapshotMode)
 	assert.Equal(t, int64(60000), cfg.OffsetFlushIntervalMs)
+	assert.Equal(t, int64(60000), cfg.ExpiryTickIntervalMs)
 
 	// Storage mode detection
 	assert.False(t, cfg.UsesJDBCOffsetStorage())
@@ -40,6 +41,18 @@ func TestLoadConfigWithRequiredEnvVars(t *testing.T) {
 	assert.Equal(t, "postgresql://user:pass@localhost:5432/openimago", cfg.BillingDBURL)
 	assert.Equal(t, "user", cfg.BillingDBUser)
 	assert.Equal(t, "pass", cfg.BillingDBPassword)
+}
+
+func TestExpiryTickIntervalOverrideAndValidation(t *testing.T) {
+	env := requiredEnv()
+	env["CDC_EXPIRY_TICK_INTERVAL_MS"] = "30000"
+	cfg, err := fromEnvMap(env)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(30000), cfg.ExpiryTickIntervalMs)
+
+	env["CDC_EXPIRY_TICK_INTERVAL_MS"] = "0"
+	_, err = fromEnvMap(env)
+	assert.Error(t, err, "non-positive expiry tick interval must be rejected")
 }
 
 func TestDetectJdbcStorageWhenConfigured(t *testing.T) {

@@ -14,6 +14,10 @@ const (
 	defaultTopicPrefix       = "openimago_billing"
 	defaultSnapshotMode      = "never"
 	defaultOffsetFlushIntervalMs = 60000
+	// defaultExpiryTickIntervalMs is the media pre-charge expiry sweep interval
+	// (ADR 0010). Operational tuning knob — same class as the offset flush
+	// interval — so an explicit default is acceptable here.
+	defaultExpiryTickIntervalMs = 60000
 )
 
 // AppConfig holds all application configuration loaded from environment variables.
@@ -41,6 +45,8 @@ type AppConfig struct {
 	TopicPrefix          string
 	SnapshotMode         string
 	OffsetFlushIntervalMs int64
+	// ExpiryTickIntervalMs is how often the media pre-charge expiry sweeper runs.
+	ExpiryTickIntervalMs int64
 
 	BillingDBURL      string
 	BillingDBUser     string
@@ -112,6 +118,15 @@ func fromEnvMap(env map[string]string) (*AppConfig, error) {
 		return nil, fmt.Errorf("invalid CDC_OFFSET_FLUSH_INTERVAL_MS: %w", err)
 	}
 
+	expiryTickIntervalStr := envOrDefault(env, "CDC_EXPIRY_TICK_INTERVAL_MS", strconv.Itoa(defaultExpiryTickIntervalMs))
+	expiryTickIntervalMs, err := strconv.ParseInt(expiryTickIntervalStr, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid CDC_EXPIRY_TICK_INTERVAL_MS: %w", err)
+	}
+	if expiryTickIntervalMs <= 0 {
+		return nil, fmt.Errorf("CDC_EXPIRY_TICK_INTERVAL_MS must be positive, got %d", expiryTickIntervalMs)
+	}
+
 	// Billing write connection — defaults to same as CDC DB if not explicitly set
 	billingDBURL := envOrDefault(
 		env, "BILLING_DB_URL",
@@ -138,6 +153,7 @@ func fromEnvMap(env map[string]string) (*AppConfig, error) {
 		TopicPrefix:               topicPrefix,
 		SnapshotMode:              snapshotMode,
 		OffsetFlushIntervalMs:     offsetFlushIntervalMs,
+		ExpiryTickIntervalMs:      expiryTickIntervalMs,
 		BillingDBURL:              billingDBURL,
 		BillingDBUser:             billingDBUser,
 		BillingDBPassword:         billingDBPassword,
