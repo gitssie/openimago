@@ -24,6 +24,8 @@ beforeAll(async () => {
 
   // Set internal API key for testing
   process.env.OPENIMAGO_INTERNAL_API_KEY = "test-internal-key-123"
+  // ADR 0010: media pre-charge TTL (no hidden default — must be configured)
+  process.env.OPENIMAGO_MEDIA_PRECHARGE_TTL_SECONDS = "1800"
 
   // Create a user directly (bypass auth)
   await db
@@ -76,6 +78,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   delete process.env.OPENIMAGO_INTERNAL_API_KEY
+  delete process.env.OPENIMAGO_MEDIA_PRECHARGE_TTL_SECONDS
   await teardown()
 })
 
@@ -451,5 +454,190 @@ describe("POST /api/platform/billing/media-charge/refund", () => {
     const entry = body.entry as Record<string, unknown>
     expect(entry.entryType).toBe("refund")
     expect(entry.amountMicros).toBe(200)
+  })
+})
+
+// ── ADR 0010: pre-charge expiry stamp + confirm ──────────────────────────────
+
+/** Post a pre-charge with sufficient balance and return the created entry. */
+async function precharge(overrides?: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const account = await billingService.getOrCreateAccount(TEST_USER_ID)
+  await db.execute(`UPDATE billing_accounts SET balance_micros = 100000 WHERE id = '${account.id}'`)
+
+  const res = await app.fetch(
+    new Request("http://localhost/api/platform/billing/media-charge", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify(makeChargeBody(overrides)),
+    }),
+  )
+  expect(res.status).toBe(201)
+  const body = await res.json() as Record<string, unknown>
+  return body.entry as Record<string, unknown>
+}
+
+describe("ADR 0010: pre-charge expiry stamp", () => {
+  test("pre-charge stamps expiresAt = now + TTL", async () => {
+    const before = Date.now()
+    const entry = await precharge()
+
+    // expiresAt must be present on the pre-charge entry
+    expect(entry.expiresAt).toBeTruthy()
+    const expiresAt = new Date(entry.expiresAt as string).getTime()
+
+    // TTL is 1800s; expiresAt should land in [before+1800s, now+1800s+slack]
+    expect(expiresAt).toBeGreaterThanOrEqual(before + 1800 * 1000 - 1000)
+    expect(expiresAt).toBeLessThanOrEqual(Date.now() + 1800 * 1000 + 5000)
+
+    // The stored ledger row carries expiresAt and is not yet confirmed
+    const stored = await billingService.getLedgerEntry(entry.id as string)
+    expect(stored?.expiresAt).toBeTruthy()
+    expect(stored?.sourceStatus).toBe("pending")
+  })
+
+  test("missing TTL config → clear 500 failure (no hidden default)", async () => {
+    const saved = process.env.OPENIMAGO_MEDIA_PRECHARGE_TTL_SECONDS
+    delete process.env.OPENIMAGO_MEDIA_PRECHARGE_TTL_SECONDS
+    try {
+      const account = await billingService.getOrCreateAccount(TEST_USER_ID)
+      await db.execute(`UPDATE billing_accounts SET balance_micros = 100000 WHERE id = '${account.id}'`)
+
+      const res = await app.fetch(
+        new Request("http://localhost/api/platform/billing/media-charge", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify(makeChargeBody()),
+        }),
+      )
+
+      expect(res.status).toBe(500)
+      const body = await res.json() as Record<string, unknown>
+      expect((body.error as Record<string, unknown>).code).toBe("CONFIGURATION_REQUIRED")
+      expect((body.error as Record<string, unknown>).message).toContain(
+        "OPENIMAGO_MEDIA_PRECHARGE_TTL_SECONDS",
+      )
+    } finally {
+      process.env.OPENIMAGO_MEDIA_PRECHARGE_TTL_SECONDS = saved
+    }
+  })
+})
+
+describe("POST /api/platform/billing/media-charge/confirm", () => {
+  function confirmBody(overrides?: Record<string, unknown>): Record<string, unknown> {
+    return {
+      sessionId: TEST_SESSION_ID,
+      directory: TEST_DIRECTORY,
+      originalChargeSourceId: "tch_unknown",
+      ...overrides,
+    }
+  }
+
+  test("rejects missing x-api-key", async () => {
+    const res = await app.fetch(
+      new Request("http://localhost/api/platform/billing/media-charge/confirm", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(confirmBody()),
+      }),
+    )
+    expect(res.status).toBe(401)
+  })
+
+  test("rejects missing originalChargeSourceId", async () => {
+    const res = await app.fetch(
+      new Request("http://localhost/api/platform/billing/media-charge/confirm", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ sessionId: TEST_SESSION_ID, directory: TEST_DIRECTORY }),
+      }),
+    )
+    expect(res.status).toBe(400)
+    const body = await res.json() as Record<string, unknown>
+    expect((body.error as Record<string, unknown>).code).toBe("BAD_REQUEST")
+  })
+
+  test("confirm marks entry CONFIRMED and clears expiresAt", async () => {
+    const entry = await precharge()
+    expect(entry.expiresAt).toBeTruthy()
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/platform/billing/media-charge/confirm", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify(confirmBody({ originalChargeSourceId: entry.sourceId })),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as Record<string, unknown>
+    const confirmed = body.entry as Record<string, unknown>
+    expect(confirmed.sourceStatus).toBe("confirmed")
+    expect(confirmed.expiresAt).toBeNull()
+
+    // DB row reflects the confirmation
+    const stored = await billingService.getLedgerEntry(entry.id as string)
+    expect(stored?.sourceStatus).toBe("confirmed")
+    expect(stored?.expiresAt).toBeNull()
+  })
+
+  test("confirm does not change the account balance", async () => {
+    const entry = await precharge()
+    const account = await billingService.getAccount(TEST_USER_ID)
+    const balanceBefore = account!.balanceMicros
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/platform/billing/media-charge/confirm", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify(confirmBody({ originalChargeSourceId: entry.sourceId })),
+      }),
+    )
+    expect(res.status).toBe(200)
+
+    const after = await billingService.getAccount(TEST_USER_ID)
+    expect(after!.balanceMicros).toBe(balanceBefore)
+  })
+
+  test("confirm is idempotent (double confirm = no-op)", async () => {
+    const entry = await precharge()
+
+    const first = await app.fetch(
+      new Request("http://localhost/api/platform/billing/media-charge/confirm", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify(confirmBody({ originalChargeSourceId: entry.sourceId })),
+      }),
+    )
+    expect(first.status).toBe(200)
+
+    const second = await app.fetch(
+      new Request("http://localhost/api/platform/billing/media-charge/confirm", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify(confirmBody({ originalChargeSourceId: entry.sourceId })),
+      }),
+    )
+    expect(second.status).toBe(200)
+    const body = await second.json() as Record<string, unknown>
+    const confirmed = body.entry as Record<string, unknown>
+    expect(confirmed.sourceStatus).toBe("confirmed")
+    expect(confirmed.expiresAt).toBeNull()
+  })
+
+  test("confirm on unknown sourceId → 404", async () => {
+    // Ensure the account exists so we reach the sourceId lookup (not account 404)
+    await billingService.getOrCreateAccount(TEST_USER_ID)
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/platform/billing/media-charge/confirm", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify(confirmBody({ originalChargeSourceId: "tch_does_not_exist" })),
+      }),
+    )
+
+    expect(res.status).toBe(404)
+    const body = await res.json() as Record<string, unknown>
+    expect((body.error as Record<string, unknown>).code).toBe("CHARGE_NOT_FOUND")
   })
 })

@@ -13,6 +13,7 @@ import { db } from "../db/client"
 import { SessionTable } from "../db/session-schema"
 import { WorkspaceTable } from "../db/workspace-schema"
 import { billingService } from "./service"
+import { MEDIA_PRECHARGE_TTL_NOT_CONFIGURED, MEDIA_PRECHARGE_TTL_ENV } from "./config"
 import { logger } from "../server/logger"
 
 // ── Validation ──────────────────────────────────────────────────────────────
@@ -41,6 +42,12 @@ export interface ParsedRefundRequest {
   toolName?: string
   mediaKind?: string
   metadata?: unknown
+}
+
+export interface ParsedConfirmRequest {
+  sessionId: string
+  directory: string
+  originalChargeSourceId: string
 }
 
 export interface ValidationError {
@@ -128,6 +135,26 @@ export function parseRefundBody(body: Record<string, unknown>): ParsedRefundRequ
   }
 }
 
+/**
+ * Parse and validate a media pre-charge confirm request body.
+ */
+export function parseConfirmBody(body: Record<string, unknown>): ParsedConfirmRequest | ValidationError {
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId : null
+  const directory = typeof body.directory === "string" ? body.directory : null
+  const originalChargeSourceId =
+    typeof body.originalChargeSourceId === "string" ? body.originalChargeSourceId : null
+
+  if (!sessionId || !directory || !originalChargeSourceId) {
+    return {
+      code: "BAD_REQUEST",
+      message: "sessionId, directory, and originalChargeSourceId are required",
+      status: 400,
+    }
+  }
+
+  return { sessionId, directory, originalChargeSourceId }
+}
+
 // ── Identity Resolution ─────────────────────────────────────────────────────
 
 export interface BillingIdentity {
@@ -209,7 +236,17 @@ export interface ChargeCommandResult {
   amountMicros: number
   balanceAfterMicros: number
   sourceId: string
+  expiresAt: string | null
   createdAt: string
+}
+
+export interface ConfirmCommandResult {
+  success: true
+  entryId: string
+  accountId: string
+  sourceId: string
+  sourceStatus: string
+  expiresAt: string | null
 }
 
 export interface ChargeCommandError {
@@ -276,6 +313,7 @@ export async function executePrecharge(
       amountMicros: entry.amountMicros,
       balanceAfterMicros: entry.balanceAfterMicros,
       sourceId: entry.sourceId,
+      expiresAt: entry.expiresAt ? entry.expiresAt.toISOString() : null,
       createdAt: entry.createdAt.toISOString(),
     }
   } catch (err) {
@@ -285,6 +323,16 @@ export async function executePrecharge(
         code: "INSUFFICIENT_BALANCE",
         message: "Insufficient balance for this media generation",
         status: 402,
+      }
+    }
+
+    if (err instanceof Error && err.message === MEDIA_PRECHARGE_TTL_NOT_CONFIGURED) {
+      logger.error({ sessionId: req.sessionId }, "media-charge: pre-charge TTL not configured")
+      return {
+        success: false,
+        code: "CONFIGURATION_REQUIRED",
+        message: `Media pre-charge TTL not configured. Set ${MEDIA_PRECHARGE_TTL_ENV}.`,
+        status: 500,
       }
     }
 
@@ -349,11 +397,77 @@ export async function executeRefund(
       amountMicros: entry.amountMicros,
       balanceAfterMicros: entry.balanceAfterMicros,
       sourceId: entry.sourceId,
+      expiresAt: entry.expiresAt ? entry.expiresAt.toISOString() : null,
       createdAt: entry.createdAt.toISOString(),
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error"
     logger.error({ err, sessionId: req.sessionId }, "media-charge: refund failed")
+    return { success: false, code: "INTERNAL_ERROR", message, status: 500 }
+  }
+}
+
+/**
+ * Execute a media pre-charge confirm (ADR 0010): resolve identity, verify
+ * account, mark the pre-charge entry CONFIRMED and clear its expiresAt.
+ *
+ * Idempotent — confirming twice returns success both times. Returns a 404
+ * error result when the sourceId does not resolve to an entry on the account.
+ */
+export async function executeConfirm(
+  req: ParsedConfirmRequest,
+): Promise<ConfirmCommandResult | ChargeCommandError> {
+  const identity = await resolveBillingIdentity(req.sessionId, req.directory)
+  if (!identity) {
+    return {
+      success: false,
+      code: "BILLING_IDENTITY_NOT_FOUND",
+      message: "Could not resolve billing user from sessionId and directory",
+      status: 400,
+    }
+  }
+
+  const account = await billingService.getAccount(identity.userId)
+  if (!account) {
+    return {
+      success: false,
+      code: "BILLING_ACCOUNT_NOT_FOUND",
+      message: "No billing account found",
+      status: 404,
+    }
+  }
+
+  try {
+    const entry = await billingService.confirmPrecharge({
+      accountId: account.id,
+      sourceId: req.originalChargeSourceId,
+    })
+
+    if (!entry) {
+      return {
+        success: false,
+        code: "CHARGE_NOT_FOUND",
+        message: "No pre-charge found for the given sourceId",
+        status: 404,
+      }
+    }
+
+    logger.info(
+      { userId: identity.userId, accountId: account.id, sessionId: req.sessionId, sourceId: req.originalChargeSourceId },
+      "media-charge: pre-charge confirmed",
+    )
+
+    return {
+      success: true,
+      entryId: entry.id,
+      accountId: entry.accountId,
+      sourceId: entry.sourceId,
+      sourceStatus: entry.sourceStatus,
+      expiresAt: entry.expiresAt ? entry.expiresAt.toISOString() : null,
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error"
+    logger.error({ err, sessionId: req.sessionId }, "media-charge: confirm failed")
     return { success: false, code: "INTERNAL_ERROR", message, status: 500 }
   }
 }

@@ -2,8 +2,10 @@ import { Hono } from "hono"
 import {
   parseChargeBody,
   parseRefundBody,
+  parseConfirmBody,
   executePrecharge,
   executeRefund,
+  executeConfirm,
 } from "./media-charge-commands"
 import { validateServiceApiKey } from "../server/service-auth"
 
@@ -62,6 +64,7 @@ mediaChargeRoutes.post("/media-charge", async (c) => {
         amountMicros: result.amountMicros,
         balanceAfterMicros: result.balanceAfterMicros,
         sourceId: result.sourceId,
+        expiresAt: result.expiresAt,
         createdAt: result.createdAt,
       },
     },
@@ -119,5 +122,59 @@ mediaChargeRoutes.post("/media-charge/refund", async (c) => {
       },
     },
     201 as never,
+  )
+})
+
+/**
+ * POST /api/platform/billing/media-charge/confirm
+ *
+ * Confirm a media pre-charge (ADR 0010): mark the pre-charge ledger entry
+ * CONFIRMED and clear its expiresAt, so the CDC Worker's expiry sweeper no
+ * longer auto-refunds it. Called by the OpenCode plugin after a media-gen
+ * provider call succeeds. Idempotent — a duplicate confirm is a no-op 200.
+ *
+ * Auth: x-api-key header must match OPENIMAGO_INTERNAL_API_KEY.
+ */
+mediaChargeRoutes.post("/media-charge/confirm", async (c) => {
+  const authError = validateApiKey(c)
+  if (authError) return authError
+
+  let rawBody: Record<string, unknown>
+  try {
+    rawBody = await c.req.json()
+  } catch {
+    return c.json(
+      { error: { code: "BAD_REQUEST", message: "Invalid JSON body" } },
+      400 as never,
+    )
+  }
+
+  const parsed = parseConfirmBody(rawBody)
+  if ("code" in parsed) {
+    return c.json(
+      { error: { code: parsed.code, message: parsed.message } },
+      parsed.status as never,
+    )
+  }
+
+  const result = await executeConfirm(parsed)
+  if (!result.success) {
+    return c.json(
+      { error: { code: result.code, message: result.message } },
+      result.status as never,
+    )
+  }
+
+  return c.json(
+    {
+      entry: {
+        id: result.entryId,
+        accountId: result.accountId,
+        sourceId: result.sourceId,
+        sourceStatus: result.sourceStatus,
+        expiresAt: result.expiresAt,
+      },
+    },
+    200 as never,
   )
 })
