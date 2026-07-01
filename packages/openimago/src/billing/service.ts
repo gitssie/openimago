@@ -5,6 +5,7 @@ import {
   billingLedger,
   billingPaymentOrders,
 } from "../db/schema"
+import { getMediaPrechargeTtlSeconds } from "./config"
 
 export interface Account {
   id: string
@@ -41,6 +42,7 @@ export interface LedgerEntry {
   currency: string
   pricingSnapshot: unknown
   metadata: unknown
+  expiresAt: Date | null
   createdAt: Date
 }
 
@@ -86,6 +88,8 @@ async function writeLedgerEntry(params: {
   pricingSnapshot?: unknown
   metadata?: unknown
   sourceStatus?: string
+  /** Media pre-charge expiry stamp (ADR 0010). NULL means no TTL / confirmed. */
+  expiresAt?: Date | null
   /** If set, requires current balance >= this amount before writing. */
   requireBalanceAtLeast?: number
 }): Promise<LedgerEntry> {
@@ -142,6 +146,7 @@ async function writeLedgerEntry(params: {
       currency: params.currency ?? account.currency,
       pricingSnapshot: params.pricingSnapshot as Record<string, unknown> | null ?? null,
       metadata: params.metadata as Record<string, unknown> | null ?? null,
+      expiresAt: params.expiresAt ?? null,
       createdAt: sql`NOW()`,
     })
 
@@ -343,6 +348,13 @@ export const billingService = {
    * Atomic eligibility check: current balance must be >= costMagnitude
    * before the charge is written. Throws `INSUFFICIENT_BALANCE` if not.
    * Does NOT create a new account — if no account exists, fails.
+   *
+   * Expiry safety net (ADR 0010): the entry is written with
+   * `source_status='pending'` and `expiresAt = now + TTL`. On provider success
+   * the caller invokes `confirmPrecharge` (flips to CONFIRMED, clears expiresAt);
+   * on failure it refunds. The CDC Worker auto-refunds any pre-charge whose
+   * expiresAt has passed while still pending. TTL comes from config with NO
+   * hidden default — throws `MEDIA_PRECHARGE_TTL_NOT_CONFIGURED` if unset.
    */
   async prechargeToolCall(params: {
     accountId: string
@@ -363,6 +375,9 @@ export const billingService = {
     if (params.amountMicros >= 0) {
       throw new Error("Charge amount must be negative")
     }
+    // Resolve TTL BEFORE writing so a missing config fails without debiting.
+    const ttlSeconds = getMediaPrechargeTtlSeconds()
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000)
     const costMagnitude = Math.abs(params.amountMicros)
     return writeLedgerEntry({
       accountId: params.accountId,
@@ -370,7 +385,8 @@ export const billingService = {
       entryType: "charge",
       sourceType: "toolcall",
       sourceId: genId("tch"),
-      sourceStatus: "completed",
+      sourceStatus: "pending",
+      expiresAt,
       amountMicros: params.amountMicros,
       requireBalanceAtLeast: costMagnitude,
       workspaceId: params.workspaceId,
@@ -385,6 +401,37 @@ export const billingService = {
       pricingSnapshot: params.pricingSnapshot,
       metadata: params.metadata,
     })
+  },
+
+  /**
+   * Confirm a media pre-charge (ADR 0010).
+   *
+   * Marks the pre-charge ledger entry as CONFIRMED and clears its `expiresAt`,
+   * so the CDC Worker's expiry sweeper will no longer auto-refund it. Does NOT
+   * touch the account balance (the debit already happened at pre-charge time).
+   *
+   * Idempotent: confirming an already-confirmed entry is a no-op that still
+   * returns the entry. Returns `null` when no entry matches (unknown sourceId),
+   * so callers can surface a 404.
+   *
+   * Scoped to `accountId` so one account cannot confirm another's entry.
+   */
+  async confirmPrecharge(params: {
+    accountId: string
+    sourceId: string
+  }): Promise<LedgerEntry | null> {
+    const [updated] = await db
+      .update(billingLedger)
+      .set({ sourceStatus: "confirmed", expiresAt: null })
+      .where(
+        and(
+          eq(billingLedger.accountId, params.accountId),
+          eq(billingLedger.sourceId, params.sourceId),
+        ),
+      )
+      .returning()
+
+    return (updated as unknown as LedgerEntry) ?? null
   },
 
   /**
