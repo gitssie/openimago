@@ -204,8 +204,16 @@ export async function migrate() {
       currency TEXT NOT NULL DEFAULT 'CNY',
       pricing_snapshot JSONB,
       metadata JSONB,
+      expires_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `)
+
+  // ADR 0010: media pre-charge expiry safety net. Existing deployments need the
+  // expires_at column added; a pre-charge stamps it (now + TTL) and the confirm
+  // step clears it. The CDC Worker sweeps unconfirmed, expired pre-charges.
+  await db.execute(sql`
+    ALTER TABLE billing_ledger ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ
   `)
 
   await db.execute(sql`

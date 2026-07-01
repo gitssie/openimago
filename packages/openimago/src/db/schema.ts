@@ -143,6 +143,11 @@ export const billingLedger = pgTable("billing_ledger", {
   currency: text("currency").notNull().default("CNY"),
   pricingSnapshot: jsonb("pricing_snapshot"),
   metadata: jsonb("metadata"),
+  // Media pre-charge expiry safety net (ADR 0010). A pre-charge stamps
+  // expiresAt = now + TTL and source_status='pending'; the confirm step clears
+  // expiresAt (NULL) and sets source_status='confirmed'. The CDC Worker
+  // auto-refunds charges whose expiresAt has passed and are still unconfirmed.
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 })
 
