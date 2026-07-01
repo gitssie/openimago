@@ -17,6 +17,17 @@ export const styles = css`
 		/* CURRENT timecode reads as bright neutral off-white (brighter than the muted-grey
 		   total). Scoped to this bar via a token so a future re-tint is local. */
 		--cut-time-current: var(--imago-text-primary, #e8e8ec);
+		/* Pin the toolbar to the LEFT edge of the timeline's scroll viewport so it stays
+		   visible when the user scrolls horizontally. The <omni-timeline> host has
+		   overflow:scroll and scrollLeft is driven by both the user and the NLE edge
+		   auto-scroll — without sticky the toolbar scrolls off-screen with the clips.
+		   position:sticky + left:0 anchors the element's left edge to the scroll viewport
+		   left at all times, while keeping it in the normal flex-column flow (unlike
+		   position:fixed which detaches it from the document flow entirely). z-index 900
+		   keeps it above the sticky track-sidebar column (z-index 800). */
+		position: sticky;
+		left: 0;
+		z-index: 900;
 	}
 
 	.toolbar {
