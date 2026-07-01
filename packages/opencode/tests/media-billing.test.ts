@@ -73,6 +73,25 @@ function runRefund(
   )
 }
 
+function runConfirm(
+  config: Partial<MediaConfigData>,
+  originalChargeSourceId = "orig-123",
+  usage?: GenerateUsage,
+): Promise<void> {
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const reporter = yield* BillingReporter
+      yield* reporter.reportConfirm({
+        ...makeDefaultChargeRequest(usage),
+        originalChargeSourceId,
+      })
+    }).pipe(
+      Effect.provide(billingLayer),
+      Effect.provide(makeConfigLayer(config)),
+    ),
+  )
+}
+
 /** Minimal mock fetch that captures calls without triggering full Request constructor */
 function mockFetch(
   handler: (url: string, init?: RequestInit) => Response | Promise<Response>,
@@ -255,6 +274,66 @@ describe("BillingReporter", () => {
       expect(body.sessionId).toBe("test-session")
       expect(body.directory).toBe("/workspace/test-project")
       expect(body.userId).toBeUndefined()
+    } finally {
+      mock.restore()
+    }
+  })
+
+  // ── Confirm ───────────────────────────────────────────────────────
+
+  test("no-ops confirm when billingEnabled is not true", async () => {
+    await runConfirm({})
+  })
+
+  test("confirm posts identity fields to the confirm endpoint", async () => {
+    const { fetch, calls } = createFetchMock({
+      responseOverride: { entry: { sourceId: "orig-charge-xyz", sourceStatus: "CONFIRMED" } },
+    })
+    globalThis.fetch = fetch
+
+    try {
+      await runConfirm({ billingEnabled: true }, "orig-charge-xyz")
+
+      expect(calls.length).toBe(1)
+      const call = calls[0]!
+      expect(call.url).toContain("/api/platform/billing/media-charge/confirm")
+      expect(call.method).toBe("POST")
+
+      const body = call.body as Record<string, unknown>
+      expect(body.sessionId).toBe("test-session")
+      expect(body.directory).toBe("/workspace/test-project")
+      expect(body.originalChargeSourceId).toBe("orig-charge-xyz")
+      expect(body.userId).toBeUndefined()
+    } finally {
+      mock.restore()
+    }
+  })
+
+  test("confirm includes x-api-key header when backendApiKey is configured", async () => {
+    const { fetch, calls } = createFetchMock({
+      responseOverride: { entry: { sourceId: "orig-123", sourceStatus: "CONFIRMED" } },
+    })
+    globalThis.fetch = fetch
+
+    try {
+      await runConfirm({ billingEnabled: true, backendApiKey: "secret-key-123" })
+
+      expect(calls.length).toBe(1)
+      expect(calls[0]!.headers["x-api-key"]).toBe("secret-key-123")
+    } finally {
+      mock.restore()
+    }
+  })
+
+  test("confirm throws BillingError when backend returns non-2xx", async () => {
+    globalThis.fetch = mockFetch(() => {
+      return new Response("Internal Error", { status: 500 })
+    })
+
+    try {
+      await expect(
+        runConfirm({ billingEnabled: true }),
+      ).rejects.toThrow("Confirm backend returned 500")
     } finally {
       mock.restore()
     }

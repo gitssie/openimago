@@ -61,6 +61,19 @@ export interface BillingReporterInterface {
   readonly reportRefund: (
     req: ChargeRequest & { originalChargeSourceId: string },
   ) => Effect.Effect<void, BillingError>
+
+  /**
+   * Confirm a pre-charge after provider generation succeeds.
+   *
+   * Marks the original pre-charge CONFIRMED so the expiry safety net
+   * (ADR 0010) won't auto-refund a good charge.
+   *
+   * Best-effort: confirm failures are logged but do NOT fail the
+   * overall success path (the generation already succeeded).
+   */
+  readonly reportConfirm: (
+    req: ChargeRequest & { originalChargeSourceId: string },
+  ) => Effect.Effect<void, BillingError>
 }
 
 // ── Service Tag ──────────────────────────────────────────────────────────
@@ -93,6 +106,7 @@ export const layer: Layer.Layer<BillingReporter, never, MediaConfig> =
         return {
           reportPrecharge: () => Effect.succeed({ sourceId: "" }),
           reportRefund: () => Effect.succeed(undefined),
+          reportConfirm: () => Effect.succeed(undefined),
         } satisfies BillingReporterInterface
       }
 
@@ -101,6 +115,7 @@ export const layer: Layer.Layer<BillingReporter, never, MediaConfig> =
         return {
           reportPrecharge: () => Effect.succeed({ sourceId: "" }),
           reportRefund: () => Effect.succeed(undefined),
+          reportConfirm: () => Effect.succeed(undefined),
         } satisfies BillingReporterInterface
       }
 
@@ -218,6 +233,41 @@ export const layer: Layer.Layer<BillingReporter, never, MediaConfig> =
         }
       }
 
+      const postConfirm = async (
+        req: ChargeRequest & { originalChargeSourceId: string },
+      ): Promise<void> => {
+        validateContext(req)
+
+        const body: Record<string, unknown> = {
+          sessionId: req.sessionId,
+          directory: req.directory,
+          originalChargeSourceId: req.originalChargeSourceId,
+        }
+
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        }
+        if (apiKey) {
+          headers["x-api-key"] = apiKey
+        }
+
+        const response = await fetch(
+          `${backendUrl}/api/platform/billing/media-charge/confirm`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify(body),
+          },
+        )
+
+        if (!response.ok) {
+          const text = await response.text().catch(() => "(no body)")
+          throw new BillingError(
+            `Confirm backend returned ${response.status}: ${text}`,
+          )
+        }
+      }
+
       const reportPrecharge: BillingReporterInterface["reportPrecharge"] = (
         req,
       ) =>
@@ -246,6 +296,22 @@ export const layer: Layer.Layer<BillingReporter, never, MediaConfig> =
                 ),
         })
 
-      return { reportPrecharge, reportRefund } satisfies BillingReporterInterface
+      const reportConfirm: BillingReporterInterface["reportConfirm"] = (req) =>
+        Effect.tryPromise({
+          try: () => postConfirm(req),
+          catch: (error) =>
+            error instanceof BillingError
+              ? error
+              : new BillingError(
+                  `Failed to report confirm: ${(error as Error).message}`,
+                  error,
+                ),
+        })
+
+      return {
+        reportPrecharge,
+        reportRefund,
+        reportConfirm,
+      } satisfies BillingReporterInterface
     }),
   )
