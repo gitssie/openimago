@@ -64,12 +64,63 @@
         <p v-if="!editorReady" class="story-cut__loading">
           {{ editorError ? editorError : '正在加载剪辑器…' }}
         </p>
-        <!-- Editor mounted but hydration in flight: cover the not-yet-placed timeline
-             with our flat-black loading state (the native "Your timeline is empty"
-             placeholder is suppressed in the vendored view; openimago-l9qs). -->
-        <p v-else-if="hydrating" class="story-cut__loading story-cut__loading--hydrating">
-          正在加载粗剪…
-        </p>
+        <!-- Editor mounted but hydration in flight (~7s import/place window): cover the
+             not-yet-placed timeline with a skeleton shaped like the real editor —
+             9:16 player, transport bar, 3 timeline tracks — so the wait feels
+             intentional (the native "Your timeline is empty" placeholder is suppressed
+             in the vendored view; openimago-l9qs). -->
+        <div
+          v-else-if="hydrating"
+          class="story-cut__hydrating"
+          role="status"
+          aria-live="polite"
+          aria-label="正在加载粗剪"
+        >
+          <!-- Top: player-preview region — a large centered 9:16 block. -->
+          <div class="story-cut__hydrating-player">
+            <q-skeleton animation="wave" class="story-cut__sk-player" />
+          </div>
+
+          <!-- Middle: transport bar — control clusters + play + timecode. -->
+          <div class="story-cut__hydrating-transport" aria-hidden="true">
+            <div class="story-cut__hydrating-group">
+              <q-skeleton animation="wave" class="story-cut__sk-ctl" />
+              <q-skeleton animation="wave" class="story-cut__sk-ctl" />
+              <q-skeleton animation="wave" class="story-cut__sk-ctl" />
+            </div>
+            <div class="story-cut__hydrating-group">
+              <q-skeleton animation="wave" type="circle" class="story-cut__sk-play" />
+              <q-skeleton animation="wave" class="story-cut__sk-timecode" />
+            </div>
+            <div class="story-cut__hydrating-group">
+              <q-skeleton animation="wave" class="story-cut__sk-ctl" />
+              <q-skeleton animation="wave" class="story-cut__sk-ctl" />
+              <q-skeleton animation="wave" class="story-cut__sk-ctl" />
+            </div>
+          </div>
+
+          <!-- Bottom: 3 timeline tracks — gutter icon + lane; row 1 taller (video). -->
+          <div class="story-cut__hydrating-tracks" aria-hidden="true">
+            <div class="story-cut__hydrating-row story-cut__hydrating-row--video">
+              <q-skeleton animation="wave" class="story-cut__sk-icon" />
+              <q-skeleton animation="wave" class="story-cut__sk-lane story-cut__sk-lane--video" />
+            </div>
+            <div class="story-cut__hydrating-row">
+              <q-skeleton animation="wave" class="story-cut__sk-icon" />
+              <q-skeleton animation="wave" class="story-cut__sk-lane" />
+            </div>
+            <div class="story-cut__hydrating-row">
+              <q-skeleton animation="wave" class="story-cut__sk-icon" />
+              <q-skeleton animation="wave" class="story-cut__sk-lane" />
+            </div>
+          </div>
+
+          <!-- Subtle label with a shimmer spinner. -->
+          <div class="story-cut__hydrating-label">
+            <q-spinner-dots size="16px" color="grey-6" />
+            <span>正在加载粗剪…</span>
+          </div>
+        </div>
 
         <!-- 手动编辑 composer — a q-menu anchored to this editor element, sized to the
              player-preview region so it docks from the top down to the transport/
@@ -789,13 +840,125 @@ defineExpose({ persistEdit, rehydrate })
   color: var(--imago-text-faint);
 }
 
-// Hydration overlay (openimago-l9qs): same flat-black loading treatment, but OPAQUE
-// (the void base) so it fully covers the mounted-but-not-yet-hydrated editor during the
-// import/place window — no native empty timeline shows through. z-index sits above the
-// <construct-editor> sibling in the same relative-positioned host.
-.story-cut__loading--hydrating {
-  background: var(--imago-bg-void);
+// ── Hydration SKELETON (mirrors the editor: player · transport · 3 tracks) ──────
+// Opaque void base covering the not-yet-hydrated editor; a wave-animated skeleton
+// shaped like the real layout so the ~7s wait reads as intentional.
+.story-cut__hydrating {
+  position: absolute;
+  inset: 0;
   z-index: 2;
+  background: var(--imago-bg-void);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px;
+}
+
+// Skeletons: slightly lighter than the panel so they read on the dark bg, with a
+// cooler wave sweep. --imago-* base; no hardcoded palette beyond low-alpha white.
+.story-cut__hydrating :deep(.q-skeleton) {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+}
+
+.story-cut__hydrating :deep(.q-skeleton--anim-wave)::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--imago-neon-cyan) 8%, rgba(255, 255, 255, 0.08)),
+    transparent
+  );
+}
+
+// Top — player preview: a large centered 9:16 block filling the region above.
+.story-cut__hydrating-player {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.story-cut__hydrating .story-cut__sk-player {
+  height: 100%;
+  aspect-ratio: 9 / 16;
+  max-width: 60%;
+  border-radius: 12px;
+}
+
+// Middle — transport bar: three control clusters (left tools · play+timecode · right tools).
+.story-cut__hydrating-transport {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 4px;
+}
+
+.story-cut__hydrating-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.story-cut__hydrating .story-cut__sk-ctl {
+  width: 22px;
+  height: 22px;
+}
+
+.story-cut__hydrating .story-cut__sk-play {
+  width: 28px;
+  height: 28px;
+}
+
+.story-cut__hydrating .story-cut__sk-timecode {
+  width: 92px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+// Bottom — 3 timeline tracks: gutter icon + lane; row 1 taller (video filmstrip).
+.story-cut__hydrating-tracks {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.story-cut__hydrating-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.story-cut__hydrating .story-cut__sk-icon {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+}
+
+.story-cut__hydrating .story-cut__sk-lane {
+  flex: 1 1 auto;
+  height: 32px;
+  border-radius: 6px;
+}
+
+.story-cut__hydrating .story-cut__sk-lane--video {
+  height: 46px;
+}
+
+// Subtle centered label with a shimmer spinner, pinned near the top.
+.story-cut__hydrating-label {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--imago-text-faint);
 }
 
 // Quiet inline notice — NOT a loud alert. Muted pink derived from the token so no
