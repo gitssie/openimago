@@ -271,6 +271,9 @@ export interface ShotGenerationParams {
    *  the web CLIP_GENERATION_MODE_OPTIONS). Recorded/persisted like aspectRatio;
    *  per-mode input variations are a follow-up. Mirrors the web type. */
   generationMode?: string
+  /** Output resolution tier (e.g. 720p / 1080p). Recorded/persisted like aspectRatio;
+   *  Pro-gating / charge flow is a deferred billing follow-up. Mirrors the web type. */
+  resolution?: string
 }
 
 /** A single shot appended by the UI (ADR 0004 EpisodeShot, ADR 0005 write). */
@@ -310,6 +313,8 @@ export interface GenerationRun {
     referenceImages?: string[]
     // Video generation mode (openimago-ggxt): the generation type the model ran in.
     generationMode?: string
+    // Output resolution tier (e.g. 720p / 1080p): recorded for run history.
+    resolution?: string
     // Voiceover runs (ADR 0004 ResolvedRunParams) carry the speaking line's
     // character, resolved voice, text, and an optional TTS style from emotion.
     characterId?: string
@@ -958,6 +963,11 @@ export class StoryService {
       typeof params?.generationMode === "string" && params.generationMode.trim()
         ? params.generationMode.trim()
         : undefined
+    // Output resolution tier: recorded/persisted like aspectRatio.
+    const resolution =
+      typeof params?.resolution === "string" && params.resolution.trim()
+        ? params.resolution.trim()
+        : undefined
 
     // ── Mock provider result (playable MP4, like opencode mockVideoProvider) ──
     // Deterministic per-shot clip with a committed filmstrip sprite + real
@@ -974,6 +984,7 @@ export class StoryService {
       durationSeconds,
       ...(hasReferenceImages ? { referenceImages } : {}),
       ...(generationMode !== undefined ? { generationMode } : {}),
+      ...(resolution !== undefined ? { resolution } : {}),
     })
 
     // ── Append to runs.json (append-only; initialize when missing) ──
@@ -991,6 +1002,7 @@ export class StoryService {
       ...(durationSeconds !== undefined ? { durationSeconds } : {}),
       ...(hasReferenceImages ? { referenceImages } : {}),
       ...(generationMode !== undefined ? { generationMode } : {}),
+      ...(resolution !== undefined ? { resolution } : {}),
     }
     const hasSuppliedParams = Object.keys(suppliedParams).length > 0
     const updatedShots = shots.map((s, i) => {
@@ -1192,6 +1204,7 @@ export class StoryService {
       durationSeconds?: number
       referenceImages?: string[]
       generationMode?: string
+      resolution?: string
     },
     extra?: { parentArtifactId?: string },
   ): GenerationRun {
@@ -1215,6 +1228,7 @@ export class StoryService {
         ...(resolved.generationMode !== undefined
           ? { generationMode: resolved.generationMode }
           : {}),
+        ...(resolved.resolution !== undefined ? { resolution: resolved.resolution } : {}),
       },
       result: {
         artifactId: `mock_${randomSlug()}`,

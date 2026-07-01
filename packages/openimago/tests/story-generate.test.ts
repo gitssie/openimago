@@ -329,6 +329,41 @@ test("generateShot leaves generationMode absent when none is posted", async () =
   expect("generationMode" in (shot.generationParams ?? {})).toBe(false)
 })
 
+test("generateShot records resolution on the run and persists it on the shot", async () => {
+  const token = await registerUser("gnres", "gnres@example.com")
+  const project = await createProject(token, "GenRes")
+  const shotId = await addShot(token, project.id, "ep_001")
+
+  const params = { prompt: "a crisp wide shot", model: "seedance-2.0", resolution: "1080p" }
+  const res = await generateReq(token, project.id, "ep_001", shotId, params)
+  expect(res.status).toBe(201)
+  const body = (await res.json()) as Record<string, any>
+
+  expect(body.run.params.resolution).toBe("1080p")
+
+  const ep = await readJson(project.directory, "story/episodes/ep_001.json")
+  const shot = ep.shots.find((s: any) => s.id === shotId)
+  expect(shot.generationParams.resolution).toBe("1080p")
+})
+
+test("generateShot leaves resolution absent when none is posted", async () => {
+  const token = await registerUser("gnnores", "gnnores@example.com")
+  const project = await createProject(token, "GenNoRes")
+  const shotId = await addShot(token, project.id, "ep_001")
+
+  const res = await generateReq(token, project.id, "ep_001", shotId, {
+    prompt: "no resolution here",
+    model: "seedance-2.0",
+  })
+  expect(res.status).toBe(201)
+  const body = (await res.json()) as Record<string, any>
+
+  expect(body.run.params.resolution).toBeUndefined()
+  const ep = await readJson(project.directory, "story/episodes/ep_001.json")
+  const shot = ep.shots.find((s: any) => s.id === shotId)
+  expect("resolution" in (shot.generationParams ?? {})).toBe(false)
+})
+
 test("generateShot leaves referenceImages absent when none are posted", async () => {
   const token = await registerUser("gnnorefimg", "gnnorefimg@example.com")
   const project = await createProject(token, "GenNoRefImages")

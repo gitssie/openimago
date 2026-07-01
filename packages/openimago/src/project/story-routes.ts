@@ -137,6 +137,8 @@ storyRoutes.post("/:id/story/episodes/:epId/shots/:shotId/generate", async (c) =
     ...(typeof body["durationSeconds"] === "number" ? { durationSeconds: body["durationSeconds"] } : {}),
     // Video generation mode (openimago-ggxt); generateShot re-validates + drops blanks.
     ...(typeof body["generationMode"] === "string" ? { generationMode: body["generationMode"] } : {}),
+    // Output resolution tier; generateShot re-validates + drops blanks.
+    ...(typeof body["resolution"] === "string" ? { resolution: body["resolution"] } : {}),
     // Reference images the video model generates FROM (openimago-v1j0); forward
     // any string entries — generateShot re-validates + drops blanks.
     ...(Array.isArray(body["referenceImages"])

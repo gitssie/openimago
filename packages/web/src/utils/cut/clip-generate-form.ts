@@ -25,6 +25,10 @@ export interface ShotGenerationParams {
    *  modes depend on `model`; see CLIP_GENERATION_MODE_OPTIONS. Per-mode input
    *  variations are a follow-up. Mirrors the backend `ShotGenerationParams`. */
   generationMode?: string
+  /** Output resolution tier (e.g. 720p / 1080p; see CLIP_RESOLUTION_OPTIONS). The
+   *  升级 badge is visual only — Pro-gating / charge flow is a deferred billing
+   *  follow-up. Mirrors the backend `ShotGenerationParams`. */
+  resolution?: string
 }
 
 export interface ClipGenerateForm {
@@ -39,6 +43,8 @@ export interface ClipGenerateForm {
   /** Selected video generation mode (openimago-ggxt); always one of the current
    *  model's supported modes (see resolveGenerationMode). */
   generationMode: string
+  /** Selected output resolution tier (see CLIP_RESOLUTION_OPTIONS). */
+  resolution: string
 }
 
 /** Minimal shot shape the prefill needs (a subset of StoryShotSummary). */
@@ -68,24 +74,40 @@ export const CLIP_MODEL_OPTIONS: SelectOption[] = [
   { label: 'Mock (dev)', value: 'mock-video-model' },
 ]
 
+/** Aspect ratios, top-to-bottom per the reference design. */
 export const CLIP_ASPECT_RATIO_OPTIONS: SelectOption[] = [
-  { label: '9:16 (竖屏)', value: '9:16' },
+  { label: '21:9', value: '21:9' },
   { label: '16:9 (横屏)', value: '16:9' },
-  { label: '1:1 (方形)', value: '1:1' },
   { label: '4:3', value: '4:3' },
-  { label: '3:2', value: '3:2' },
+  { label: '1:1 (方形)', value: '1:1' },
+  { label: '3:4', value: '3:4' },
+  { label: '9:16 (竖屏)', value: '9:16' },
 ]
 
+/** Continuous per-second duration range 4s–12s (the design scrolls 4–11 + shows 12). */
 export const CLIP_DURATION_OPTIONS: SelectOption[] = [
+  { label: '4 秒', value: '4' },
   { label: '5 秒', value: '5' },
+  { label: '6 秒', value: '6' },
+  { label: '7 秒', value: '7' },
   { label: '8 秒', value: '8' },
+  { label: '9 秒', value: '9' },
   { label: '10 秒', value: '10' },
+  { label: '11 秒', value: '11' },
   { label: '12 秒', value: '12' },
+]
+
+/** Output resolution tiers (openimago). Both carry an 升级 (upgrade) badge in the
+ *  UI — visual only; Pro-gating / charge flow is a deferred billing follow-up. */
+export const CLIP_RESOLUTION_OPTIONS: SelectOption[] = [
+  { label: '720p', value: '720p' },
+  { label: '1080p', value: '1080p' },
 ]
 
 export const DEFAULT_CLIP_MODEL = 'seedance-2.0'
 export const DEFAULT_CLIP_ASPECT_RATIO = '9:16'
 export const DEFAULT_CLIP_DURATION_SECONDS = 8
+export const DEFAULT_CLIP_RESOLUTION = '720p'
 
 /** Fallback mode present for every model. */
 export const DEFAULT_GENERATION_MODE = '全能参考'
@@ -142,7 +164,8 @@ export function buildClipGenerateForm(
     ? gp.referenceImages.filter((r): r is string => typeof r === 'string')
     : []
   const generationMode = resolveGenerationMode(model, gp?.generationMode)
-  return { prompt, model, aspectRatio, durationSeconds, referenceImages, generationMode }
+  const resolution = (gp?.resolution && gp.resolution.trim()) || DEFAULT_CLIP_RESOLUTION
+  return { prompt, model, aspectRatio, durationSeconds, referenceImages, generationMode, resolution }
 }
 
 /** Map the dialog form to the request body (trim the prompt; carry params through).
@@ -154,6 +177,7 @@ export function clipFormToParams(form: ClipGenerateForm): ShotGenerationParams {
     aspectRatio: form.aspectRatio,
     durationSeconds: form.durationSeconds,
     generationMode: form.generationMode,
+    resolution: form.resolution,
     ...(form.referenceImages && form.referenceImages.length > 0
       ? { referenceImages: [...form.referenceImages] }
       : {}),

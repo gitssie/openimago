@@ -2,9 +2,13 @@ import { describe, it, expect } from 'vitest'
 import {
   buildClipGenerateForm,
   clipFormToParams,
+  CLIP_ASPECT_RATIO_OPTIONS,
+  CLIP_DURATION_OPTIONS,
+  CLIP_RESOLUTION_OPTIONS,
   DEFAULT_CLIP_MODEL,
   DEFAULT_CLIP_ASPECT_RATIO,
   DEFAULT_CLIP_DURATION_SECONDS,
+  DEFAULT_CLIP_RESOLUTION,
   DEFAULT_GENERATION_MODE,
   supportedGenerationModes,
   resolveGenerationMode,
@@ -27,6 +31,7 @@ describe('buildClipGenerateForm', () => {
       durationSeconds: DEFAULT_CLIP_DURATION_SECONDS,
       referenceImages: [],
       generationMode: DEFAULT_GENERATION_MODE,
+      resolution: DEFAULT_CLIP_RESOLUTION,
     })
   })
 
@@ -59,6 +64,7 @@ describe('buildClipGenerateForm', () => {
       durationSeconds: 12,
       referenceImages: [],
       generationMode: DEFAULT_GENERATION_MODE,
+      resolution: DEFAULT_CLIP_RESOLUTION,
     })
   })
 
@@ -110,6 +116,49 @@ describe('buildClipGenerateForm', () => {
     )
     expect(form.generationMode).toBe('全能参考')
   })
+
+  it('defaults resolution to 720p when the shot has none', () => {
+    expect(buildClipGenerateForm(bareShot, null).resolution).toBe(DEFAULT_CLIP_RESOLUTION)
+  })
+
+  it('pre-fills resolution from the persisted generationParams', () => {
+    const form = buildClipGenerateForm(
+      { description: 'd', generationParams: { model: 'seedance-2.0', resolution: '1080p' } },
+      null,
+    )
+    expect(form.resolution).toBe('1080p')
+  })
+})
+
+describe('option sets match the reference design', () => {
+  it('aspect ratios are 21:9, 16:9, 4:3, 1:1, 3:4, 9:16 (top-to-bottom)', () => {
+    expect(CLIP_ASPECT_RATIO_OPTIONS.map((o) => o.value)).toEqual([
+      '21:9',
+      '16:9',
+      '4:3',
+      '1:1',
+      '3:4',
+      '9:16',
+    ])
+  })
+
+  it('durations are a continuous 4s–12s range', () => {
+    expect(CLIP_DURATION_OPTIONS.map((o) => o.value)).toEqual([
+      '4',
+      '5',
+      '6',
+      '7',
+      '8',
+      '9',
+      '10',
+      '11',
+      '12',
+    ])
+  })
+
+  it('resolutions are 720p + 1080p', () => {
+    expect(CLIP_RESOLUTION_OPTIONS.map((o) => o.value)).toEqual(['720p', '1080p'])
+  })
 })
 
 describe('supportedGenerationModes', () => {
@@ -151,6 +200,7 @@ describe('clipFormToParams', () => {
         durationSeconds: 8,
         referenceImages: [],
         generationMode: '图生视频',
+        resolution: '1080p',
       }),
     ).toEqual({
       prompt: 'windy night',
@@ -158,6 +208,7 @@ describe('clipFormToParams', () => {
       aspectRatio: '9:16',
       durationSeconds: 8,
       generationMode: '图生视频',
+      resolution: '1080p',
     })
   })
 
@@ -170,6 +221,7 @@ describe('clipFormToParams', () => {
         durationSeconds: 8,
         referenceImages: ['asset_a', 'asset_b'],
         generationMode: '全能参考',
+        resolution: '720p',
       }).referenceImages,
     ).toEqual(['asset_a', 'asset_b'])
   })
@@ -182,20 +234,22 @@ describe('clipFormToParams', () => {
       durationSeconds: 8,
       referenceImages: [],
       generationMode: '全能参考',
+      resolution: '720p',
     })
     expect('referenceImages' in params).toBe(false)
   })
 
-  it('carries generationMode through', () => {
-    expect(
-      clipFormToParams({
-        prompt: 'p',
-        model: 'seedance-2.0',
-        aspectRatio: '9:16',
-        durationSeconds: 8,
-        referenceImages: [],
-        generationMode: '首尾帧生视频',
-      }).generationMode,
-    ).toBe('首尾帧生视频')
+  it('carries generationMode + resolution through', () => {
+    const params = clipFormToParams({
+      prompt: 'p',
+      model: 'seedance-2.0',
+      aspectRatio: '9:16',
+      durationSeconds: 8,
+      referenceImages: [],
+      generationMode: '首尾帧生视频',
+      resolution: '1080p',
+    })
+    expect(params.generationMode).toBe('首尾帧生视频')
+    expect(params.resolution).toBe('1080p')
   })
 })
