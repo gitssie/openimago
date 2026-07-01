@@ -15,6 +15,7 @@
 // BROWSER-ONLY.
 
 import { ClipMenuRegistry } from 'src/utils/cut/clip-menu-registry'
+import { isClipContextTarget } from 'src/utils/cut/clip-menu-target'
 import { omnislate } from '../upstream/context/context'
 import type { ClipMenuContext } from 'src/utils/cut/fork-contract'
 
@@ -35,15 +36,24 @@ function closeMenu(): void {
   menuEl = null
 }
 
-/** Resolve the effect id for a right-clicked `.effect` element. */
+/** Class lists of the HTMLElements along a composedPath (leaf → root). */
+function classListsOf(path: EventTarget[]): Iterable<Iterable<string>> {
+  const lists: DOMTokenList[] = []
+  for (const t of path) {
+    if (t instanceof HTMLElement && t.classList) lists.push(t.classList)
+  }
+  return lists
+}
+
+/** Resolve the effect id for a right-clicked clip (body or trim-handle). */
 function effectIdAt(path: EventTarget[]): string | undefined {
-  // The .effect span doesn't carry its id, but clicking selects it; omniclip
-  // tracks the selected effect on state. We select on contextmenu (below) then
-  // read it back. Guard for absence.
-  const hasEffect = path.some(
-    (t) => t instanceof HTMLElement && t.classList?.contains('effect'),
-  )
-  if (!hasEffect) return undefined
+  // Neither the `.effect` span nor the trim-handle overlay carries the effect id,
+  // but right-clicking either selects the clip (the trim-handle's pointerdown
+  // bubbles to the `.trim-handles` overlay whose handler calls set_selected_effect);
+  // omniclip tracks the selected effect on state, which we read back here. The
+  // trim-handle overlay renders OUTSIDE the `.effect` ancestor chain, so gate on
+  // both (openimago-p90g). Guard for absence.
+  if (!isClipContextTarget(classListsOf(path))) return undefined
   const selected = (omnislate.context.state as { selected_effect?: { id?: string } })
     .selected_effect
   return selected?.id
@@ -107,10 +117,10 @@ export function installClipContextMenu(): void {
     'contextmenu',
     (event: MouseEvent) => {
       const path = event.composedPath()
-      const hasEffect = path.some(
-        (t) => t instanceof HTMLElement && t.classList?.contains('effect'),
-      )
-      if (!hasEffect) {
+      // Open for a right-click on the clip body OR its trim-handle overlay, which
+      // renders as a sibling of `.effect` and so is absent from the path when a
+      // handle is clicked (openimago-p90g).
+      if (!isClipContextTarget(classListsOf(path))) {
         closeMenu()
         return
       }
