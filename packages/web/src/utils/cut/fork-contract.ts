@@ -220,6 +220,13 @@ export interface OmniclipForkApi {
   clearTransition: (afterEffectId: string) => void
   readTransitions: () => OmniTransition[]
   /**
+   * Live-update the BGM audio track without a full re-hydration (openimago-tc8t).
+   * Removes the existing BGM effect from track 2 and, if `bgm` is provided,
+   * imports + places the new audio bed. Called by the host after selectBgm /
+   * clearBgm persists so the green waveform lane updates immediately.
+   */
+  updateBgmTrack: (bgm: HydrateBgm | null) => Promise<void>
+  /**
    * Subscribe to committed editor gestures (ADR 0008 #1/#1a). The fork diffs
    * omniclip's `effects` snapshot on each settled gesture and emits ONE semantic
    * CutEdit (reorder / trim / split / delete) — never per intermediate frame.

@@ -577,11 +577,28 @@ async function clearTransitionAt(afterClipId: string): Promise<void> {
 async function selectBgm(artifactId: string): Promise<void> {
   bgmPickerOpen.value = false
   await persistEdit({ kind: 'set-bgm', artifactId })
+  // Live-update the fork's BGM track so the green waveform lane appears immediately
+  // without a full re-hydration (openimago-tc8t). resolveBgmSource fetches the
+  // asset URL; the fork's updateBgmTrack swaps the audio effect on track 2.
+  // Fire-and-forget: the import is slow; errors are non-fatal (warn + empty lane).
+  const bgmResolved = await resolveBgmSource(artifactId)
+  void fork?.updateBgmTrack(
+    bgmResolved
+      ? {
+          id: bgmResolved.id,
+          url: bgmResolved.source.url,
+          name: bgmResolved.source.name,
+          ...(bgmResolved.source.headers ? { headers: bgmResolved.source.headers } : {}),
+        }
+      : null,
+  )
 }
 
 /** Remove the Cut's BGM bed. */
 async function clearBgm(): Promise<void> {
   await persistEdit({ kind: 'clear-bgm' })
+  // Remove the BGM audio effect from the fork's track 2 immediately.
+  void fork?.updateBgmTrack(null)
 }
 
 /**
@@ -726,8 +743,15 @@ async function mountAndHydrate(): Promise<void> {
     // trim / split / delete; persistEdit routes it through the cut endpoints.
     // Transition/BGM are host-driven and do NOT arrive here. JS's single thread +
     // persistEdit's per-edit await serialise these user-paced gestures.)
+    // Serialise fork edits so split always commits before the following reorder
+    // fires. Without this, a split+reorder landing close together sends the
+    // reorder before the split is committed on the server → the server rejects
+    // the reorder with 400 (orderedClipIds includes the new split-half id that
+    // doesn't exist yet) → cut-error + rehydration undoes the move
+    // (openimago-r7to).
+    let editQueue: Promise<void> = Promise.resolve()
     unsubscribeEdits = fork.onEdit((edit) => {
-      void persistEdit(edit)
+      editQueue = editQueue.then(() => persistEdit(edit))
     })
   } catch (err) {
     // Roll editorReady back so the error <p> shows instead of an empty

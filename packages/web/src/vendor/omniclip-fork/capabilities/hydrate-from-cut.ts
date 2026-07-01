@@ -347,6 +347,37 @@ function composePlacedClips(placed: { id: string; fileHash: string }[]): void {
 }
 
 /**
+ * Live-update the BGM audio track without a full re-hydration (openimago-tc8t).
+ * Called by the host when the user picks a new BGM bed or clears it (selectBgm /
+ * clearBgm in StoryCutPanel.vue). Removes any existing audio effect on track 2,
+ * then optionally places the new BGM via the same placeBgm path as hydrateFromCut.
+ * Non-fatal (no throw): on import failure the BGM lane is simply left empty.
+ */
+export async function updateBgmTrack(bgm: HydrateBgm | null): Promise<void> {
+  const ctx = omnislate.context
+  const audioManager = ctx.controllers.compositor.managers.audioManager
+
+  // Remove all effects on the BGM track (track index 2). Audio effects carry their
+  // track index in effect.track; we scan the live state rather than relying on a
+  // stored id so any prior BGM is cleared regardless of which artifactId placed it.
+  const bgmEffects = ctx.state.effects.filter((e: any) => e.track === BGM_TRACK)
+  for (const effect of bgmEffects) {
+    ctx.actions.remove_effect({ id: effect.id })
+    // Clear the audioManager entry so the gate in the AudioEffect view re-opens if
+    // we place a new effect right away (same guard as the re-announce in placeBgm).
+    audioManager.delete(effect.id)
+  }
+
+  if (!bgm) return
+
+  try {
+    await placeBgm(bgm)
+  } catch (err) {
+    console.warn('[omniclip-fork] updateBgmTrack: BGM import failed — lane left empty', err)
+  }
+}
+
+/**
  * Poke a single paint of the composed scene at the current timecode (openimago-74y8).
  *
  * On 1.1.3's PIXI compositor the elaborate fabric first-frame machinery is gone: the

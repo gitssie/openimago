@@ -47,7 +47,7 @@ import type {
 } from 'src/utils/cut/fork-contract'
 import { OMNI_THEME_VARS, IMAGO_TO_OMNI_THEME } from 'src/utils/cut/fork-contract'
 import { importFromUrl } from './capabilities/import-from-url'
-import { hydrateFromCut } from './capabilities/hydrate-from-cut'
+import { hydrateFromCut, updateBgmTrack } from './capabilities/hydrate-from-cut'
 import {
   registerClipMenuItems,
   installClipContextMenu,
@@ -192,6 +192,7 @@ installClipContextMenu()
 export const omniclipFork: OmniclipForkApi = {
   importFromUrl,
   hydrateFromCut,
+  updateBgmTrack,
   registerClipMenuItems,
   setClipContextResolver,
   setTransition,

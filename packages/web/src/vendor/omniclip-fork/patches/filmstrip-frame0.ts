@@ -21,6 +21,14 @@
 const frame0Cache = new Map<string, string | null>()
 // In-flight crops per sprite URL so concurrent clips sharing a source crop ONCE.
 const inFlight = new Map<string, Promise<string | null>>()
+// Pending onReady callbacks from callers that found a crop in-flight (openimago-r7to).
+// All fire synchronously — in the same .then() micro-task as the initiating caller —
+// when the crop settles. Using a direct callback list rather than .then(cb) chaining
+// avoids an extra micro-task between the initiating view's onReady and the sibling's,
+// which would cause Benev Slate's shadow_view lifecycle (use.mount/use.watch) to see
+// the second setFrame0Tick at an unexpected re-entry point and corrupt the pixi
+// compositor's videoManager state.
+const pendingCallbacks = new Map<string, Array<(dataUrl: string | null) => void>>()
 
 /** Synchronously read the cached frame-0 dataURL for a sprite, if already cropped.
  *  Returns undefined when not yet computed, null when cropping failed. */
@@ -35,6 +43,11 @@ export function getCachedFrame0(spriteUrl: string): string | null | undefined {
  * NATIVE frame size (naturalWidth/frameCount × naturalHeight) so it stays pixel-exact
  * regardless of the CSS tile size it is later tiled at. `onReady` fires once when a NEW
  * crop resolves (so the caller can trigger a re-render to swap in the exact frame).
+ *
+ * When the crop is already in-flight (started by a sibling clip sharing the same sprite),
+ * `onReady` is queued and fires in the same micro-task as the initiating caller's callback
+ * — not in a chained .then() — so all views re-render together without an extra task
+ * boundary that can race with the Benev Slate compositor lifecycle (openimago-r7to).
  */
 export function ensureFrame0(
   spriteUrl: string,
@@ -43,19 +56,35 @@ export function ensureFrame0(
 ): string | null | undefined {
   const cached = frame0Cache.get(spriteUrl)
   if (cached !== undefined) return cached
-  if (inFlight.has(spriteUrl)) return undefined
+  if (inFlight.has(spriteUrl)) {
+    // Queue this view's onReady so it fires when the in-flight crop lands.
+    // Without this, only the clip that STARTED the crop gets its onReady fired;
+    // sibling clips sharing the same sprite URL (split halves, same-source dupes)
+    // stay on the transient fallback forever (openimago-r7to).
+    if (onReady) {
+      let cbs = pendingCallbacks.get(spriteUrl)
+      if (!cbs) { cbs = []; pendingCallbacks.set(spriteUrl, cbs) }
+      cbs.push(onReady)
+    }
+    return undefined
+  }
 
   const promise = cropFirstFrame(spriteUrl, frameCount)
     .then((dataUrl) => {
       frame0Cache.set(spriteUrl, dataUrl)
       inFlight.delete(spriteUrl)
       onReady?.(dataUrl)
+      // Fire all pending sibling callbacks synchronously in this same micro-task.
+      const cbs = pendingCallbacks.get(spriteUrl)
+      if (cbs) { pendingCallbacks.delete(spriteUrl); for (const cb of cbs) cb(dataUrl) }
       return dataUrl
     })
     .catch(() => {
       frame0Cache.set(spriteUrl, null)
       inFlight.delete(spriteUrl)
       onReady?.(null)
+      const cbs = pendingCallbacks.get(spriteUrl)
+      if (cbs) { pendingCallbacks.delete(spriteUrl); for (const cb of cbs) cb(null) }
       return null
     })
   inFlight.set(spriteUrl, promise)
