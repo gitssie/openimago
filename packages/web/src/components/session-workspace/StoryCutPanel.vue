@@ -71,8 +71,10 @@
           正在加载粗剪…
         </p>
 
-        <!-- 手动编辑 composer, docked over the player-preview region (openimago-7k46).
-             The omniclip editor stays mounted underneath; closing returns the preview. -->
+        <!-- 手动编辑 composer — a q-menu anchored to this editor element, sized to the
+             player-preview region so it docks from the top down to the transport/
+             timeline (openimago-7k46). The omniclip editor stays mounted underneath;
+             closing returns the preview. -->
         <ClipGenerateDialog
           v-if="regenComposer"
           :open="true"
@@ -80,7 +82,8 @@
           :latest-run="regenComposer.latestRun"
           :elements="regenElements ?? []"
           :generating="regenGenerating ?? false"
-          class="story-cut__composer"
+          :target="editorHost"
+          :panel-height="playerRegionHeight"
           @update:open="(v) => { if (!v) emit('clip-generate-close') }"
           @generate="(p) => emit('clip-generate', p)"
         />
@@ -265,6 +268,17 @@ const emit = defineEmits<{
 
 const editorHost = ref<HTMLElement | null>(null)
 const editorReady = ref(false)
+
+// 手动编辑 composer sizing (openimago-7k46). The editor is a vertical two-pane layout:
+// a flexible player-preview pane on top and a FIXED-height timeline pane below (bound
+// to TIMELINE_PANE_PX in the fork's construct-editor-styles.patch.ts — mirrored here,
+// that patch is the source of truth, kept in sync manually to avoid statically
+// importing the browser-only vendor into the app build). So the player region the
+// composer must fill = editor height − the fixed timeline pane.
+const TIMELINE_PANE_PX = 300
+const editorHeight = ref(0)
+let editorResizeObserver: ResizeObserver | null = null
+const playerRegionHeight = computed(() => Math.max(0, editorHeight.value - TIMELINE_PANE_PX))
 // True while fork.hydrateFromCut runs (the ~7s import/place window). The editor is
 // mounted but clips aren't placed yet, so we cover it with a design-matching loading
 // overlay instead of letting the (now-suppressed) native empty timeline flash through
@@ -656,12 +670,26 @@ function remountEditor(): void {
 }
 
 // First mount: the host div exists by onMounted, so this never early-returns.
-onMounted(remountEditor)
+// Also observe the editor host's height so the docked composer can size to the
+// player-preview region (openimago-7k46).
+onMounted(() => {
+  remountEditor()
+  if (editorHost.value) {
+    editorHeight.value = editorHost.value.clientHeight
+    editorResizeObserver = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect
+      if (rect) editorHeight.value = rect.height
+    })
+    editorResizeObserver.observe(editorHost.value)
+  }
+})
 
 // Re-mount when the episode changes or the cut transitions empty↔non-empty.
 watch(() => [props.episodeId, isEmptyCut.value] as const, remountEditor)
 
 onBeforeUnmount(() => {
+  editorResizeObserver?.disconnect()
+  editorResizeObserver = null
   unsubscribeEdits?.()
   unsubscribeEdits = null
   unsubscribeSelection?.()
@@ -738,16 +766,6 @@ defineExpose({ persistEdit, rehydrate })
 // must FILL the editor host for the panes to split its height. A custom element
 // defaults to display:inline, so its :host{height:100%} would not take effect
 // without an explicit block + full height here.
-// 手动编辑 composer docked over the top (player-preview) region of the editor
-// (openimago-7k46). Absolute so it overlays without unmounting the omniclip editor.
-.story-cut__composer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 20;
-}
-
 .story-cut__construct {
   display: block;
   width: 100%;

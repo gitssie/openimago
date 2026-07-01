@@ -2,10 +2,12 @@
   ClipGenerateDialog (openimago-ciqk → 816a → docked layout openimago-7k46) — the
   Cut editor's 手动编辑 composer.
 
-  This is a FULL-WIDTH panel docked over the cut editor's player-preview region
-  (StoryCutPanel positions it as an absolute overlay at the top of the editor while
-  the omniclip editor stays mounted underneath). It is NOT a floating q-menu — the
-  only real q-menu here is the `@` element-picker dropdown. Closing it (✕) returns
+  This is a Quasar q-menu rendered as a FULL-WIDTH panel over the cut editor's
+  player-preview region: it anchors to the cut-editor element (:target), `fit`s to
+  its width, and is sized (:panel-height) to the player region so its bottom edge
+  meets the transport/timeline top. persistent + no-parent-event keep it open while
+  the user edits — it closes only via ✕ / generate. The nested `@` element-picker is
+  its own q-menu. The omniclip editor stays mounted underneath, so closing returns
   the player preview.
 
   Full-width, 3 stacked rows matching the reference design:
@@ -24,20 +26,35 @@
 -->
 
 <template>
-  <!-- Full-width composer docked over the cut editor's player-preview region
-       (openimago-7k46). Shown while a shot regen is active; the editor stays
-       mounted underneath, so closing returns the player preview. -->
-  <section
-    v-if="open"
-    class="clip-gen clip-gen--docked"
-    role="dialog"
-    aria-label="重新生成镜头"
-    aria-modal="false"
-    @dragover="onDragOver"
-    @dragleave="onDragLeave"
-    @drop="onDrop"
+  <!-- Full-width composer docked over the cut editor's player-preview region as a
+       Quasar q-menu (openimago-7k46). Anchored to the cut-editor element (:target),
+       fit to its width, sized to the player region so its bottom edge meets the
+       transport/timeline top. persistent + no-parent-event → stays open while the
+       user edits; closes only via ✕ / generate. -->
+  <q-menu
+    :model-value="open"
+    :target="target ?? undefined"
+    no-parent-event
+    persistent
+    fit
+    square
+    anchor="top left"
+    self="top left"
+    dark
+    class="clip-gen-menu"
+    :style="menuStyle"
+    @update:model-value="onMenuToggle"
   >
-    <header class="clip-gen__header">
+    <section
+      class="clip-gen clip-gen--docked"
+      role="dialog"
+      aria-label="重新生成镜头"
+      aria-modal="false"
+      @dragover="onDragOver"
+      @dragleave="onDragLeave"
+      @drop="onDrop"
+    >
+      <header class="clip-gen__header">
       <div class="clip-gen__title">重新生成镜头</div>
       <div v-if="shot" class="clip-gen__subtitle">镜头 {{ shot.shotNumber }}</div>
       <q-space />
@@ -320,6 +337,7 @@
           />
         </div>
       </section>
+    </q-menu>
 </template>
 
 <script setup lang="ts">
@@ -359,8 +377,14 @@ const props = withDefaults(
     /** Bible elements (characters/scenes) for the @-mention picker (openimago-0f27).
      *  Each carries a concept-art thumbnail used as the mention's reference image. */
     elements?: ElementCardVM[]
+    /** The cut-editor element the q-menu anchors to — the composer spans its width
+     *  and docks at its top (openimago-7k46). */
+    target?: Element | null
+    /** Player-preview region height (px): editor height − fixed timeline pane. The
+     *  panel fills this so its bottom edge meets the transport/timeline top. */
+    panelHeight?: number
   }>(),
-  { latestRun: null, generating: false, elements: () => [] },
+  { latestRun: null, generating: false, elements: () => [], target: null, panelHeight: 0 },
 )
 
 const emit = defineEmits<{
@@ -461,6 +485,16 @@ async function resolveReferenceThumbnails(): Promise<void> {
       }
     }),
   )
+}
+
+/** Height style for the q-menu content — fills the player-preview region so the
+ *  panel's bottom edge meets the transport/timeline top (openimago-7k46). */
+const menuStyle = computed(() =>
+  props.panelHeight > 0 ? { height: `${props.panelHeight}px` } : undefined,
+)
+
+function onMenuToggle(value: boolean): void {
+  emit('update:open', value)
 }
 
 function onClose(): void {
@@ -566,6 +600,9 @@ function onGenerate(): void {
    mounted underneath. */
 .clip-gen--docked {
   width: 100%;
+  /* Fill the q-menu (sized to the player-preview region) so the bottom edge meets
+     the transport/timeline top; rows stay top-aligned, extra space sits below. */
+  height: 100%;
   padding: 14px 18px 14px;
   background: var(--imago-bg-surface, #15151d);
   color: var(--imago-text-primary, #f2f2f7);
@@ -574,6 +611,7 @@ function onGenerate(): void {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow-y: auto;
 }
 
 .clip-gen__header {
