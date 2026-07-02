@@ -173,12 +173,8 @@
            Replaces the old always-on all-boundaries dock. -->
       <div class="story-cut__bar" data-testid="cut-controls">
         <!-- While hydrating, skeletonize the footer too (openimago-l9qs) so the whole
-             panel top-to-bottom is one cohesive skeleton — no real transition hint or
-             BGM control pokes through. -->
+             panel top-to-bottom is one cohesive skeleton — no real BGM control pokes through. -->
         <template v-if="hydrating">
-          <div class="story-cut__bar-context" aria-hidden="true">
-            <q-skeleton animation="wave" class="story-cut__sk-hint" />
-          </div>
           <div class="story-cut__bgm-chip story-cut__bgm-chip--sk" aria-hidden="true">
             <q-skeleton animation="wave" type="circle" class="story-cut__sk-bgm-icon" />
             <q-skeleton animation="wave" class="story-cut__sk-bgm-label" />
@@ -187,59 +183,6 @@
         </template>
 
         <template v-else>
-        <!-- LEFT: contextual transition editor for the selected clip's boundary. -->
-        <div class="story-cut__bar-context">
-          <div
-            v-if="selectedBoundary"
-            class="story-cut__transition"
-            data-testid="transition-boundary"
-          >
-            <span class="story-cut__transition-label">
-              <OiIcon name="layers" :size="13" />
-              片段 {{ selectedBoundary.position }} → {{ selectedBoundary.position + 1 }} 转场
-            </span>
-            <div class="story-cut__kinds" role="group" aria-label="转场类型">
-              <button
-                v-for="k in transitionKinds"
-                :key="k"
-                type="button"
-                class="story-cut__kind"
-                :class="{ 'story-cut__kind--active': selectedBoundary.transition?.kind === k }"
-                :aria-pressed="selectedBoundary.transition?.kind === k"
-                @click="onTransitionKind(selectedBoundary.afterClipId, k)"
-              >
-                {{ TRANSITION_KIND_LABELS[k] }}
-              </button>
-            </div>
-            <label class="story-cut__duration">
-              <span class="story-cut__duration-text">时长</span>
-              <input
-                class="story-cut__duration-input"
-                type="number"
-                min="0"
-                step="0.1"
-                :value="selectedBoundary.transition && selectedBoundary.transition.kind !== 'cut' ? selectedBoundary.transition.durationSeconds : 0"
-                :disabled="!selectedBoundary.transition || selectedBoundary.transition.kind === 'cut'"
-                aria-label="转场时长（秒）"
-                @change="onTransitionDuration(selectedBoundary.afterClipId, Number(($event.target as HTMLInputElement).value))"
-              />
-              <span class="story-cut__duration-unit">秒</span>
-            </label>
-            <button
-              type="button"
-              class="story-cut__clear"
-              :disabled="!selectedBoundary.transition"
-              aria-label="清除转场"
-              @click="clearTransitionAt(selectedBoundary.afterClipId)"
-            >
-              <OiIcon name="canvas" :size="13" />
-            </button>
-          </div>
-          <p v-else class="story-cut__bar-hint">
-            选中一个片段以编辑其转场
-          </p>
-        </div>
-
         <!-- RIGHT: global BGM chip (always shown). -->
         <div class="story-cut__bgm-chip">
           <OiIcon name="enhance-wave" :size="13" class="story-cut__bgm-icon" />
@@ -293,13 +236,12 @@
 import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import OiIcon from 'src/components/ui/OiIcon.vue'
 import type { StoryRunSummary, StoryShotSummary } from 'src/components/session-workspace/types'
-import { CUT_TRANSITION_KINDS, type CutTransitionKind, type EpisodeCut } from 'src/utils/cut/cut-types'
-import { Duration } from 'src/utils/cut/duration'
+import { type EpisodeCut } from 'src/utils/cut/cut-types'
 import { makeShotMediaResolver } from 'src/utils/cut/shot-media-resolver'
 import { buildHydrationPayload, type BgmMediaSource } from 'src/utils/cut/cut-hydration'
 import { dispatchCutEdit, type CutEdit } from 'src/utils/cut/cut-edit-dispatcher'
 import { buildClipMenuItems } from 'src/utils/cut/clip-menu-items'
-import { transitionBoundaries, resolveBgmLabel } from 'src/utils/cut/cut-controls'
+import { resolveBgmLabel } from 'src/utils/cut/cut-controls'
 import { bgmAuthHeaders } from 'src/utils/cut/bgm-auth'
 import type { LoadOmniclipFork, OmniclipForkApi } from 'src/utils/cut/fork-contract'
 import { api, ApiError, type OpenimagoAsset } from 'src/api/client'
@@ -307,15 +249,6 @@ import { useAuthStore } from 'src/stores/auth'
 import ClipGenerateDialog from 'src/components/session-workspace/ClipGenerateDialog.vue'
 import type { ElementCardVM } from 'src/components/session-workspace/left-panel/types'
 import type { ShotGenerationParams } from 'src/utils/cut/clip-generate-form'
-
-/** Default transition length (s) when a kind is first chosen on a boundary. */
-const DEFAULT_TRANSITION_SECONDS = 0.5
-/** Localised transition-kind labels (kinds mirror backend CUT_TRANSITION_KINDS). */
-const TRANSITION_KIND_LABELS: Record<CutTransitionKind, string> = {
-  cut: '硬切',
-  dissolve: '溶解',
-  fade: '淡入淡出',
-}
 
 const props = defineProps<{
   projectId: string
@@ -395,14 +328,8 @@ const lastUpdatedAt = ref<string | undefined>(props.cut?.updatedAt)
 let fork: OmniclipForkApi | null = null
 let unregisterClipMenu: (() => void) | null = null
 let unsubscribeEdits: (() => void) | null = null
-let unsubscribeSelection: (() => void) | null = null
 
 const isEmptyCut = computed(() => !props.cut || props.cut.clips.length === 0)
-
-// Currently-selected clip id (from the fork's onSelectionChange channel) — drives
-// the SELECTION-DRIVEN contextual transition controls (openimago-e6k1). null when
-// nothing is selected. NOT persisted; pure UI state.
-const selectedClipId = ref<string | null>(null)
 
 // Resolve clip media (shot -> latest completed run preview) for hydration.
 const mediaResolver = computed(() => makeShotMediaResolver(props.shots, props.runs))
@@ -485,30 +412,8 @@ function rehydrate(): void {
 
 // ── HOST-DRIVEN transition + BGM controls (ADR 0008 #1b, openimago-ofdw) ──
 //
-// Transitions + BGM are NOT captured from omniclip's gesture diff (omniclip
-// 1.0.7 has no native UI for them). These host controls originate the edits:
-// each calls the fork setter for live editor preview where it makes sense, AND
-// persistEdit with the matching CutEdit (already wired through dispatchCutEdit).
-// The pure data-shaping (which boundaries exist, current BGM label) lives in the
-// unit-tested cut-controls helpers.
-
-const transitionKinds = CUT_TRANSITION_KINDS
-
-/** The clip boundaries (N-1) that can hold a transition, with their current one. */
-const boundaries = computed(() =>
-  transitionBoundaries(props.cut?.clips ?? [], props.cut?.transitions ?? []),
-)
-
-/**
- * The boundary AFTER the selected clip — what the contextual transition editor
- * binds to (openimago-e6k1). Null when nothing is selected OR the selected clip
- * is the last one (no following clip → no boundary), so the controls show a quiet
- * hint instead. A transition lives on the boundary whose `afterClipId` is the
- * selected clip.
- */
-const selectedBoundary = computed(
-  () => boundaries.value.find((b) => b.afterClipId === selectedClipId.value) ?? null,
-)
+// BGM is NOT captured from omniclip's gesture diff. This host control originates
+// the edits: calls the fork setter for live editor preview + persistEdit.
 
 // Audio assets for the BGM picker (api.listAssets type-filtered to audio).
 const audioAssets = ref<OpenimagoAsset[]>([])
@@ -535,42 +440,6 @@ async function toggleBgmPicker(): Promise<void> {
   if (bgmPickerOpen.value && audioAssets.value.length === 0) {
     await loadAudioAssets()
   }
-}
-
-/** Set/replace a boundary's transition: live preview via the fork + persist.
- *  The transition-duration input is the LAST seconds boundary in the Cut link
- *  (openimago-23cr); Duration guards the seconds→ms conversion to the fork here. */
-async function applyTransition(
-  afterClipId: string,
-  kind: CutTransitionKind,
-  durationSeconds: number,
-): Promise<void> {
-  fork?.setTransition({ afterEffectId: afterClipId, kind, durationMs: Duration.fromSeconds(durationSeconds).ms })
-  await persistEdit({ kind: 'set-transition', afterClipId, transitionKind: kind, durationSeconds })
-}
-
-/** Change a boundary's transition kind, keeping (or seeding) its duration. */
-function onTransitionKind(afterClipId: string, kind: CutTransitionKind): void {
-  const current = boundaries.value.find((b) => b.afterClipId === afterClipId)?.transition
-  // 'cut' is an instantaneous boundary — duration is always 0 (backend clamps it
-  // too, but keep the UI honest so the number field disables sensibly).
-  const duration =
-    kind === 'cut' ? 0 : (current && current.kind !== 'cut' ? current.durationSeconds : DEFAULT_TRANSITION_SECONDS)
-  void applyTransition(afterClipId, kind, duration)
-}
-
-/** Change a boundary's transition duration (kind unchanged). */
-function onTransitionDuration(afterClipId: string, durationSeconds: number): void {
-  const current = boundaries.value.find((b) => b.afterClipId === afterClipId)?.transition
-  if (!current || current.kind === 'cut') return
-  if (!Number.isFinite(durationSeconds) || durationSeconds < 0) return
-  void applyTransition(afterClipId, current.kind, durationSeconds)
-}
-
-/** Remove a boundary's transition: clear the preview + persist. */
-async function clearTransitionAt(afterClipId: string): Promise<void> {
-  fork?.clearTransition(afterClipId)
-  await persistEdit({ kind: 'clear-transition', afterClipId })
 }
 
 /** Choose the Cut's single BGM bed. */
@@ -691,13 +560,6 @@ async function mountAndHydrate(): Promise<void> {
       (effectId) => props.cut?.clips.find((c) => c.id === effectId)?.sourceShotId,
     )
 
-    // Subscribe to clip-selection changes (openimago-e6k1) so the contextual
-    // transition controls follow the selected clip. Pure UI state — does NOT
-    // touch the persist/dispatch flow, so it is safe to wire before hydration.
-    unsubscribeSelection = fork.onSelectionChange((id) => {
-      selectedClipId.value = id
-    })
-
     // Render <construct-editor> now that the fork is loaded.
     editorReady.value = true
 
@@ -775,9 +637,6 @@ function remountEditor(): void {
   lastUpdatedAt.value = props.cut?.updatedAt
   unsubscribeEdits?.()
   unsubscribeEdits = null
-  unsubscribeSelection?.()
-  unsubscribeSelection = null
-  selectedClipId.value = null
   unregisterClipMenu?.()
   unregisterClipMenu = null
   // nextTick so the editorHost div is bound before mountAndHydrate reads it.
@@ -809,8 +668,6 @@ onBeforeUnmount(() => {
   editorResizeObserver = null
   unsubscribeEdits?.()
   unsubscribeEdits = null
-  unsubscribeSelection?.()
-  unsubscribeSelection = null
   unregisterClipMenu?.()
   unregisterClipMenu = null
   fork = null
@@ -1212,15 +1069,12 @@ defineExpose({ persistEdit, rehydrate })
 // ── Selection-driven contextual control bar (openimago-e6k1) ──
 //
 // ONE slim flat-black row pinned at the bottom, separated from the canvas by a
-// single hairline (replaces the old always-on all-boundaries dock). Left holds
-// the contextual transition editor for the SELECTED clip's boundary (or a quiet
-// hint); right holds the global BGM chip. No glow; cyan only on the active
-// transition pill + the BGM pick button.
+// single hairline. Holds the global BGM chip.
 .story-cut__bar {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 16px;
   padding: 10px 16px;
   min-height: 48px;
@@ -1228,107 +1082,10 @@ defineExpose({ persistEdit, rehydrate })
   background: var(--imago-bg-deep);
 }
 
-// Left half flexes to absorb the row; its content (transition editor or hint) is
-// left-aligned and may wrap on narrow widths.
-.story-cut__bar-context {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-}
-
-// Quiet hint when nothing actionable is selected — muted, no chrome.
-.story-cut__bar-hint {
-  margin: 0;
-  font-size: 11.5px;
-  color: var(--imago-text-faint);
-}
-
-// The contextual transition editor: a single inline row of label + kind pills +
-// duration + clear, bound to the selected clip's boundary.
-.story-cut__transition {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.story-cut__transition-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--imago-text-muted);
-  white-space: nowrap;
-}
-
 .story-cut__control-empty {
   margin: 0;
   font-size: 11.5px;
   color: var(--imago-text-faint);
-}
-
-.story-cut__kinds {
-  display: inline-flex;
-  gap: 4px;
-}
-
-// Pill toggles 硬切/溶解/淡入淡出 — text-only when inactive, a flat cyan tint when
-// active (the only place cyan appears in this dock). No glow.
-.story-cut__kind {
-  padding: 4px 11px;
-  border-radius: var(--imago-radius-pill);
-  border: 1px solid var(--imago-border-soft);
-  background: transparent;
-  color: var(--imago-text-muted);
-  font-size: 11px;
-  cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
-
-  &:hover {
-    color: var(--imago-text-primary);
-    border-color: var(--imago-border-dim);
-  }
-
-  &:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 2px var(--imago-border-cyan-active);
-  }
-
-  &--active {
-    color: var(--imago-neon-cyan);
-    border-color: var(--imago-border-cyan-active);
-    background: var(--imago-cyan-08);
-  }
-}
-
-.story-cut__duration {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--imago-text-faint);
-}
-
-.story-cut__duration-input {
-  width: 56px;
-  padding: 3px 6px;
-  border-radius: var(--imago-radius-sm);
-  border: 1px solid var(--imago-border-soft);
-  background: var(--imago-bg-void);
-  color: var(--imago-text-primary);
-  font-size: 11px;
-
-  &:focus {
-    outline: none;
-    border-color: var(--imago-border-cyan-active);
-  }
-
-  &:disabled {
-    opacity: 0.45;
-    cursor: default;
-  }
 }
 
 .story-cut__clear {
@@ -1473,11 +1230,9 @@ defineExpose({ persistEdit, rehydrate })
 // Honour the user's preference: drop the chrome's hover/focus transitions.
 @media (prefers-reduced-motion: reduce) {
   .story-cut__assemble,
-  .story-cut__kind,
   .story-cut__clear,
   .story-cut__bgm-pick,
-  .story-cut__bgm-option,
-  .story-cut__duration-input {
+  .story-cut__bgm-option {
     transition: none;
   }
 }
