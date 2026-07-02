@@ -50,6 +50,42 @@ import {
  *  with little empty space and no vertical-overflow scroll. */
 export const TIMELINE_PANE_PX = 300
 
+// Make the vertical resizer between the player pane and timeline pane clearly
+// visible — the upstream default is 0.2rem (~3px) with a near-invisible bg.
+// Increase to 8px, give it a flat dark surface with a hairline border on each
+// edge, and add a 3-dot grab indicator centred on it (::after pseudo-element).
+// `!important` on flex/height beats sizing_styles inline `flex` on .resizer.
+const resizerVisible = css`
+  [data-vertical] > .resizer {
+    flex: 0 0 8px !important;
+    height: 8px !important;
+    background: #1a1a22;
+    border-top: 1px solid rgba(255,255,255,0.07);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    position: relative;
+    cursor: ns-resize;
+
+    /* Three-dot grab handle centred in the 8px strip */
+    &::after {
+      content: "• • •";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 8px;
+      letter-spacing: 3px;
+      color: rgba(255,255,255,0.28);
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    &:hover {
+      background: #22222e;
+      &::after { color: rgba(255,255,255,0.55); }
+    }
+  }
+`
+
 // Bound ONLY the timeline pane (the one hosting <omni-timeline>) and its leaf.
 // `!important` to beat the inline `flex` sizing_styles writes on `.pane`. The
 // player pane (no omni-timeline) is untouched → keeps flex:1 1 auto and fills the
@@ -98,8 +134,9 @@ const timelinePaneBound = css`
 // module; keep the named export intact).
 export { size_of_resize_handle_in_rem }
 
-// Upstream styles first, the timeline-pane bound last so it wins the cascade.
+// Upstream styles first, overrides last so they win the cascade.
 export const styles = css`
   ${upstreamStyles}
+  ${resizerVisible}
   ${timelinePaneBound}
 `
