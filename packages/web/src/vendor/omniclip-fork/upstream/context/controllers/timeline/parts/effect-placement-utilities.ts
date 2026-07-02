@@ -8,7 +8,12 @@ export class EffectPlacementUtilities {
 	}
 
 	getEffectsAfter(effects: AnyEffect[], timelineStart: number) {
-		return effects.filter(effect => effect.start_at_position > timelineStart)
+		// openimago-pos0: use >= so a clip whose start_at_position equals timelineStart
+		// is included in "effects after". The old strict > made clips AT the proposed
+		// drop position invisible — notably when dropping at position 0 where an
+		// existing clip already sits at start_at_position 0 — so neither effectBefore
+		// nor effectAfter found it and it was never pushed forward, causing overlap.
+		return effects.filter(effect => effect.start_at_position >= timelineStart)
 			.sort((a, b) => a.start_at_position - b.start_at_position)
 	}
 

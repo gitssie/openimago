@@ -27,6 +27,22 @@ export class EffectPlacementProposal {
 			}
 		}
 
+		// openimago-pos0: when there is no clip before the drop position (effectBefore
+		// is null, e.g. dropping at position 0 or at the very start of the track) but
+		// the proposed clip would overlap an existing clip at or after timeline_start,
+		// push those clips forward instead of letting #adjustStartPosition move the
+		// grabbed clip backwards to a negative / wrong position.
+		// The push-forward branch inside "if (effectBefore && effectAfter)" is not
+		// reached when effectBefore is undefined, so we handle it explicitly here.
+		// (effectAfter is now found via >= in getEffectsAfter, so a clip sitting at
+		// exactly timeline_start = 0 is visible.)
+		if (!effectBefore && effectAfter) {
+			const distanceToAfter = this.#placementUtilities.calculateDistanceToAfter(effectAfter, effectTimecode.timeline_end)
+			if (distanceToAfter < 0) {
+				effectsToPushForward = this.#placementUtilities.getEffectsAfter(trackEffects, effectTimecode.timeline_start)
+			}
+		}
+
 		proposedStartPosition = this.#adjustStartPosition(
 			effectBefore,
 			effectAfter,
