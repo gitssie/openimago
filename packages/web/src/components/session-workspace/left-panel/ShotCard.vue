@@ -124,15 +124,6 @@
             <OiIcon name="enhance-wave" :size="16" />
           </span>
         </div>
-        <button
-          v-if="!readOnly"
-          type="button"
-          class="card__thumb card__thumb--add"
-          :aria-label="`为 ${shot.title} 添加媒体`"
-          @click="emit('add-media', shot.id)"
-        >
-          <OiIcon name="plus" :size="14" />
-        </button>
       </div>
 
       <!-- Footer -->
@@ -188,7 +179,6 @@ defineProps<{
 const emit = defineEmits<{
   (e: 'select', id: string): void
   (e: 'toggle', id: string): void
-  (e: 'add-media', id: string): void
   (e: 'select-type', id: string): void
   (e: 'generate', id: string): void
 }>()

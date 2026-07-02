@@ -133,7 +133,6 @@
                 :collapsed="isCardCollapsed(shot.id)"
                 @select="onItemSelect"
                 @toggle="toggleCard"
-                @add-media="onAddMedia('shots', $event)"
                 @select-type="onSelectType('shots', $event)"
                 @generate="onCommentGenerate('shots', $event)"
               />
