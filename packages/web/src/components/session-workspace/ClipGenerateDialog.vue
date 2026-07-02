@@ -152,6 +152,8 @@
             dense
             options-dense
             borderless
+            menu-anchor="top left"
+            menu-self="bottom left"
             aria-label="生成模式"
             class="clip-gen__pill clip-gen__pill--mode clip-gen__select"
           >
@@ -169,6 +171,8 @@
             borderless
             emit-value
             map-options
+            menu-anchor="top left"
+            menu-self="bottom left"
             aria-label="模型"
             class="clip-gen__pill clip-gen__select"
           >
@@ -186,6 +190,8 @@
             borderless
             emit-value
             map-options
+            menu-anchor="top left"
+            menu-self="bottom left"
             aria-label="分辨率"
             class="clip-gen__pill clip-gen__select"
           >
@@ -214,6 +220,8 @@
             borderless
             emit-value
             map-options
+            menu-anchor="top left"
+            menu-self="bottom left"
             aria-label="画幅比例"
             class="clip-gen__pill clip-gen__select"
           >
@@ -231,6 +239,8 @@
             borderless
             emit-value
             map-options
+            menu-anchor="top left"
+            menu-self="bottom left"
             aria-label="时长"
             class="clip-gen__pill clip-gen__select"
           >
